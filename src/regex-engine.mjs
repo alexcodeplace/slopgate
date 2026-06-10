@@ -39,7 +39,10 @@ export function scanRegex(config, files, { fileMode = false } = {}) {
   for (const p of config.patterns) {
     if (fileMode && (p.minFiles ?? 1) > 1) continue; // cross-file thresholds meaningless on one file
     try { compiled.push({ p, re: compileLineRegex(p.pattern, p.flags) }); }
-    catch { /* unparseable pattern: skip, mirrors prior swallow */ }
+    // Patterns are validated (new RegExp) at config load by validatePattern (config.mjs);
+    // a bad pattern throws there, never reaching here. This catch is belt-and-suspenders
+    // for a hand-constructed config object bypassing resolveConfig — silently skip it.
+    catch { /* unreachable for resolveConfig-loaded patterns */ }
   }
 
   // pass 1: one read per file; record hits per pattern as file -> [{line, text}]
