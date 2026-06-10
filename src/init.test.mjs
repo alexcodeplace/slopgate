@@ -1,6 +1,7 @@
 import { mkdirSync, writeFileSync, rmSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { execSync } from 'node:child_process';
 import { runInit } from './init.mjs';
 
 const FIXTURE = '/home/user/Projects/slop-gate/.tmp-inittest';
@@ -28,6 +29,7 @@ function setupFixture() {
   writeFileSync(join(FIXTURE, 'CLAUDE.md'), '# test\n');
   writeFileSync(join(FIXTURE, '.claude/skills/foo.md'), '# skill\n');
   writeFileSync(join(FIXTURE, '.cursorrules'), 'rules\n');
+  execSync('git init -q', { cwd: FIXTURE });
   writeFileSync(
     join(FIXTURE, '.claude/settings.json'),
     `${JSON.stringify({
@@ -89,7 +91,13 @@ async function main() {
     hasHookCommand(settings, 'PreToolUse', COMMIT_HOOK))) allPass = false;
   if (!assert('.bak exists', existsSync(join(FIXTURE, '.claude/settings.json.bak')))) allPass = false;
 
-  const configBefore = readFileSync(join(FIXTURE, '.slop-gate/config.mjs'), 'utf8');
+  const cfgText = readFileSync(join(FIXTURE, '.slop-gate/config.mjs'), 'utf8');
+  if (!assert('config has checkers block', cfgText.includes('checkers: {'))) allPass = false;
+  if (!assert("config has diff-shape default", cfgText.includes("'diff-shape': {\"maxDirs\":5}"))) allPass = false;
+  if (!assert('config has astDisable', cfgText.includes('astDisable: []'))) allPass = false;
+  if (!assert('pre-commit hook installed', existsSync(join(FIXTURE, '.git/hooks/pre-commit')))) allPass = false;
+
+  const configBefore = cfgText;
   runInit(FIXTURE, { quiet: true });
   const configAfter = readFileSync(join(FIXTURE, '.slop-gate/config.mjs'), 'utf8');
   if (!assert('idempotent: config unchanged', configBefore === configAfter)) allPass = false;

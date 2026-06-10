@@ -1,4 +1,12 @@
+import { readFileSync, existsSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { runAstGrepScan } from './ast-engine.mjs';
+import { parseTscOutput } from './checkers/tsc.mjs';
+import { parseKnipOutput } from './checkers/knip.mjs';
+import { parseJscpdReport } from './checkers/jscpd.mjs';
+import { parseDepcruiseOutput } from './checkers/depcruise.mjs';
+import { parseTypeCoverageOutput } from './checkers/type-coverage.mjs';
 
 /** @param {import('./config.mjs').ResolvedConfig} config */
 export function runSelfTest(config) {
@@ -22,6 +30,27 @@ export function runSelfTest(config) {
     console.error('FAIL ast-grep canary: slopgate-canary did not fire on fixtures'); failed++;
   } else {
     console.error(`OK ast-grep canary (${ast.violations.length} fixture violations)`);
+  }
+  // checker parser fixtures: recorded real tool outputs must parse to expected shapes.
+  // Catches tool-output-format drift without invoking the tools.
+  const fixDir = join(dirname(fileURLToPath(import.meta.url)), '../rules/baseline/fixtures/checker-outputs');
+  const PARSER_FIXTURES = [
+    { id: 'tsc', input: 'tsc.txt', expected: 'tsc.expected.json', parse: (t) => parseTscOutput(t) },
+    { id: 'knip', input: 'knip.json', expected: 'knip.expected.json', parse: (t) => parseKnipOutput(t) },
+    { id: 'jscpd', input: 'jscpd.json', expected: 'jscpd.expected.json', parse: (t) => parseJscpdReport(t) },
+    { id: 'depcruise', input: 'depcruise.json', expected: 'depcruise.expected.json', parse: (t) => parseDepcruiseOutput(t) },
+    { id: 'type-coverage', input: 'type-coverage.txt', expected: 'type-coverage.expected.json', parse: (t) => parseTypeCoverageOutput(t, '/repo') },
+  ];
+  for (const f of PARSER_FIXTURES) {
+    const inPath = join(fixDir, f.input);
+    const expPath = join(fixDir, f.expected);
+    if (!existsSync(inPath) || !existsSync(expPath)) { console.error(`FAIL parser ${f.id}: fixture missing`); failed++; continue; }
+    try {
+      const got = JSON.stringify(f.parse(readFileSync(inPath, 'utf8')));
+      const want = JSON.stringify(JSON.parse(readFileSync(expPath, 'utf8')));
+      if (got !== want) { console.error(`FAIL parser ${f.id}: parsed output != expected`); failed++; }
+      else console.error(`OK parser ${f.id}`);
+    } catch (e) { console.error(`FAIL parser ${f.id}: ${e}`); failed++; }
   }
   return failed ? 1 : 0;
 }
