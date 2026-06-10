@@ -31,3 +31,4 @@
 *.test.mjs
 rules/baseline/fixtures/
 rules/baseline/selftest.config.mjs
+.worktrees/
