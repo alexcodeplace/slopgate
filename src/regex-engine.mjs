@@ -6,8 +6,14 @@ import { lineHash } from './suppressions.mjs';
 function pathMatchesGlobs(filePath, globs) {
   if (!globs?.length) return false;
   return globs.some((g) => {
-    const norm = g.replace(/\*\*/g, '§').replace(/\*/g, '[^/]*').replace(/§/g, '.*');
-    return new RegExp(norm + '$').test(filePath);
+    const norm = g
+      .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+      .replace(/\*\*\//g, '\x00')
+      .replace(/\*\*/g, '\x01')
+      .replace(/\*/g, '[^/]*')
+      .replace(/\x00/g, '(?:.*/)?')
+      .replace(/\x01/g, '.*');
+    return new RegExp('^' + norm + '$').test(filePath);
   });
 }
 
