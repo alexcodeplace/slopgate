@@ -73,7 +73,7 @@ function ensureHookEntry(settings, event, spec) {
 
 /**
  * @param {string} targetDir
- * @returns {'created' | 'merged' | 'already-present'}
+ * @returns {'created' | 'merged' | 'already-present' | 'invalid-json'}
  */
 export function mergeSettingsJson(targetDir) {
   const claudeDir = join(targetDir, '.claude');

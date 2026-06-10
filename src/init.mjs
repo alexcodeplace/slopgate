@@ -1,6 +1,6 @@
 import { mkdirSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { installPreCommitHook, ENGINE_ROOT } from './install-hooks.mjs';
+import { installPreCommitHook } from './install-hooks.mjs';
 import {
   detectRoots,
   detectExts,
@@ -9,12 +9,6 @@ import {
   buildConventionSources,
 } from './init/detect-stack.mjs';
 import { DEPCRUISE_STARTER, formatConfig, mergeSettingsJson } from './init/scaffold.mjs';
-
-const COMMIT_HOOK = `${ENGINE_ROOT}/hooks/commit-hook.sh`;
-const EDIT_HOOK = `${ENGINE_ROOT}/hooks/edit-hook.sh`;
-
-const PRE_TOOL = { matcher: 'Bash', command: COMMIT_HOOK };
-const POST_TOOL = { matcher: 'Edit|Write', command: EDIT_HOOK };
 
 /** @param {string} targetDir @param {{ quiet?: boolean }} [options] */
 export function runInit(targetDir, options = {}) {
