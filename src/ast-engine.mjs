@@ -10,9 +10,9 @@ import { tmpdir } from 'node:os';
 
 export function resolveAstGrepBin(repoRoot) {
   const local = join(repoRoot, 'node_modules/.bin/ast-grep');
-  if (existsSync(local)) return local;
+  if (existsSync(local)) return { bin: local, source: 'local' };
   const probe = spawnSync('ast-grep', ['--version'], { encoding: 'utf8' });
-  if (probe.status === 0) return 'ast-grep';
+  if (probe.status === 0) return { bin: 'ast-grep', source: 'path' };
   return null;
 }
 
@@ -25,10 +25,13 @@ export function runAstGrepScan(config, files = null, opts = {}) {
   const ruleDirs = (config.astRuleDirs || []).filter(existsSync);
   if (ruleDirs.length === 0) return { available: true, violations: [], errors: [] };
 
-  const bin = resolveAstGrepBin(config.repoRoot);
-  if (!bin) {
+  const resolved = resolveAstGrepBin(config.repoRoot);
+  if (!resolved) {
     return { available: false, violations: [], errors: ['ast-grep binary not found (npm i -g @ast-grep/cli) — bucket-B rules SKIPPED'] };
   }
+  const bin = resolved.bin;
+  const errors = [];
+  if (resolved.source === 'path') errors.push('ast-grep: using PATH binary (version not pinned — results may differ from CI)');
 
   // ast-grep reads ruleDirs from an sgconfig.yml; synthesize one pointing at all rule dirs.
   const dir = mkdtempSync(join(tmpdir(), 'slopgate-sg-'));
@@ -53,7 +56,6 @@ export function runAstGrepScan(config, files = null, opts = {}) {
       return { available: true, violations: [], errors: ['ast-grep output was not an array'] };
     }
     const violations = [];
-    const errors = [];
     if (res.stderr && /error/i.test(res.stderr) && !/error\(s\) found in code/i.test(res.stderr)) {
       errors.push(`ast-grep stderr: ${res.stderr.slice(0, 500)}`);
     }
