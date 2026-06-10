@@ -1,4 +1,4 @@
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runAstGrepScan } from './ast-engine.mjs';
@@ -8,6 +8,7 @@ import { parseKnipOutput } from './checkers/knip.mjs';
 import { parseJscpdReport } from './checkers/jscpd.mjs';
 import { parseDepcruiseOutput } from './checkers/depcruise.mjs';
 import { parseTypeCoverageOutput } from './checkers/type-coverage.mjs';
+import { BASELINE_AST_DIR } from '../rules/baseline/index.mjs';
 
 /** @param {import('./config.mjs').ResolvedConfig} config */
 export function runSelfTest(config) {
@@ -23,7 +24,16 @@ export function runSelfTest(config) {
       else console.error(`OK ${p.id} (negative)`);
     }
   }
-  const ast = runAstGrepScan(config, config.fixturesDirs, { rawTargets: true });
+  // config path sanity: dangling roots/fixtures dirs = silent-zero-results rot (zync F1 class)
+  for (const r of config.roots) {
+    if (!existsSync(r)) { console.error(`FAIL config: root missing: ${r}`); failed++; }
+  }
+  const fixturesDirs = [];
+  for (const d of config.fixturesDirs) {
+    if (!existsSync(d)) { console.error(`FAIL config: fixtures dir missing: ${d}`); failed++; }
+    else fixturesDirs.push(d);
+  }
+  const ast = runAstGrepScan(config, fixturesDirs, { rawTargets: true });
   if (!ast.available) {
     console.error(`WARN ast-grep unavailable — bucket-B self-test skipped: ${ast.errors.join('; ')}`);
   } else if (!ast.violations.some((v) => v.id === 'slopgate-canary')) {
@@ -31,6 +41,25 @@ export function runSelfTest(config) {
     console.error('FAIL ast-grep canary: slopgate-canary did not fire on fixtures'); failed++;
   } else {
     console.error(`OK ast-grep canary (${ast.violations.length} fixture violations)`);
+  }
+  // project ast rules: every rule yml must fire at least once on the fixtures scan.
+  const projectAstDirs = (config.astRuleDirs || []).filter((d) => d !== BASELINE_AST_DIR && existsSync(d));
+  if (!ast.available) {
+    if (projectAstDirs.length) console.error('WARN ast-grep unavailable — project ast rules not verified');
+  } else {
+    for (const dir of projectAstDirs) {
+      for (const f of readdirSync(dir).filter((n) => n.endsWith('.yml') || n.endsWith('.yaml'))) {
+        const m = /^id:\s*(\S+)/m.exec(readFileSync(join(dir, f), 'utf8'));
+        if (!m) { console.error(`FAIL ast ${f}: no "id:" line`); failed++; continue; }
+        const id = m[1];
+        if (config.astDisable.has(id)) { console.error(`SKIP ast ${id} (astDisable)`); continue; }
+        if (!ast.violations.some((v) => v.id === id)) {
+          console.error(`FAIL ast ${id}: did not fire on fixtures — add a trigger to the project fixtures dir`); failed++;
+        } else {
+          console.error(`OK ast ${id}`);
+        }
+      }
+    }
   }
   // checker parser fixtures: recorded real tool outputs must parse to expected shapes.
   // Catches tool-output-format drift without invoking the tools.
