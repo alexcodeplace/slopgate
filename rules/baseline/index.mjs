@@ -11,9 +11,10 @@ export const BASELINE_PACKS = {
     id: 'no-stubs-placeholder', title: 'Stub / placeholder / not-implemented marker',
     category: 'convention', severity: 'critical',
     pattern: '(?:for now|in a real app|placeholder|TODO: ?implement|not implemented)',
+    flags: 'i',
     description: 'Stub or deferred-work marker — global rule forbids stubs/placeholders/workarounds.',
     resolution: 'Implement the real behavior now; remove the placeholder.',
-    canary: '// TODO: implement later, placeholder for now',
+    canary: '// Placeholder for now',
   }],
   'ts-suppress': [{
     id: 'ts-suppress-added', title: 'Type/lint suppression directive',

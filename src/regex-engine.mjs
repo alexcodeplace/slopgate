@@ -11,8 +11,8 @@ function pathMatchesGlobs(filePath, globs) {
   });
 }
 
-function searchPattern(config, files, pattern, excludeGlobs) {
-  const re = new RegExp(pattern);
+function searchPattern(config, files, pattern, flags, excludeGlobs) {
+  const re = new RegExp(pattern, flags || undefined);
   const byFile = new Map();
   for (const file of files) {
     if (pathMatchesGlobs(file, excludeGlobs)) continue;
@@ -39,7 +39,7 @@ export function runPatternScan(config, opts = {}) {
   for (const p of config.patterns) {
     if (fileMode && (p.minFiles ?? 1) > 1) continue; // cross-file thresholds meaningless on one file
     let byFile;
-    try { byFile = searchPattern(config, files, p.pattern, p.excludeGlobs); }
+    try { byFile = searchPattern(config, files, p.pattern, p.flags, p.excludeGlobs); }
     catch { continue; }
     const hitFiles = [...byFile.keys()].sort();
     if (hitFiles.length < (p.minFiles ?? 1)) continue;
@@ -52,7 +52,8 @@ export function runPatternScan(config, opts = {}) {
 export function collectRegexViolations(config, findings) {
   const violations = [];
   for (const f of findings) {
-    const re = new RegExp(config.patterns.find((p) => p.id === f.id).pattern);
+    const pat = config.patterns.find((p) => p.id === f.id);
+    const re = new RegExp(pat.pattern, pat.flags || undefined);
     for (const file of f.files) {
       const lines = readFileSync(join(config.repoRoot, file), 'utf8').split('\n');
       for (let i = 0; i < lines.length; i++) {

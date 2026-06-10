@@ -6,7 +6,7 @@ export function runSelfTest(config) {
   for (const p of config.patterns) {
     if (!p.canary) { console.error(`WARN ${p.id}: no canary — cannot prove rule still fires`); continue; }
     let re;
-    try { re = new RegExp(p.pattern); } catch (e) { console.error(`FAIL ${p.id}: regex invalid: ${e}`); failed++; continue; }
+    try { re = new RegExp(p.pattern, p.flags || undefined); } catch (e) { console.error(`FAIL ${p.id}: regex invalid: ${e}`); failed++; continue; }
     if (!re.test(p.canary)) { console.error(`FAIL ${p.id}: canary not matched: ${p.canary}`); failed++; }
     else console.error(`OK ${p.id}`);
   }

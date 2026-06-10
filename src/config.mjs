@@ -15,7 +15,7 @@ function validatePattern(p, src) {
   for (const k of ['id', 'severity', 'pattern', 'resolution']) {
     if (!p[k]) throw new Error(`slop-gate: rule from ${src} missing "${k}" (id=${p.id ?? '?'})`);
   }
-  try { new RegExp(p.pattern); } catch (e) { throw new Error(`slop-gate: rule ${p.id} bad regex: ${e}`); }
+  try { new RegExp(p.pattern, p.flags || undefined); } catch (e) { throw new Error(`slop-gate: rule ${p.id} bad regex: ${e}`); }
   return p;
 }
 
