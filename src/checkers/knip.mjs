@@ -4,7 +4,7 @@
  *  Requires explicit knip config — knip without config is too noisy to gate on. */
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { localBin, runTool, sourceLine } from './shared.mjs';
+import { localBin, runJsonTool, sourceLine } from './shared.mjs';
 
 const ISSUE_TYPES = ['dependencies', 'devDependencies', 'unlisted', 'exports', 'types', 'duplicates'];
 
@@ -18,8 +18,7 @@ const RESOLUTIONS = {
   duplicates: 'Deduplicate the export.',
 };
 
-export function parseKnipOutput(jsonText) {
-  const j = JSON.parse(jsonText);
+export function parseKnipOutput(j) {
   const out = [];
   for (const f of j.files ?? []) out.push({ type: 'files', file: f, line: 1, name: f });
   for (const issue of j.issues ?? []) {
@@ -45,14 +44,13 @@ export default {
     if (!hasKnipConfig(config.repoRoot)) return { available: false, reason: 'no knip config' };
     return { available: true };
   },
-  run(config, cfg) {
-    const res = runTool(localBin(config.repoRoot, 'knip'), ['--reporter', 'json', '--no-exit-code'], {
-      cwd: config.repoRoot, timeout: (cfg.timeout ?? 90) * 1000,
-    });
-    if (!res.ok) return { violations: [], errors: [`knip failed: ${res.error}`] };
-    let findings;
-    try { findings = parseKnipOutput(res.stdout); }
-    catch (e) { return { violations: [], errors: [`knip JSON parse error: ${e}`] }; }
+  async run(config, cfg) {
+    const bin = localBin(config.repoRoot, 'knip');
+    if (!bin) return { violations: [], errors: ['knip failed: no local knip binary'] };
+    const { data, errors } = await runJsonTool('knip', bin,
+      ['--reporter', 'json', '--no-exit-code'], { cwd: config.repoRoot, timeout: (cfg.timeout ?? 90) * 1000 });
+    if (data == null) return { violations: [], errors };
+    const findings = parseKnipOutput(data);
     const violations = findings.map((f) => ({
       id: `knip-${f.type}`, severity: 'high', category: 'dead-code',
       file: f.file, line: f.line,
@@ -60,6 +58,6 @@ export default {
       text: `unused ${f.type === 'files' ? 'file' : f.type}: ${f.name}`.slice(0, 90),
       resolution: RESOLUTIONS[f.type],
     }));
-    return { violations, errors: [] };
+    return { violations, errors };
   },
 };
