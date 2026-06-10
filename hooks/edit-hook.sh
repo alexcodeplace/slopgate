@@ -13,6 +13,7 @@ ROOT=$(git -C "$(dirname "$FILE")" rev-parse --show-toplevel 2>/dev/null) || exi
 CONFIG="$ROOT/.slop-gate/config.mjs"
 [ -f "$CONFIG" ] || exit 0
 
-OUT=$(timeout 5 node /home/user/Projects/slop-gate/bin/slop-gate --file "$FILE" --config "$CONFIG" 2>&1)
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+OUT=$(timeout 5 node "$HERE/../bin/slop-gate" --file "$FILE" --config "$CONFIG" 2>&1)
 [ "$?" -eq 1 ] && { echo "$OUT" >&2; exit 2; }
 exit 0

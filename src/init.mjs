@@ -297,7 +297,12 @@ export function mergeSettingsJson(targetDir) {
   }
 
   const raw = readFileSync(settingsPath, 'utf8');
-  const settings = JSON.parse(raw);
+  let settings;
+  try { settings = JSON.parse(raw); }
+  catch {
+    process.stderr.write(`slop-gate: ${settingsPath} is not valid JSON — left untouched; add hooks manually\n`);
+    return 'invalid-json';
+  }
   const addedPre = ensureHookEntry(settings, 'PreToolUse', PRE_TOOL);
   const addedPost = ensureHookEntry(settings, 'PostToolUse', POST_TOOL);
 

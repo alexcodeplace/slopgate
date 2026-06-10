@@ -1,11 +1,12 @@
 import { mkdirSync, writeFileSync, rmSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { pathToFileURL } from 'node:url';
 import { execSync } from 'node:child_process';
 import { runInit } from './init.mjs';
 import { ENGINE_ROOT } from './install-hooks.mjs';
 
-const FIXTURE = '/home/user/Projects/slop-gate/.tmp-inittest';
+const FIXTURE = join(tmpdir(), 'slop-gate-inittest');
 const COMMIT_HOOK = `${ENGINE_ROOT}/hooks/commit-hook.sh`;
 const EDIT_HOOK = `${ENGINE_ROOT}/hooks/edit-hook.sh`;
 

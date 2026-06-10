@@ -49,6 +49,9 @@ export function runAstGrepScan(config, files = null, opts = {}) {
     try { matches = JSON.parse(res.stdout); } catch (e) {
       return { available: true, violations: [], errors: [`ast-grep JSON parse error: ${e}`] };
     }
+    if (!Array.isArray(matches)) {
+      return { available: true, violations: [], errors: ['ast-grep output was not an array'] };
+    }
     const violations = [];
     const errors = [];
     if (res.stderr && /error/i.test(res.stderr) && !/error\(s\) found in code/i.test(res.stderr)) {

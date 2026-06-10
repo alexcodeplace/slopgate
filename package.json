@@ -3,8 +3,12 @@
   "version": "1.0.0",
   "type": "module",
   "description": "Global code-quality / anti-slop gate — engine shared, rules per-project.",
+  "license": "MIT",
   "bin": { "slop-gate": "bin/slop-gate" },
+  "files": ["bin", "src", "hooks", "rules"],
+  "engines": { "node": ">=18" },
   "scripts": {
-    "self-test": "node bin/slop-gate --self-test --config rules/baseline/selftest.config.mjs"
+    "self-test": "node bin/slop-gate --self-test --config rules/baseline/selftest.config.mjs",
+    "test": "node --test \"src/**/*.test.mjs\""
   }
 }

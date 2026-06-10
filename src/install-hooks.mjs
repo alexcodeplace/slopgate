@@ -2,7 +2,7 @@
 /**
  * Native git pre-commit installer. Marker-delimited block: idempotent rewrite of our
  * block, foreign hook content always preserved (block inserted before first `exec`,
- * else appended). Engine path embedded absolute — single-machine personal tool.
+ * else appended). Engine root resolved dynamically from this file's location.
  */
 import { execSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync, chmodSync, mkdirSync } from 'node:fs';
