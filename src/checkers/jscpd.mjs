@@ -2,10 +2,10 @@
 /** jscpd adapter — copy-paste clones ("reimplemented instead of imported"). Scans the
  *  configured roots; in staged mode a clone counts only if one side overlaps a staged
  *  file (violation points at the staged side, excerpt names the other). */
-import { readFileSync, rmSync, mkdtempSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
-import { localBin, runTool, sourceLine } from './shared.mjs';
+import { localBin, runToolAsync, sourceLine } from './shared.mjs';
+import { withTempDir } from '../temp.mjs';
 
 export function parseJscpdReport(jsonText) {
   const j = JSON.parse(jsonText);
@@ -50,14 +50,13 @@ export default {
     if (!localBin(config.repoRoot, 'jscpd')) return { available: false, reason: 'no local jscpd binary' };
     return { available: true };
   },
-  run(config, cfg, { files = null } = {}) {
-    const outDir = mkdtempSync(join(tmpdir(), 'slopgate-jscpd-'));
-    const res = runTool(localBin(config.repoRoot, 'jscpd'), [
-      ...config.rootsRel,
-      '--min-tokens', String(cfg.minTokens ?? 50),
-      '--reporters', 'json', '--output', outDir, '--silent',
-    ], { cwd: config.repoRoot, timeout: (cfg.timeout ?? 60) * 1000 });
-    try {
+  async run(config, cfg, { files = null } = {}) {
+    return withTempDir('slopgate-jscpd-', async (outDir) => {
+      const res = await runToolAsync(localBin(config.repoRoot, 'jscpd'), [
+        ...config.rootsRel,
+        '--min-tokens', String(cfg.minTokens ?? 50),
+        '--reporters', 'json', '--output', outDir, '--silent',
+      ], { cwd: config.repoRoot, timeout: (cfg.timeout ?? 60) * 1000 });
       if (!res.ok) return { violations: [], errors: [`jscpd failed: ${res.error}`] };
       const reportPath = join(outDir, 'jscpd-report.json');
       if (!existsSync(reportPath)) return { violations: [], errors: ['jscpd produced no report'] };
@@ -65,8 +64,6 @@ export default {
       try { clones = parseJscpdReport(readFileSync(reportPath, 'utf8')); }
       catch (e) { return { violations: [], errors: [`jscpd JSON parse error: ${e}`] }; }
       return { violations: cloneViolations(clones, files, config.repoRoot), errors: [] };
-    } finally {
-      rmSync(outDir, { recursive: true, force: true });
-    }
+    });
   },
 };
