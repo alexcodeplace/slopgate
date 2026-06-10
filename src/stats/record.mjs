@@ -1,14 +1,18 @@
 // src/stats/record.mjs
 // Build one row per blocked violation and write to the global + project stores.
 // Session/model resolution lives here (single caller — no separate module).
-import { readFileSync } from 'node:fs';
+import { readFileSync, realpathSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { homedir } from 'node:os';
 import { basename, join } from 'node:path';
 import { appendRow, globalStatsPath, projectStatsPath } from './store.mjs';
 
+const SESSION_TTL_MS = 8 * 60 * 60 * 1000; // 8 hours
+
 function sessionKey(repoRoot) {
-  return createHash('sha256').update(repoRoot).digest('hex').slice(0, 16);
+  let canonical = repoRoot;
+  try { canonical = realpathSync(repoRoot); } catch { /* test paths may not exist */ }
+  return createHash('sha256').update(canonical).digest('hex').slice(0, 16);
 }
 
 /**
@@ -23,6 +27,10 @@ export function resolveSession(repoRoot) {
   try {
     const p = join(homedir(), '.slopgate', 'sessions', `${sessionKey(repoRoot)}.json`);
     const s = JSON.parse(readFileSync(p, 'utf8'));
+    if (s.startedAt) {
+      const age = Date.now() - new Date(s.startedAt).getTime();
+      if (age > SESSION_TTL_MS) return { model: 'unknown', sessionId: null, startedAt: null };
+    }
     return { model: s.model || 'unknown', sessionId: s.sessionId ?? null, startedAt: s.startedAt ?? null };
   } catch {
     return { model: 'unknown', sessionId: null, startedAt: null };
