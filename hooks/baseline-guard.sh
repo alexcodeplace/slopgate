@@ -24,7 +24,7 @@ case "$tool_name" in
   Bash)
     cmd=$(node -e "try{const j=JSON.parse(process.argv[1]);process.stdout.write(j.command||'')}catch{}" "$tool_input" 2>/dev/null || echo '')
     # Block: slopgate baseline (create or --update)
-    if echo "$cmd" | grep -qE '(^|[;&|])\s*(node\s+[^ ]+/bin/slopgate|slopgate)\s+baseline(\s|$)'; then
+    if echo "$cmd" | grep -qE '(^|[;&|[:space:]])(npx[[:space:]]+|pnpm[[:space:]]+exec[[:space:]]+|yarn[[:space:]]+)?(node[[:space:]]+[^ ]+/bin/slopgate|slopgate)[[:space:]]+baseline([[:space:]]|$)'; then
       blocked=1
       reason="slopgate baseline blocked — agent cannot update/create baseline; run in your own terminal"
     fi
