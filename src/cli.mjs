@@ -1,7 +1,7 @@
 // src/cli.mjs
 import { existsSync } from 'node:fs';
 import { resolveConfig } from './config.mjs';
-import { runGate, collectViolations, applyGateFilters } from './gate.mjs';
+import { runGate, snapshotViolations } from './gate.mjs';
 import { runSelfTest } from './selftest.mjs';
 import { runInit } from './init.mjs';
 import { loadBaseline, writeBaseline, writeBaselineRaw, fingerprintViolation } from './ratchet.mjs';
@@ -14,13 +14,6 @@ import { aggregate, formatStats, DIMENSIONS } from './stats/query.mjs';
 const args = process.argv.slice(2);
 const has = (f) => args.includes(f);
 const valOf = (f) => { const i = args.indexOf(f); return i === -1 ? null : args[i + 1]; };
-
-/** Full-repo commit-tier snapshot, filtered like the gate filters (severity + suppressions). */
-async function snapshotViolations(config) {
-  const { violations, notices } = await collectViolations('full', config, 'commit');
-  for (const n of notices) process.stderr.write(`⚠ SLOPGATE: ${n}\n`);
-  return applyGateFilters(violations, config, 'staged');
-}
 
 async function requireConfig() {
   const configPath = valOf('--config');

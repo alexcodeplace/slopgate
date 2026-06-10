@@ -50,18 +50,21 @@ export async function collectViolations(mode, config, tier, { fileTarget } = {})
     }
     const started = Date.now();
     const results = await mapLimit(eligible, config.checkerConcurrency ?? 3, async ({ checker, cfg }) => {
+      const t0 = Date.now();
       try {
         const res = await checker.run(config, cfg, { files: mode === 'full' ? null : files, mode });
-        return { id: checker.id, res };
+        const seconds = (Date.now() - t0) / 1000;
+        return { id: checker.id, res, seconds };
       } catch (e) {
-        return { id: checker.id, res: { violations: [], errors: [`${checker.id} crashed: ${e}`] } };
+        const seconds = (Date.now() - t0) / 1000;
+        return { id: checker.id, res: { violations: [], errors: [`${checker.id} crashed: ${e}`] }, seconds };
       }
     });
     const elapsed = (Date.now() - started) / 1000;
     if (elapsed > 30) notices.push(`commit-tier checkers took ${elapsed.toFixed(0)}s (budget ~30s) — check tsc incremental cache / disable slow checkers`);
-    for (const { id, res } of results) {
+    for (const { id, res, seconds } of results) {
       for (const e of res.errors) notices.push(`${id}: ${e}`);
-      outcomes.push({ id, infraFailed: res.errors.some(isInfraError), detail: res.errors.find(isInfraError) });
+      outcomes.push({ id, infraFailed: res.errors.some(isInfraError), detail: res.errors.find(isInfraError), seconds });
       for (const v of res.violations) {
         violations.push({ ...v, engine: `checker:${id}`, lineHash: lineHash(v.fullLine ?? '') });
       }
@@ -122,4 +125,12 @@ export async function runGate(mode, config, { tier, fileTarget } = {}) {
   }
   printGateReport(violations, mode, { baselinedCount });
   return { violations, code: 1 };
+}
+
+/** Full-repo commit-tier snapshot, filtered like the gate filters (severity + suppressions).
+ *  Shared by `baseline` (cli) and `audit` (ratchet-progress section). */
+export async function snapshotViolations(config) {
+  const { violations, notices } = await collectViolations('full', config, 'commit');
+  for (const n of notices) process.stderr.write(`⚠ SLOPGATE: ${n}\n`);
+  return applyGateFilters(violations, config, 'staged');
 }

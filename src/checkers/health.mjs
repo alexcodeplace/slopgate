@@ -15,7 +15,7 @@ export function isInfraError(msg) {
 
 /**
  * @param {string} path  health JSON path
- * @param {{ id:string, infraFailed:boolean, detail?:string }[]} outcomes  one per enabled checker
+ * @param {{ id:string, infraFailed:boolean, detail?:string, seconds?:number }[]} outcomes  one per enabled checker
  * @param {string} now   ISO timestamp
  * @returns {string[]} escalation warnings (consecutive failures ≥ threshold)
  */
@@ -25,7 +25,7 @@ export function updateCheckerHealth(path, outcomes, now) {
     try { state = JSON.parse(readFileSync(path, 'utf8')).checkers ?? {}; } catch { state = {}; }
   }
   const warnings = [];
-  for (const { id, infraFailed, detail } of outcomes) {
+  for (const { id, infraFailed, detail, seconds } of outcomes) {
     const cur = state[id] ?? { consecutiveFailures: 0, lastOk: null, lastFailure: null, lastError: null };
     if (infraFailed) {
       cur.consecutiveFailures += 1;
@@ -35,6 +35,7 @@ export function updateCheckerHealth(path, outcomes, now) {
       cur.consecutiveFailures = 0;
       cur.lastOk = now;
     }
+    if (typeof seconds === 'number') cur.lastDurationSeconds = seconds;
     state[id] = cur;
     if (cur.consecutiveFailures >= FAILURE_THRESHOLD) {
       warnings.push(`CHECKER OFF: ${id} infra-failed ${cur.consecutiveFailures} consecutive commit runs — its checks are NOT gating (fail-open). Last error: ${cur.lastError ?? 'unknown'}`);
