@@ -2,9 +2,9 @@
 export function printGateReport(violations, mode, { baselinedCount = 0 } = {}) {
   const R = '\x1b[31m'; const Y = '\x1b[33m'; const B = '\x1b[1m'; const D = '\x1b[2m'; const Z = '\x1b[0m';
   const title = mode === 'file'
-    ? 'SLOP-GATE — VIOLATIONS IN EDITED FILE               '
+    ? 'SLOPGATE — VIOLATIONS IN EDITED FILE               '
     : 'VIOLATIONS IN STAGED FILES — COMMIT BLOCKED         ';
-  process.stderr.write(`\n${B}${R}╔═ SLOP-GATE ═════════════════════════════════════════╗${Z}\n`);
+  process.stderr.write(`\n${B}${R}╔═ SLOPGATE ═════════════════════════════════════════╗${Z}\n`);
   process.stderr.write(`${B}${R}║ ${title}║${Z}\n`);
   process.stderr.write(`${B}${R}╚═════════════════════════════════════════════════════╝${Z}\n\n`);
 

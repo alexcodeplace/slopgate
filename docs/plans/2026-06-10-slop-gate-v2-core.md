@@ -1,16 +1,16 @@
-# Slop-Gate v2 Core Engine Implementation Plan
+# Slopgate v2 Core Engine Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use /sdd (ship unavailable in this env) or /executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Two-tier gate: fast tier (post-edit, unchanged) + commit tier adding six checker adapters (tsc, knip, jscpd, depcruise, type-coverage, diff-shape), a fingerprint ratchet baseline (only NEW violations fail), and a native git pre-commit installer.
 
-**Architecture:** Checkers are adapter modules (`detect`/`run`) emitting the existing violation shape; gate runs them in commit tier only, then filters via `.slop-gate/baseline.json` fingerprints. Parsers are pure functions verified by recorded-output fixtures in self-test. Plan 2 (rule packs) and Plan 3 (audit command) follow separately — spec §3.5/§3.9.
+**Architecture:** Checkers are adapter modules (`detect`/`run`) emitting the existing violation shape; gate runs them in commit tier only, then filters via `.slopgate/baseline.json` fingerprints. Parsers are pure functions verified by recorded-output fixtures in self-test. Plan 2 (rule packs) and Plan 3 (audit command) follow separately — spec §3.5/§3.9.
 
 **Tech Stack:** Node 20+ ESM (`.mjs`), no runtime deps. External tools resolved from target repo's `node_modules/.bin` only. Tests = plain node scripts with PASS/FAIL lines + exit code (existing `src/init.test.mjs` convention).
 
-**Spec:** `docs/specs/2026-06-10-slop-gate-v2-design.md`
+**Spec:** `docs/specs/2026-06-10-slopgate-v2-design.md`
 
-**Plan deviations from spec (agreed):** config keys for checkers use quoted kebab-case matching checker ids (`'type-coverage'`, `'diff-shape'`) — no camelCase aliasing. `init` prints a "run slop-gate baseline" next-step instead of auto-generating the baseline (avoids snapshotting mid-setup).
+**Plan deviations from spec (agreed):** config keys for checkers use quoted kebab-case matching checker ids (`'type-coverage'`, `'diff-shape'`) — no camelCase aliasing. `init` prints a "run slopgate baseline" next-step instead of auto-generating the baseline (avoids snapshotting mid-setup).
 
 ---
 
@@ -347,16 +347,16 @@ import { execSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync, chmodSync, mkdirSync } from 'node:fs';
 import { join, isAbsolute } from 'node:path';
 
-const ENGINE_ROOT = '/home/user/Projects/slop-gate';
-export const MARKER_BEGIN = '# slop-gate-hook v1 BEGIN';
-export const MARKER_END = '# slop-gate-hook v1 END';
+const ENGINE_ROOT = '/home/user/Projects/slopgate';
+export const MARKER_BEGIN = '# slopgate-hook v1 BEGIN';
+export const MARKER_END = '# slopgate-hook v1 END';
 
 function hookBlock() {
   return [
     MARKER_BEGIN,
     'SLOPGATE_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)',
-    'if [ -n "$SLOPGATE_ROOT" ] && [ -f "$SLOPGATE_ROOT/.slop-gate/config.mjs" ]; then',
-    `  node ${ENGINE_ROOT}/bin/slop-gate --staged --config "$SLOPGATE_ROOT/.slop-gate/config.mjs" || exit 1`,
+    'if [ -n "$SLOPGATE_ROOT" ] && [ -f "$SLOPGATE_ROOT/.slopgate/config.mjs" ]; then',
+    `  node ${ENGINE_ROOT}/bin/slopgate --staged --config "$SLOPGATE_ROOT/.slopgate/config.mjs" || exit 1`,
     'fi',
     MARKER_END,
   ].join('\n');
@@ -440,9 +440,9 @@ function assert(label, ok) { console.log(`${ok ? 'PASS' : 'FAIL'}: ${label}`); i
 
 const repo = mkdtempSync(join(tmpdir(), 'slopgate-cfg-'));
 execSync('git init -q', { cwd: repo });
-mkdirSync(join(repo, '.slop-gate'), { recursive: true });
+mkdirSync(join(repo, '.slopgate'), { recursive: true });
 mkdirSync(join(repo, 'src'), { recursive: true });
-writeFileSync(join(repo, '.slop-gate/config.mjs'), `export default {
+writeFileSync(join(repo, '.slopgate/config.mjs'), `export default {
   roots: ['src'],
   astDisable: ['console-debug-left'],
   checkers: {
@@ -452,17 +452,17 @@ writeFileSync(join(repo, '.slop-gate/config.mjs'), `export default {
   },
 };\n`);
 
-const cfg = await resolveConfig(join(repo, '.slop-gate/config.mjs'));
+const cfg = await resolveConfig(join(repo, '.slopgate/config.mjs'));
 assert('true normalizes to {}', JSON.stringify(cfg.checkers.tsc) === '{}');
 assert('false drops the checker', !('knip' in cfg.checkers));
 assert('object passes through', cfg.checkers.jscpd.minTokens === 70);
 assert('absent checker absent', !('depcruise' in cfg.checkers));
 assert('astDisable is a Set', cfg.astDisable instanceof Set && cfg.astDisable.has('console-debug-left'));
-assert('baselinePath under configDir', cfg.baselinePath === join(repo, '.slop-gate/baseline.json'));
+assert('baselinePath under configDir', cfg.baselinePath === join(repo, '.slopgate/baseline.json'));
 
 // defaults when keys absent (separate config file — ESM import cache keys by path)
-writeFileSync(join(repo, '.slop-gate/config2.mjs'), 'export default { roots: ["src"] };\n');
-const cfg2 = await resolveConfig(join(repo, '.slop-gate/config2.mjs'));
+writeFileSync(join(repo, '.slopgate/config2.mjs'), 'export default { roots: ["src"] };\n');
+const cfg2 = await resolveConfig(join(repo, '.slopgate/config2.mjs'));
 assert('no checkers key → empty object', Object.keys(cfg2.checkers).length === 0);
 assert('no astDisable → empty Set', cfg2.astDisable instanceof Set && cfg2.astDisable.size === 0);
 
@@ -1078,14 +1078,14 @@ assert('category architecture', vios[0].category === 'architecture' && vios[0].f
 
 // detect: needs bin + a rules file
 const root = mkdtempSync(join(tmpdir(), 'slopgate-dc-'));
-const config = { repoRoot: root, configDir: join(root, '.slop-gate') };
+const config = { repoRoot: root, configDir: join(root, '.slopgate') };
 mkdirSync(config.configDir, { recursive: true });
 assert('no bin → unavailable', depcruise.detect(config, {}).available === false);
 mkdirSync(join(root, 'node_modules/.bin'), { recursive: true });
 writeFileSync(join(root, 'node_modules/.bin/depcruise'), '');
 assert('bin but no rules → unavailable', depcruise.detect(config, {}).available === false);
 writeFileSync(join(config.configDir, 'depcruise.cjs'), 'module.exports={};');
-assert('slop-gate rules file → available', depcruise.detect(config, {}).available === true);
+assert('slopgate rules file → available', depcruise.detect(config, {}).available === true);
 assert('id', depcruise.id === 'depcruise');
 
 rmSync(root, { recursive: true, force: true });
@@ -1102,7 +1102,7 @@ Expected: FAIL — `Cannot find module './depcruise.mjs'`
 ```js
 // src/checkers/depcruise.mjs
 /** dependency-cruiser adapter — the architecture gate: layer boundaries, cycles,
- *  orphans, encoded as rules in .slop-gate/depcruise.cjs (project-pinned). */
+ *  orphans, encoded as rules in .slopgate/depcruise.cjs (project-pinned). */
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { localBin, runTool } from './shared.mjs';
@@ -1451,10 +1451,10 @@ assert('every checker has detect+run', CHECKERS.every((c) => typeof c.detect ===
 
 const repo = mkdtempSync(join(tmpdir(), 'slopgate-gate-'));
 execSync('git init -q', { cwd: repo });
-mkdirSync(join(repo, '.slop-gate'), { recursive: true });
+mkdirSync(join(repo, '.slopgate'), { recursive: true });
 mkdirSync(join(repo, 'src'), { recursive: true });
 writeFileSync(join(repo, 'src/a.ts'), '// placeholder for now\nconst ok = 1;\n');
-writeFileSync(join(repo, '.slop-gate/config.mjs'), `export default {
+writeFileSync(join(repo, '.slopgate/config.mjs'), `export default {
   roots: ['src'],
   baseline: ['no-stubs'],
   checkers: { 'fake': true },
@@ -1468,7 +1468,7 @@ const fake = {
 };
 CHECKERS.push(fake);
 
-const config = await resolveConfig(join(repo, '.slop-gate/config.mjs'));
+const config = await resolveConfig(join(repo, '.slopgate/config.mjs'));
 
 // fast tier: regex fires, checker does NOT
 const fast = collectViolations('staged', config, 'fast');
@@ -1586,11 +1586,11 @@ export function collectViolations(mode, config, tier) {
 export function runGate(mode, config, { tier } = {}) {
   const effTier = tier ?? (mode === 'staged' ? 'commit' : 'fast');
   const { violations: collected, notices } = collectViolations(mode, config, effTier);
-  for (const n of notices) process.stderr.write(`⚠ SLOP-GATE: ${n}\n`);
+  for (const n of notices) process.stderr.write(`⚠ SLOPGATE: ${n}\n`);
 
   const allow = new Set(config.gate[mode] ?? ['critical', 'high']);
   const sup = loadSuppressions(config.suppressionsPath);
-  if (sup.error) process.stderr.write(`⚠ SLOP-GATE: suppressions.json malformed (${sup.error}) — treating as EMPTY\n`);
+  if (sup.error) process.stderr.write(`⚠ SLOPGATE: suppressions.json malformed (${sup.error}) — treating as EMPTY\n`);
 
   let violations = collected
     .filter((v) => allow.has(v.severity))
@@ -1599,15 +1599,15 @@ export function runGate(mode, config, { tier } = {}) {
   let baselinedCount = 0;
   if (effTier === 'commit') {
     const bl = loadBaseline(config.baselinePath);
-    if (bl.error) process.stderr.write(`⚠ SLOP-GATE: baseline.json malformed (${bl.error}) — treating as EMPTY (everything is new)\n`);
+    if (bl.error) process.stderr.write(`⚠ SLOPGATE: baseline.json malformed (${bl.error}) — treating as EMPTY (everything is new)\n`);
     if (bl.missing && violations.length) {
-      process.stderr.write(`⚠ SLOP-GATE: no baseline — run: slop-gate baseline --config <config> to absorb pre-existing violations\n`);
+      process.stderr.write(`⚠ SLOPGATE: no baseline — run: slopgate baseline --config <config> to absorb pre-existing violations\n`);
     }
     ({ fresh: violations, baselinedCount } = filterNew(violations, bl.entries));
   }
 
   if (violations.length === 0) {
-    if (baselinedCount > 0) process.stderr.write(`SLOP-GATE: clean (${baselinedCount} pre-existing baselined violation(s) ignored)\n`);
+    if (baselinedCount > 0) process.stderr.write(`SLOPGATE: clean (${baselinedCount} pre-existing baselined violation(s) ignored)\n`);
     return { violations, code: 0 };
   }
   printGateReport(violations, mode, { baselinedCount });
@@ -1624,9 +1624,9 @@ Replace the function signature and add source grouping + footer (keep all existi
 export function printGateReport(violations, mode, { baselinedCount = 0 } = {}) {
   const R = '\x1b[31m'; const Y = '\x1b[33m'; const B = '\x1b[1m'; const D = '\x1b[2m'; const Z = '\x1b[0m';
   const title = mode === 'file'
-    ? 'SLOP-GATE — VIOLATIONS IN EDITED FILE               '
+    ? 'SLOPGATE — VIOLATIONS IN EDITED FILE               '
     : 'VIOLATIONS IN STAGED FILES — COMMIT BLOCKED         ';
-  process.stderr.write(`\n${B}${R}╔═ SLOP-GATE ═════════════════════════════════════════╗${Z}\n`);
+  process.stderr.write(`\n${B}${R}╔═ SLOPGATE ═════════════════════════════════════════╗${Z}\n`);
   process.stderr.write(`${B}${R}║ ${title}║${Z}\n`);
   process.stderr.write(`${B}${R}╚═════════════════════════════════════════════════════╝${Z}\n\n`);
 
@@ -1753,8 +1753,8 @@ git commit -m "feat(selftest): checker parser-fixture stage — catches tool out
 function formatConfig(detected) {
   const checkerLines = Object.entries(detected.checkers)
     .map(([k, v]) => `    '${k}': ${JSON.stringify(v)},`).join('\n');
-  return `// generated by slop-gate init — review roots + add project rule packs (see convention-sources.json).
-// slop-gate project config. Engine is global+auto-latest; THIS file is pinned per project.
+  return `// generated by slopgate init — review roots + add project rule packs (see convention-sources.json).
+// slopgate project config. Engine is global+auto-latest; THIS file is pinned per project.
 export default {
   roots: ${JSON.stringify(detected.roots)},
   exts: ${JSON.stringify(detected.exts)},
@@ -1788,7 +1788,7 @@ Add near the top of `src/init.mjs`:
 ```js
 import { installPreCommitHook } from './install-hooks.mjs';
 
-const DEPCRUISE_STARTER = `// generated by slop-gate init — universal rules; add project layer rules here.
+const DEPCRUISE_STARTER = `// generated by slopgate init — universal rules; add project layer rules here.
 module.exports = {
   forbidden: [
     { name: 'no-circular', severity: 'error', from: {}, to: { circular: true } },
@@ -1842,7 +1842,7 @@ In the summary output, after the `settings:` line add:
 And append a 5th NEXT STEP:
 
 ```js
-    process.stdout.write('  5. Run: slop-gate baseline --config .slop-gate/config.mjs (absorb pre-existing violations)\n');
+    process.stdout.write('  5. Run: slopgate baseline --config .slopgate/config.mjs (absorb pre-existing violations)\n');
 ```
 
 - [ ] **Step 3: Extend init test**
@@ -1850,7 +1850,7 @@ And append a 5th NEXT STEP:
 In `src/init.test.mjs`, after the existing assertions on the generated config (locate the block that reads the generated `config.mjs`), add — and make the fixture a git repo so hook install is exercised: in `setupFixture()` after the mkdirs add `execSync('git init -q', { cwd: FIXTURE });` (import `execSync` from `node:child_process` at top). Then add assertions:
 
 ```js
-const cfgText = readFileSync(join(FIXTURE, '.slop-gate/config.mjs'), 'utf8');
+const cfgText = readFileSync(join(FIXTURE, '.slopgate/config.mjs'), 'utf8');
 assert('config has checkers block', cfgText.includes('checkers: {'));
 assert("config has diff-shape default", cfgText.includes("'diff-shape': {\"maxDirs\":5}"));
 assert('config has astDisable', cfgText.includes('astDisable: []'));
@@ -1900,16 +1900,16 @@ const valOf = (f) => { const i = args.indexOf(f); return i === -1 ? null : args[
 /** Full-repo commit-tier snapshot, filtered like the gate filters (severity + suppressions). */
 function snapshotViolations(config) {
   const { violations, notices } = collectViolations('full', config, 'commit');
-  for (const n of notices) process.stderr.write(`⚠ SLOP-GATE: ${n}\n`);
+  for (const n of notices) process.stderr.write(`⚠ SLOPGATE: ${n}\n`);
   const allow = new Set(config.gate.staged ?? ['critical', 'high']);
   const sup = loadSuppressions(config.suppressionsPath);
-  if (sup.error) process.stderr.write(`⚠ SLOP-GATE: suppressions.json malformed (${sup.error}) — treating as EMPTY\n`);
+  if (sup.error) process.stderr.write(`⚠ SLOPGATE: suppressions.json malformed (${sup.error}) — treating as EMPTY\n`);
   return violations.filter((v) => allow.has(v.severity)).filter((v) => !isSuppressed(sup.entries, v));
 }
 
 async function requireConfig() {
   const configPath = valOf('--config');
-  if (!configPath) { process.stderr.write('slop-gate: --config <path> required\n'); process.exit(2); }
+  if (!configPath) { process.stderr.write('slopgate: --config <path> required\n'); process.exit(2); }
   return resolveConfig(configPath);
 }
 
@@ -1922,7 +1922,7 @@ async function main() {
   if (has('install-hooks')) {
     const config = await requireConfig();
     const { action, path } = installPreCommitHook(config.repoRoot);
-    process.stdout.write(`slop-gate: pre-commit hook ${action} (${path})\n`);
+    process.stdout.write(`slopgate: pre-commit hook ${action} (${path})\n`);
     process.exit(0);
   }
 
@@ -1933,22 +1933,22 @@ async function main() {
     if (has('--prune') && !has('--update')) {
       // drop entries whose fingerprint no longer occurs; never adds new ones
       const bl = loadBaseline(config.baselinePath);
-      if (bl.error || bl.missing) { process.stderr.write('slop-gate: no valid baseline to prune\n'); process.exit(2); }
+      if (bl.error || bl.missing) { process.stderr.write('slopgate: no valid baseline to prune\n'); process.exit(2); }
       const current = new Set(snapshotViolations(config).map(fingerprintViolation));
       const kept = Object.fromEntries(Object.entries(bl.entries).filter(([fp]) => current.has(fp)));
       const dropped = Object.keys(bl.entries).length - Object.keys(kept).length;
       writeBaselineRaw(config.baselinePath, kept, new Date().toISOString());
-      process.stdout.write(`slop-gate: baseline pruned — ${dropped} resolved entr${dropped === 1 ? 'y' : 'ies'} removed, ${Object.keys(kept).length} kept\n`);
+      process.stdout.write(`slopgate: baseline pruned — ${dropped} resolved entr${dropped === 1 ? 'y' : 'ies'} removed, ${Object.keys(kept).length} kept\n`);
       process.exit(0);
     }
 
     if (exists && !has('--update')) {
-      process.stderr.write('slop-gate: baseline.json exists — use `baseline --update` to re-snapshot (this re-absorbs ALL current violations) or `baseline --prune` to drop resolved entries\n');
+      process.stderr.write('slopgate: baseline.json exists — use `baseline --update` to re-snapshot (this re-absorbs ALL current violations) or `baseline --prune` to drop resolved entries\n');
       process.exit(2);
     }
     const snap = snapshotViolations(config);
     const n = writeBaseline(config.baselinePath, snap, new Date().toISOString());
-    process.stdout.write(`slop-gate: baseline written — ${n} entr${n === 1 ? 'y' : 'ies'} → ${config.baselinePath}\n`);
+    process.stdout.write(`slopgate: baseline written — ${n} entr${n === 1 ? 'y' : 'ies'} → ${config.baselinePath}\n`);
     process.exit(0);
   }
 
@@ -1957,24 +1957,24 @@ async function main() {
 
   const tierFlag = valOf('--tier'); // 'fast' | 'commit' | null (default by mode)
   if (tierFlag && tierFlag !== 'fast' && tierFlag !== 'commit') {
-    process.stderr.write('slop-gate: --tier must be fast|commit\n'); process.exit(2);
+    process.stderr.write('slopgate: --tier must be fast|commit\n'); process.exit(2);
   }
   if (has('--staged')) process.exit(runGate('staged', config, { tier: tierFlag ?? undefined }).code);
   const fileTarget = valOf('--file');
   if (fileTarget) { config._fileTarget = fileTarget; process.exit(runGate('file', config, { tier: tierFlag ?? undefined }).code); }
 
-  process.stderr.write('slop-gate: no mode (use --staged | --file <p> | --self-test | init [dir] | baseline [--update|--prune] | install-hooks)\n');
+  process.stderr.write('slopgate: no mode (use --staged | --file <p> | --self-test | init [dir] | baseline [--update|--prune] | install-hooks)\n');
   process.exit(2);
 }
-main().catch((e) => { process.stderr.write(`slop-gate: ${e?.stack || e}\n`); process.exit(1); });
+main().catch((e) => { process.stderr.write(`slopgate: ${e?.stack || e}\n`); process.exit(1); });
 ```
 
 - [ ] **Step 2: Verify manually against this repo's own baseline config**
 
 ```bash
 npm run self-test                                      # still exits 0
-node bin/slop-gate --config rules/baseline/selftest.config.mjs --staged   # exits 0 (nothing staged)
-node bin/slop-gate --config rules/baseline/selftest.config.mjs --tier bogus --staged ; echo "exit=$?"   # prints usage error, exit=2
+node bin/slopgate --config rules/baseline/selftest.config.mjs --staged   # exits 0 (nothing staged)
+node bin/slopgate --config rules/baseline/selftest.config.mjs --tier bogus --staged ; echo "exit=$?"   # prints usage error, exit=2
 ```
 
 - [ ] **Step 3: Commit**
@@ -1999,27 +1999,27 @@ git commit -m "feat(cli): --tier flag, baseline/--update/--prune, install-hooks"
 
 ```js
 // src/gate.e2e.test.mjs
-// Full loop through bin/slop-gate as a child process: init → violation blocks →
+// Full loop through bin/slopgate as a child process: init → violation blocks →
 // baseline absorbs → new violation blocks again → prune. No external tools needed
 // (regex pack only) — checker plumbing is covered by gate.tier.test.mjs.
 import { mkdirSync, writeFileSync, rmSync, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { execSync, spawnSync } from 'node:child_process';
 
-const BIN = '/home/user/Projects/slop-gate/bin/slop-gate';
-const REPO = '/home/user/Projects/slop-gate/.tmp-e2e';
+const BIN = '/home/user/Projects/slopgate/bin/slopgate';
+const REPO = '/home/user/Projects/slopgate/.tmp-e2e';
 
 let failed = 0;
 function assert(label, ok) { console.log(`${ok ? 'PASS' : 'FAIL'}: ${label}`); if (!ok) failed++; }
 function gate(...extra) {
-  return spawnSync('node', [BIN, '--config', join(REPO, '.slop-gate/config.mjs'), ...extra], { encoding: 'utf8', cwd: REPO });
+  return spawnSync('node', [BIN, '--config', join(REPO, '.slopgate/config.mjs'), ...extra], { encoding: 'utf8', cwd: REPO });
 }
 
 rmSync(REPO, { recursive: true, force: true });
 mkdirSync(join(REPO, 'src'), { recursive: true });
 execSync('git init -q && git config user.email t@t && git config user.name t', { cwd: REPO });
-mkdirSync(join(REPO, '.slop-gate'), { recursive: true });
-writeFileSync(join(REPO, '.slop-gate/config.mjs'), `export default {
+mkdirSync(join(REPO, '.slopgate'), { recursive: true });
+writeFileSync(join(REPO, '.slopgate/config.mjs'), `export default {
   roots: ['src'],
   baseline: ['no-stubs'],
   checkers: { 'diff-shape': { maxDirs: 5 } },
@@ -2030,7 +2030,7 @@ writeFileSync(join(REPO, 'src/a.ts'), 'export const a = 1; // placeholder for no
 execSync('git add src/a.ts', { cwd: REPO });
 const r1 = gate('--staged');
 assert('violation → exit 1', r1.status === 1);
-assert('no-baseline hint shown', r1.stderr.includes('run: slop-gate baseline'));
+assert('no-baseline hint shown', r1.stderr.includes('run: slopgate baseline'));
 
 // 2. fast tier on same staged set skips ratchet machinery but still reports
 const r2 = gate('--staged', '--tier', 'fast');
@@ -2038,7 +2038,7 @@ assert('fast tier also blocks raw violation', r2.status === 1);
 
 // 3. baseline absorbs it
 const r3 = gate('baseline');
-assert('baseline cmd exit 0', r3.status === 0 && existsSync(join(REPO, '.slop-gate/baseline.json')));
+assert('baseline cmd exit 0', r3.status === 0 && existsSync(join(REPO, '.slopgate/baseline.json')));
 const r4 = gate('--staged');
 assert('baselined → exit 0', r4.status === 0);
 assert('baselined count reported', r4.stderr.includes('baselined'));
@@ -2058,7 +2058,7 @@ assert('report names only new file', r6.stderr.includes('src/b.ts') && !r6.stder
 writeFileSync(join(REPO, 'src/a.ts'), 'export const a = 1;\n');
 const r7 = gate('baseline', '--prune');
 assert('prune reports removal', r7.status === 0 && /1 resolved entry removed/.test(r7.stdout));
-const bl = JSON.parse(readFileSync(join(REPO, '.slop-gate/baseline.json'), 'utf8'));
+const bl = JSON.parse(readFileSync(join(REPO, '.slopgate/baseline.json'), 'utf8'));
 assert('baseline emptied', Object.keys(bl.entries).length === 0);
 
 rmSync(REPO, { recursive: true, force: true });

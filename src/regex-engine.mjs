@@ -49,6 +49,7 @@ export function scanRegex(config, files, { fileMode = false } = {}) {
     try { lines = readFileSync(join(config.repoRoot, file), 'utf8').split('\n'); }
     catch { continue; }
     for (const { p, re } of compiled) {
+      if (p.includeGlobs?.length && !pathMatchesGlobs(file, p.includeGlobs)) continue;
       if (pathMatchesGlobs(file, p.excludeGlobs)) continue;
       let perFile = null;
       for (let i = 0; i < lines.length; i++) {

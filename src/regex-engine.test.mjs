@@ -27,4 +27,22 @@ try {
   ok(v[0].line === 1 && v[1].line === 2 && v[2].line === 3 && v[3].line === 5, 'line numbers correct, ok line skipped');
 } finally { rmSync(dir, { recursive: true, force: true }); }
 
+// includeGlobs: rule fires only inside declared paths
+const dir2 = mkdtempSync(join(tmpdir(), 'slopgate-re2-'));
+try {
+  mkdirSync(join(dir2, 'styles'), { recursive: true });
+  mkdirSync(join(dir2, 'components'), { recursive: true });
+  writeFileSync(join(dir2, 'styles/tokens.css'), 'color: #ff0044;\n');
+  writeFileSync(join(dir2, 'components/Button.css'), 'color: #ff0044;\n');
+  const config2 = {
+    repoRoot: dir2,
+    patterns: [{
+      id: 'tokens-only', severity: 'high', category: 'x', resolution: 'fix',
+      pattern: '#[0-9a-fA-F]{3,8}', includeGlobs: ['**/tokens.css'],
+    }],
+  };
+  const scoped = scanRegex(config2, ['styles/tokens.css', 'components/Button.css'], { fileMode: false });
+  ok(scoped.length === 1 && scoped[0].file === 'styles/tokens.css', 'includeGlobs scopes to matching path only');
+} finally { rmSync(dir2, { recursive: true, force: true }); }
+
 process.exit(failed ? 1 : 0);

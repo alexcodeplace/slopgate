@@ -6,7 +6,7 @@ import { execSync } from 'node:child_process';
 import { runInit } from './init.mjs';
 import { ENGINE_ROOT } from './install-hooks.mjs';
 
-const FIXTURE = join(tmpdir(), 'slop-gate-inittest');
+const FIXTURE = join(tmpdir(), 'slopgate-inittest');
 const COMMIT_HOOK = `${ENGINE_ROOT}/hooks/commit-hook.sh`;
 const EDIT_HOOK = `${ENGINE_ROOT}/hooks/edit-hook.sh`;
 
@@ -46,7 +46,7 @@ function setupFixture() {
 }
 
 async function loadConfig(dir) {
-  const mod = await import(pathToFileURL(join(dir, '.slop-gate/config.mjs')).href);
+  const mod = await import(pathToFileURL(join(dir, '.slopgate/config.mjs')).href);
   return mod.default;
 }
 
@@ -79,7 +79,7 @@ async function main() {
   if (!assert('exts includes ".tsx"', config.exts.includes('.tsx'))) allPass = false;
   if (!assert('exts includes ".ts"', config.exts.includes('.ts'))) allPass = false;
 
-  const sources = JSON.parse(readFileSync(join(FIXTURE, '.slop-gate/convention-sources.json'), 'utf8'));
+  const sources = JSON.parse(readFileSync(join(FIXTURE, '.slopgate/convention-sources.json'), 'utf8'));
   if (!assert('convention-sources lists CLAUDE.md', sources.claudeMd.includes('CLAUDE.md'))) allPass = false;
   if (!assert('convention-sources lists skills/foo.md', sources.skills.includes('.claude/skills/foo.md'))) allPass = false;
   if (!assert('convention-sources lists .cursorrules', sources.editorRules.includes('.cursorrules'))) allPass = false;
@@ -93,7 +93,7 @@ async function main() {
     hasHookCommand(settings, 'PreToolUse', COMMIT_HOOK))) allPass = false;
   if (!assert('.bak exists', existsSync(join(FIXTURE, '.claude/settings.json.bak')))) allPass = false;
 
-  const cfgText = readFileSync(join(FIXTURE, '.slop-gate/config.mjs'), 'utf8');
+  const cfgText = readFileSync(join(FIXTURE, '.slopgate/config.mjs'), 'utf8');
   if (!assert('config has checkers block', cfgText.includes('checkers: {'))) allPass = false;
   if (!assert("config has diff-shape default", cfgText.includes("'diff-shape': {\"maxDirs\":5}"))) allPass = false;
   if (!assert('config has astDisable', cfgText.includes('astDisable: []'))) allPass = false;
@@ -101,7 +101,7 @@ async function main() {
 
   const configBefore = cfgText;
   runInit(FIXTURE, { quiet: true });
-  const configAfter = readFileSync(join(FIXTURE, '.slop-gate/config.mjs'), 'utf8');
+  const configAfter = readFileSync(join(FIXTURE, '.slopgate/config.mjs'), 'utf8');
   if (!assert('idempotent: config unchanged', configBefore === configAfter)) allPass = false;
 
   const settings2 = JSON.parse(readFileSync(join(FIXTURE, '.claude/settings.json'), 'utf8'));

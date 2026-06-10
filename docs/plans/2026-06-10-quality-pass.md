@@ -1,8 +1,8 @@
-# slop-gate Quality Pass Implementation Plan
+# slopgate Quality Pass Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use /ship (recommended) or /executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Eliminate one latent regex-statefulness bug, two redundant-work paths, and three DRY/clarity smells in the slop-gate engine — behavior-preserving.
+**Goal:** Eliminate one latent regex-statefulness bug, two redundant-work paths, and three DRY/clarity smells in the slopgate engine — behavior-preserving.
 
 **Architecture:** Pure refactor of an existing, fully-tested Node ESM CLI. Single-pass file scanning replaces a per-pattern re-read + two-pass expand; shared helpers replace duplicated filter logic and a duplicated magic path constant. No new config keys, no API additions beyond named helpers.
 
@@ -88,7 +88,7 @@ git commit -m "refactor(config): collapse dedupe — Map already gives first-pos
 - Modify: `src/install-hooks.mjs:7-11`
 - Modify: `src/init.mjs:1-19`
 
-**Context:** `'/home/user/Projects/slop-gate'` is hardcoded in both files. The engine root is two directories up from `src/` (i.e. up from the module's own dir, then up once more). Compute it once in `install-hooks.mjs` from `import.meta.url`, export it, import it in `init.mjs`. Single-machine assumption stays, but the literal lives in exactly one place and survives a repo move.
+**Context:** `'/home/user/Projects/slopgate'` is hardcoded in both files. The engine root is two directories up from `src/` (i.e. up from the module's own dir, then up once more). Compute it once in `install-hooks.mjs` from `import.meta.url`, export it, import it in `init.mjs`. Single-machine assumption stays, but the literal lives in exactly one place and survives a repo move.
 
 - [ ] **Step 1: Compute + export `ENGINE_ROOT` in install-hooks.mjs**
 
@@ -97,7 +97,7 @@ In `src/install-hooks.mjs`, add `dirname` + `fileURLToPath` to imports and repla
 ```js
 import { join, isAbsolute } from 'node:path';
 
-const ENGINE_ROOT = '/home/user/Projects/slop-gate';
+const ENGINE_ROOT = '/home/user/Projects/slopgate';
 ```
 
 becomes:
@@ -127,7 +127,7 @@ import { installPreCommitHook, ENGINE_ROOT } from './install-hooks.mjs';
 and delete line 17 entirely:
 
 ```js
-const ENGINE_ROOT = '/home/user/Projects/slop-gate';
+const ENGINE_ROOT = '/home/user/Projects/slopgate';
 ```
 
 (Leave `COMMIT_HOOK` / `EDIT_HOOK` lines 18–19 unchanged — they already interpolate `ENGINE_ROOT`, now the imported one.)
@@ -140,7 +140,7 @@ Expected: both print `PASS:` lines and exit 0.
 - [ ] **Step 4: Verify the derived path is correct**
 
 Run: `node -e "import('./src/install-hooks.mjs').then(m=>console.log(m.ENGINE_ROOT))"`
-Expected: prints `/home/user/Projects/slop-gate` (the real repo root).
+Expected: prints `/home/user/Projects/slopgate` (the real repo root).
 
 - [ ] **Step 5: Commit**
 
@@ -316,7 +316,7 @@ In `src/gate.mjs`, add this exported function above `runGate` (after `collectVio
 export function applyGateFilters(violations, config, mode) {
   const allow = new Set(config.gate[mode] ?? ['critical', 'high']);
   const sup = loadSuppressions(config.suppressionsPath);
-  if (sup.error) process.stderr.write(`⚠ SLOP-GATE: suppressions.json malformed (${sup.error}) — treating as EMPTY\n`);
+  if (sup.error) process.stderr.write(`⚠ SLOPGATE: suppressions.json malformed (${sup.error}) — treating as EMPTY\n`);
   return violations
     .filter((v) => allow.has(v.severity))
     .filter((v) => !isSuppressed(sup.entries, v));
@@ -330,7 +330,7 @@ In `src/gate.mjs:runGate`, replace the current filter block (lines 58–64):
 ```js
   const allow = new Set(config.gate[mode] ?? ['critical', 'high']);
   const sup = loadSuppressions(config.suppressionsPath);
-  if (sup.error) process.stderr.write(`⚠ SLOP-GATE: suppressions.json malformed (${sup.error}) — treating as EMPTY\n`);
+  if (sup.error) process.stderr.write(`⚠ SLOPGATE: suppressions.json malformed (${sup.error}) — treating as EMPTY\n`);
 
   let violations = collected
     .filter((v) => allow.has(v.severity))
@@ -365,10 +365,10 @@ and the function:
 /** Full-repo commit-tier snapshot, filtered like the gate filters (severity + suppressions). */
 function snapshotViolations(config) {
   const { violations, notices } = collectViolations('full', config, 'commit');
-  for (const n of notices) process.stderr.write(`⚠ SLOP-GATE: ${n}\n`);
+  for (const n of notices) process.stderr.write(`⚠ SLOPGATE: ${n}\n`);
   const allow = new Set(config.gate.staged ?? ['critical', 'high']);
   const sup = loadSuppressions(config.suppressionsPath);
-  if (sup.error) process.stderr.write(`⚠ SLOP-GATE: suppressions.json malformed (${sup.error}) — treating as EMPTY\n`);
+  if (sup.error) process.stderr.write(`⚠ SLOPGATE: suppressions.json malformed (${sup.error}) — treating as EMPTY\n`);
   return violations.filter((v) => allow.has(v.severity)).filter((v) => !isSuppressed(sup.entries, v));
 }
 ```
@@ -379,7 +379,7 @@ becomes:
 /** Full-repo commit-tier snapshot, filtered like the gate filters (severity + suppressions). */
 function snapshotViolations(config) {
   const { violations, notices } = collectViolations('full', config, 'commit');
-  for (const n of notices) process.stderr.write(`⚠ SLOP-GATE: ${n}\n`);
+  for (const n of notices) process.stderr.write(`⚠ SLOPGATE: ${n}\n`);
   return applyGateFilters(violations, config, 'staged');
 }
 ```
@@ -620,7 +620,7 @@ Expected: every line `ok src/...`, then self-test `OK` lines, then `selftest-ok`
 
 - [ ] **Step 8: Behavior-parity smoke check on this repo**
 
-Run: `node bin/slop-gate --self-test --config rules/baseline/selftest.config.mjs; echo "exit=$?"`
+Run: `node bin/slopgate --self-test --config rules/baseline/selftest.config.mjs; echo "exit=$?"`
 Expected: `exit=0` (self-test config has canaries that fire; identical OK lines to baseline run before the task).
 
 - [ ] **Step 9: Commit**

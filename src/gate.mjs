@@ -55,7 +55,7 @@ export function collectViolations(mode, config, tier) {
 export function applyGateFilters(violations, config, mode) {
   const allow = new Set(config.gate[mode] ?? ['critical', 'high']);
   const sup = loadSuppressions(config.suppressionsPath);
-  if (sup.error) process.stderr.write(`⚠ SLOP-GATE: suppressions.json malformed (${sup.error}) — treating as EMPTY\n`);
+  if (sup.error) process.stderr.write(`⚠ SLOPGATE: suppressions.json malformed (${sup.error}) — treating as EMPTY\n`);
   return violations
     .filter((v) => allow.has(v.severity))
     .filter((v) => !isSuppressed(sup.entries, v));
@@ -69,22 +69,22 @@ export function applyGateFilters(violations, config, mode) {
 export function runGate(mode, config, { tier } = {}) {
   const effTier = tier ?? (mode === 'staged' ? 'commit' : 'fast');
   const { violations: collected, notices } = collectViolations(mode, config, effTier);
-  for (const n of notices) process.stderr.write(`⚠ SLOP-GATE: ${n}\n`);
+  for (const n of notices) process.stderr.write(`⚠ SLOPGATE: ${n}\n`);
 
   let violations = applyGateFilters(collected, config, mode);
 
   let baselinedCount = 0;
   if (effTier === 'commit') {
     const bl = loadBaseline(config.baselinePath);
-    if (bl.error) process.stderr.write(`⚠ SLOP-GATE: baseline.json malformed (${bl.error}) — treating as EMPTY (everything is new)\n`);
+    if (bl.error) process.stderr.write(`⚠ SLOPGATE: baseline.json malformed (${bl.error}) — treating as EMPTY (everything is new)\n`);
     if (bl.missing && violations.length) {
-      process.stderr.write(`⚠ SLOP-GATE: no baseline — run: slop-gate baseline --config <config> to absorb pre-existing violations\n`);
+      process.stderr.write(`⚠ SLOPGATE: no baseline — run: slopgate baseline --config <config> to absorb pre-existing violations\n`);
     }
     ({ fresh: violations, baselinedCount } = filterNew(violations, bl.entries));
   }
 
   if (violations.length === 0) {
-    if (baselinedCount > 0) process.stderr.write(`SLOP-GATE: clean (${baselinedCount} pre-existing baselined violation(s) ignored)\n`);
+    if (baselinedCount > 0) process.stderr.write(`SLOPGATE: clean (${baselinedCount} pre-existing baselined violation(s) ignored)\n`);
     return { violations, code: 0 };
   }
   printGateReport(violations, mode, { baselinedCount });

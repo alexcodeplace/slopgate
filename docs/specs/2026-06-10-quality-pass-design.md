@@ -1,4 +1,4 @@
-# slop-gate engine — code-quality pass
+# slopgate engine — code-quality pass
 
 **Date:** 2026-06-10
 **Scope:** "Everything incl. DRY/structure" — correctness bug + redundancy/perf + DRY/cleanup.
@@ -38,7 +38,7 @@ Two layers of waste:
 **Fix:** extract `applyGateFilters(violations, config, mode)` in `gate.mjs` (returns severity-allowed, non-suppressed violations; emits the malformed-suppressions warning once). `runGate` and `cli.snapshotViolations` both call it. Baseline/ratchet filtering stays in `runGate` only (snapshot intentionally pre-baseline).
 
 ### D2 — hardcoded `ENGINE_ROOT` duplicated (DRY/magic constant)
-`'/home/user/Projects/slop-gate'` is hardcoded in **both** `install-hooks.mjs` and `init.mjs`. It's a single-machine personal tool (acknowledged), but the path is derivable.
+`'/home/user/Projects/slopgate'` is hardcoded in **both** `install-hooks.mjs` and `init.mjs`. It's a single-machine personal tool (acknowledged), but the path is derivable.
 
 **Fix:** compute `ENGINE_ROOT` once from `import.meta.url` in `install-hooks.mjs` (engine root = two dirs up from `src/`), export it, and have `init.mjs` import it. Eliminates the literal entirely and survives a repo move. `COMMIT_HOOK`/`EDIT_HOOK` in `init.mjs` derive from the imported root.
 
@@ -66,7 +66,7 @@ Two layers of waste:
 - All 13 `*.test.mjs` must pass unchanged (no test edits expected; if a test asserts the old `runPatternScan(config, opts)` arity, update the call, not the assertion).
 - `npm run self-test` exit 0, same OK/FAIL lines.
 - Add one regex-engine assertion: a rule with `flags:'g'` must match **every** matching line (locks C1).
-- Manual: `slop-gate --staged` and `--file` on this repo produce identical violation output pre/post.
+- Manual: `slopgate --staged` and `--file` on this repo produce identical violation output pre/post.
 
 ## Architecture Decisions
 - **Merge `runPatternScan`+`collectRegexViolations` → `scanRegex` (accepted):** deletion test — the seam between "find hit files" and "expand to violations" hid nothing; `gate.mjs` is the only caller and uses them back-to-back. Collapsing removes a re-read and a re-test. minFiles still computed before expansion, inside the merged function.
