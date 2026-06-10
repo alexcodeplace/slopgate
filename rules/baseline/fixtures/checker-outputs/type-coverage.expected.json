@@ -1,5 +1,0 @@
-[
-  { "file": "src/api/handler.ts", "line": 42, "name": "data" },
-  { "file": "src/api/handler.ts", "line": 55, "name": "response" },
-  { "file": "src/legacy/blob.ts", "line": 7, "name": "payload" }
-]

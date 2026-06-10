@@ -1,5 +1,0 @@
-/repo/src/api/handler.ts:42:18: data
-/repo/src/api/handler.ts:55:3: response
-src/legacy/blob.ts:7:10: payload
-2912 / 2930 99.38%
-type-coverage success.

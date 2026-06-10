@@ -1,5 +1,33 @@
-node_modules/
-*.log
-.DS_Store
-.worktrees/
-.claude/settings.local.json
+# ─────────────────────────────────────────────────────────────────────────
+# STRICT WHITELIST .gitignore
+# Track ONLY the public-facing code distributed to users (the npm package).
+# Everything else — specs, plans, reports, dev-tooling, .github, tests,
+# .claude, node_modules — is ignored. The allow-list below mirrors the
+# package.json "files" field (the authoritative distribution whitelist).
+# ─────────────────────────────────────────────────────────────────────────
+
+# 1. Ignore everything by default…
+*
+
+# 2. …but still descend into directories so the allow-list can reach files.
+!*/
+
+# 3. Allow-list: repo-public root files.
+!/.gitignore
+!/package.json
+!/README.md
+!/LICENSE
+!/CONTRIBUTING.md
+
+# 4. Allow-list: distributed code trees (== package.json "files").
+!/bin/**
+!/src/**
+!/hooks/**
+!/rules/**
+!/skills/**
+
+# 5. Re-ignore the non-distributed bits inside those trees
+#    (mirrors the "!…" negations in package.json "files").
+*.test.mjs
+rules/baseline/fixtures/
+rules/baseline/selftest.config.mjs
