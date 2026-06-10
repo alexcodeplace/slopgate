@@ -4,7 +4,7 @@
  *  fingerprints give per-expression precision a percentage can't. */
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { localBin, runTool, sourceLine } from './shared.mjs';
+import { localBin, runToolAsync, sourceLine } from './shared.mjs';
 
 export function parseTypeCoverageOutput(stdout, repoRoot) {
   const out = [];
@@ -25,11 +25,11 @@ export default {
     if (!localBin(config.repoRoot, 'type-coverage')) return { available: false, reason: 'no local type-coverage binary' };
     return { available: true };
   },
-  run(config, cfg) {
-    const res = runTool(localBin(config.repoRoot, 'type-coverage'), ['--detail'], {
+  async run(config, cfg) {
+    const res = await runToolAsync(localBin(config.repoRoot, 'type-coverage'), ['--detail'], {
       cwd: config.repoRoot, timeout: (cfg.timeout ?? 120) * 1000,
     });
-    if (!res.ok) return { violations: [], errors: [`type-coverage failed: ${res.error}`] };
+    if (!res.ok && res.status == null) return { violations: [], errors: [`type-coverage failed: ${res.error}`] };
     const violations = parseTypeCoverageOutput(res.stdout, config.repoRoot).map((e) => ({
       id: 'type-coverage-uncovered', severity: 'high', category: 'types',
       file: e.file, line: e.line,

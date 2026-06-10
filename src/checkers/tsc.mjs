@@ -6,13 +6,13 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { localBin, runTool, sourceLine } from './shared.mjs';
+import { localBin, runToolAsync, sourceLine } from './shared.mjs';
 
 export function resolveTscBin(repoRoot) {
   const local = localBin(repoRoot, 'tsc');
-  if (local) return local;
+  if (local) return { bin: local, source: 'local' };
   const probe = spawnSync('tsc', ['--version'], { encoding: 'utf8' });
-  if (probe.status === 0) return 'tsc';
+  if (probe.status === 0) return { bin: 'tsc', source: 'path' };
   return null;
 }
 
@@ -42,15 +42,17 @@ export default {
     if (!resolveTscBin(config.repoRoot)) return { available: false, reason: 'no tsc binary (local or PATH)' };
     return { available: true };
   },
-  run(config, cfg) {
-    const bin = resolveTscBin(config.repoRoot);
+  async run(config, cfg) {
+    const resolved = resolveTscBin(config.repoRoot);
+    const bin = resolved.bin;
     const violations = [];
     const errors = [];
+    if (resolved.source === 'path') errors.push('tsc: using PATH binary (version not pinned — results may differ from CI)');
     for (const rel of tsconfigList(cfg)) {
-      const res = runTool(bin, ['--noEmit', '--pretty', 'false', '-p', join(config.repoRoot, rel)], {
+      const res = await runToolAsync(bin, ['--noEmit', '--pretty', 'false', '-p', join(config.repoRoot, rel)], {
         cwd: config.repoRoot, timeout: (cfg.timeout ?? 120) * 1000,
       });
-      if (!res.ok) { errors.push(`tsc(${rel}) failed: ${res.error}`); continue; }
+      if (!res.ok && res.status == null) { errors.push(`tsc(${rel}) failed: ${res.error}`); continue; }
       violations.push(...parseTscOutput(res.stdout).map((e) => ({
         id: `tsc-${e.code}`, severity: 'high', category: 'types',
         file: e.file, line: e.line,
