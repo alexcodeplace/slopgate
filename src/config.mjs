@@ -40,6 +40,16 @@ export async function resolveConfig(configPath) {
     for (const p of mod) patterns.push(validatePattern(p, relPath));
   }
 
+  // dedupe by id (last-wins: project overrides baseline on collision)
+  const byId = new Map();
+  for (const p of patterns) byId.set(p.id, p);
+  const order = [];
+  const seen = new Set();
+  for (const p of patterns) {
+    if (!seen.has(p.id)) { order.push(p.id); seen.add(p.id); }
+  }
+  const dedupedPatterns = order.map((id) => byId.get(id));
+
   // ast rule dirs: baseline ast + project ast (if present)
   const astRuleDirs = [BASELINE_AST_DIR];
   if (raw.astRules) {
@@ -54,7 +64,7 @@ export async function resolveConfig(configPath) {
     rootsRel,
     exts: new Set(raw.exts ?? ['.ts', '.tsx', '.astro']),
     skipDirs: new Set(raw.skipDirs ?? ['node_modules', 'dist', 'tests']),
-    patterns,
+    patterns: dedupedPatterns,
     astRuleDirs,
     gate: { file: raw.gate?.file ?? ['critical', 'high'], staged: raw.gate?.staged ?? ['critical', 'high'] },
     suppressionsPath: raw.suppressions
