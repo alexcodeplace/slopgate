@@ -14,7 +14,7 @@ export function runSelfTest(config) {
       else console.error(`OK ${p.id} (negative)`);
     }
   }
-  const ast = runAstGrepScan(config, null);
+  const ast = runAstGrepScan(config, config.fixturesDirs, { rawTargets: true });
   if (!ast.available) {
     console.error(`WARN ast-grep unavailable — bucket-B self-test skipped: ${ast.errors.join('; ')}`);
   } else if (!ast.violations.some((v) => v.id === 'slopgate-canary')) {

@@ -21,7 +21,7 @@ export function resolveAstGrepBin(repoRoot) {
  * @param {string[]|null} files - repo-relative targets (ts/tsx only), or null = scan config roots
  * @returns {{ available:boolean, violations:any[], errors:string[] }}
  */
-export function runAstGrepScan(config, files = null) {
+export function runAstGrepScan(config, files = null, opts = {}) {
   const ruleDirs = (config.astRuleDirs || []).filter(existsSync);
   if (ruleDirs.length === 0) return { available: true, violations: [], errors: [] };
 
@@ -35,7 +35,7 @@ export function runAstGrepScan(config, files = null) {
   const sgConfig = join(dir, 'sgconfig.yml');
   writeFileSync(sgConfig, 'ruleDirs:\n' + ruleDirs.map((d) => `  - ${d}`).join('\n') + '\n');
 
-  const targets = files === null ? config.rootsRel : files.filter((f) => /\.(ts|tsx)$/.test(f));
+  const targets = files === null ? config.rootsRel : (opts.rawTargets ? files : files.filter((f) => /\.(ts|tsx)$/.test(f)));
   if (files !== null && targets.length === 0) return { available: true, violations: [], errors: [] };
 
   const res = spawnSync(bin, ['scan', '--config', sgConfig, '--json', ...targets], {
