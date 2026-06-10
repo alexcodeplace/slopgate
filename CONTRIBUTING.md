@@ -5,7 +5,7 @@ Thank you for contributing to slop-gate! This guide covers development setup, te
 ## Development Setup
 
 ```bash
-git clone <repo>
+git clone https://github.com/alexcodeplace/slop-gate.git
 cd slop-gate
 npm install
 npm run self-test
