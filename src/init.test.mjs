@@ -3,10 +3,11 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { execSync } from 'node:child_process';
 import { runInit } from './init.mjs';
+import { ENGINE_ROOT } from './install-hooks.mjs';
 
 const FIXTURE = '/home/user/Projects/slop-gate/.tmp-inittest';
-const COMMIT_HOOK = '/home/user/Projects/slop-gate/hooks/commit-hook.sh';
-const EDIT_HOOK = '/home/user/Projects/slop-gate/hooks/edit-hook.sh';
+const COMMIT_HOOK = `${ENGINE_ROOT}/hooks/commit-hook.sh`;
+const EDIT_HOOK = `${ENGINE_ROOT}/hooks/edit-hook.sh`;
 
 function assert(label, ok) {
   console.log(`${ok ? 'PASS' : 'FAIL'}: ${label}`);
