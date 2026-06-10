@@ -6,6 +6,7 @@ import { runSelfTest } from './selftest.mjs';
 import { runInit } from './init.mjs';
 import { loadBaseline, writeBaseline, writeBaselineRaw, fingerprintViolation } from './ratchet.mjs';
 import { installPreCommitHook } from './install-hooks.mjs';
+import { installSkills } from './install-skills.mjs';
 
 const args = process.argv.slice(2);
 const has = (f) => args.includes(f);
@@ -34,6 +35,14 @@ async function main() {
     const config = await requireConfig();
     const { action, path } = installPreCommitHook(config.repoRoot);
     process.stdout.write(`slopgate: pre-commit hook ${action} (${path})\n`);
+    process.exit(0);
+  }
+
+  if (has('install-skills')) {
+    const force = has('--force');
+    const results = installSkills({ force });
+    for (const r of results) process.stdout.write(`slopgate: skill ${r.name} — ${r.action}\n`);
+    if (results.length === 0) process.stdout.write('slopgate: no skills to install\n');
     process.exit(0);
   }
 
