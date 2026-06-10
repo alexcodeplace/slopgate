@@ -60,6 +60,16 @@ function ensureHookEntry(settings, event, spec) {
   if (!settings.hooks) settings.hooks = {};
   if (!Array.isArray(settings.hooks[event])) settings.hooks[event] = [];
 
+  if (spec.matcher === undefined) {
+    const entries = settings.hooks[event];
+    const present = entries.some((e) =>
+      Array.isArray(e?.hooks) && e.hooks.some((h) => h?.type === 'command' && h?.command === spec.command),
+    );
+    if (present) return false;
+    entries.push({ hooks: [{ type: 'command', command: spec.command }] });
+    return true;
+  }
+
   let entry = settings.hooks[event].find((e) => e?.matcher === spec.matcher);
   if (!entry) {
     entry = { matcher: spec.matcher, hooks: [] };

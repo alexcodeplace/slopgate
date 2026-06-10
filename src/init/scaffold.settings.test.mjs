@@ -68,3 +68,46 @@ test('idempotent merge: SessionStart not duplicated on second run', () => {
   const commands = settings.hooks.SessionStart.flatMap((e) => e.hooks.map((h) => h.command));
   assert.deepEqual(commands, [SESSION_HOOK]);
 });
+
+test('merge with foreign matcher-less SessionStart: slopgate gets its own entry', () => {
+  const dir = tempDir();
+  const claudeDir = join(dir, '.claude');
+  mkdirSync(claudeDir, { recursive: true });
+  const settingsPath = join(claudeDir, 'settings.json');
+  const existing = {
+    hooks: {
+      SessionStart: [{
+        hooks: [{ type: 'command', command: '/other/tool.sh' }],
+      }],
+    },
+  };
+  writeFileSync(settingsPath, `${JSON.stringify(existing, null, 2)}\n`);
+
+  assert.equal(mergeSettingsJson(dir), 'merged');
+
+  let settings = JSON.parse(readFileSync(settingsPath, 'utf8'));
+  assert.equal(settings.hooks.SessionStart.length, 2);
+
+  const foreign = settings.hooks.SessionStart.find((e) =>
+    e.hooks.some((h) => h.command === '/other/tool.sh'),
+  );
+  assert.ok(foreign);
+  assert.deepEqual(foreign.hooks.map((h) => h.command), ['/other/tool.sh']);
+  assert.equal('matcher' in foreign, false);
+
+  const slopgate = settings.hooks.SessionStart.find((e) =>
+    e.hooks.some((h) => h.command === SESSION_HOOK),
+  );
+  assert.ok(slopgate);
+  assert.equal(slopgate.hooks[0].command, SESSION_HOOK);
+  assert.equal('matcher' in slopgate, false);
+
+  assert.equal(mergeSettingsJson(dir), 'already-present');
+
+  settings = JSON.parse(readFileSync(settingsPath, 'utf8'));
+  assert.equal(settings.hooks.SessionStart.length, 2);
+  const slopgateCommands = settings.hooks.SessionStart
+    .flatMap((e) => e.hooks.map((h) => h.command))
+    .filter((c) => c === SESSION_HOOK);
+  assert.deepEqual(slopgateCommands, [SESSION_HOOK]);
+});
