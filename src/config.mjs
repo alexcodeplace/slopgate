@@ -3,6 +3,7 @@ import { execSync } from 'node:child_process';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { BASELINE_PACKS, BASELINE_AST_DIR, BASELINE_FIXTURES_DIR } from '../rules/baseline/index.mjs';
+import { STACK_PACKS } from '../rules/stack/index.mjs';
 
 /** @typedef {import('../rules/baseline/index.mjs')} _b */
 
@@ -31,6 +32,11 @@ export async function resolveConfig(configPath) {
   for (const name of raw.baseline ?? []) {
     if (!BASELINE_PACKS[name]) throw new Error(`slopgate: unknown baseline pack "${name}" (known: ${Object.keys(BASELINE_PACKS).join(', ')})`);
     for (const p of BASELINE_PACKS[name]) patterns.push(validatePattern(p, `baseline:${name}`));
+  }
+  // stack packs (opt-in by name — e.g. stack: ['cloudflare'])
+  for (const name of raw.stack ?? []) {
+    if (!STACK_PACKS[name]) throw new Error(`slopgate: unknown stack pack "${name}" (known: ${Object.keys(STACK_PACKS).join(', ')})`);
+    for (const p of STACK_PACKS[name]) patterns.push(validatePattern(p, `stack:${name}`));
   }
   // project rule packs
   for (const relPath of raw.rules ?? []) {

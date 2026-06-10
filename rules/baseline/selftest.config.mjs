@@ -5,7 +5,7 @@ export default {
   roots: ['rules/baseline/fixtures/src'],
   exts: ['.ts', '.tsx'],
   skipDirs: ['node_modules'],
-  baseline: ['no-stubs', 'ts-suppress', 'as-any', 'raw-hex', 'kv-ban'],
+  baseline: ['no-stubs', 'ts-suppress', 'as-any', 'raw-hex', 'kv-ban', 'live-secrets', 'eval-ban', 'pii-logs', 'weak-hash'],
   rules: [],
   astRules: null,
   gate: { file: ['critical', 'high'], staged: ['critical', 'high'] },
