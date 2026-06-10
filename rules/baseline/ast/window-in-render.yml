@@ -1,0 +1,38 @@
+id: window-in-render
+language: tsx
+severity: error
+message: window/document accessed during render — SSR crash
+note: '{"severity":"medium","category":"convention","resolution":"Move into useEffect/useLayoutEffect, an event handler, or guard with typeof window !== \"undefined\"."}'
+files:
+  - '**/src/components/**'
+  - '**/src/features/**'
+  - '**/fixtures/src/components/**'
+ignores:
+  - '**/features/design-system/**'
+rule:
+  any:
+    - pattern: window.$PROP
+    - pattern: document.$PROP
+  not:
+    any:
+      - inside:
+          stopBy: end
+          pattern: useEffect($$$)
+      - inside:
+          stopBy: end
+          pattern: useLayoutEffect($$$)
+      - inside:
+          stopBy: end
+          kind: jsx_attribute
+      - inside:
+          stopBy: end
+          pattern: if (typeof window !== 'undefined') { $$$ }
+      - inside:
+          stopBy: end
+          pattern: typeof window
+      - inside:
+          stopBy: end
+          kind: variable_declarator
+          has:
+            field: name
+            regex: ^(handle|on)[A-Z]

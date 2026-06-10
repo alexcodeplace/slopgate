@@ -1,0 +1,25 @@
+id: target-blank-norel
+language: tsx
+severity: error
+message: target=_blank without rel=noopener noreferrer (reverse-tabnabbing)
+note: '{"severity":"high","category":"security","resolution":"Add rel=\"noopener noreferrer\" to the element."}'
+rule:
+  any:
+    - all:
+        - kind: jsx_opening_element
+        - has:
+            kind: jsx_attribute
+            regex: '^target=["\x27]_blank["\x27]$'
+        - not:
+            has:
+              kind: jsx_attribute
+              regex: '^rel='
+    - all:
+        - kind: jsx_self_closing_element
+        - has:
+            kind: jsx_attribute
+            regex: '^target=["\x27]_blank["\x27]$'
+        - not:
+            has:
+              kind: jsx_attribute
+              regex: '^rel='

@@ -1,6 +1,7 @@
 import { mkdirSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { installPreCommitHook } from './install-hooks.mjs';
+import { installSkills } from './install-skills.mjs';
 import {
   detectRoots,
   detectExts,
@@ -37,6 +38,8 @@ export function runInit(targetDir, options = {}) {
 
   let hookAction = 'skipped (not a git repo)';
   try { hookAction = installPreCommitHook(targetDir).action; } catch { /* not a git repo */ }
+
+  installSkills();
 
   writeFileSync(
     join(base, 'convention-sources.json'),

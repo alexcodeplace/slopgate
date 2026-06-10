@@ -12,3 +12,13 @@ const namePlaceholder = 1;
 // @ts-ignore
 /* eslint-disable zync/no-raw-html-in-pages */
 function bad(el: HTMLElement) { el.innerHTML = '<b>hi</b>'; }
+// live-secrets canary:
+const _sk = "sk_live_aaaaaaaaaaaa";
+// eval-ban canary:
+// eval(userCode);  — commented to avoid actual eval in fixture
+const _evalStr = 'eval(userCode)';
+// pii-logs canary:
+console.log(user.phone, user.email);
+// weak-hash canary:
+// createHash('md5') — weak hash
+const _wh = "createHash('md5').update(data)";
