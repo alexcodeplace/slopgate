@@ -46,6 +46,22 @@ export function collectViolations(mode, config, tier) {
 }
 
 /**
+ * Severity-allow + suppression filter shared by the gate and the baseline snapshot.
+ * Emits the malformed-suppressions warning once. Does NOT apply ratchet/baseline.
+ * @param {any[]} violations
+ * @param {'file'|'staged'} mode  selects the gate.<mode> severity allow-list
+ * @returns {any[]}
+ */
+export function applyGateFilters(violations, config, mode) {
+  const allow = new Set(config.gate[mode] ?? ['critical', 'high']);
+  const sup = loadSuppressions(config.suppressionsPath);
+  if (sup.error) process.stderr.write(`⚠ SLOP-GATE: suppressions.json malformed (${sup.error}) — treating as EMPTY\n`);
+  return violations
+    .filter((v) => allow.has(v.severity))
+    .filter((v) => !isSuppressed(sup.entries, v));
+}
+
+/**
  * @param {'file'|'staged'} mode
  * @param {{ tier?: 'fast'|'commit' }} [opts]  default: staged→commit, file→fast
  * @returns {{ violations:any[], code:number }}
@@ -55,13 +71,7 @@ export function runGate(mode, config, { tier } = {}) {
   const { violations: collected, notices } = collectViolations(mode, config, effTier);
   for (const n of notices) process.stderr.write(`⚠ SLOP-GATE: ${n}\n`);
 
-  const allow = new Set(config.gate[mode] ?? ['critical', 'high']);
-  const sup = loadSuppressions(config.suppressionsPath);
-  if (sup.error) process.stderr.write(`⚠ SLOP-GATE: suppressions.json malformed (${sup.error}) — treating as EMPTY\n`);
-
-  let violations = collected
-    .filter((v) => allow.has(v.severity))
-    .filter((v) => !isSuppressed(sup.entries, v));
+  let violations = applyGateFilters(collected, config, mode);
 
   let baselinedCount = 0;
   if (effTier === 'commit') {

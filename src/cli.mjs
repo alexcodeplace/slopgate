@@ -1,10 +1,9 @@
 // src/cli.mjs
 import { existsSync } from 'node:fs';
 import { resolveConfig } from './config.mjs';
-import { runGate, collectViolations } from './gate.mjs';
+import { runGate, collectViolations, applyGateFilters } from './gate.mjs';
 import { runSelfTest } from './selftest.mjs';
 import { runInit } from './init.mjs';
-import { loadSuppressions, isSuppressed } from './suppressions.mjs';
 import { loadBaseline, writeBaseline, writeBaselineRaw, fingerprintViolation } from './ratchet.mjs';
 import { installPreCommitHook } from './install-hooks.mjs';
 
@@ -16,10 +15,7 @@ const valOf = (f) => { const i = args.indexOf(f); return i === -1 ? null : args[
 function snapshotViolations(config) {
   const { violations, notices } = collectViolations('full', config, 'commit');
   for (const n of notices) process.stderr.write(`⚠ SLOP-GATE: ${n}\n`);
-  const allow = new Set(config.gate.staged ?? ['critical', 'high']);
-  const sup = loadSuppressions(config.suppressionsPath);
-  if (sup.error) process.stderr.write(`⚠ SLOP-GATE: suppressions.json malformed (${sup.error}) — treating as EMPTY\n`);
-  return violations.filter((v) => allow.has(v.severity)).filter((v) => !isSuppressed(sup.entries, v));
+  return applyGateFilters(violations, config, 'staged');
 }
 
 async function requireConfig() {
