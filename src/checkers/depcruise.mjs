@@ -3,12 +3,11 @@
  *  orphans, encoded as rules in .slopgate/depcruise.cjs (project-pinned). */
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { localBin, runTool } from './shared.mjs';
+import { localBin, runJsonTool } from './shared.mjs';
 
 const SEVERITY_MAP = { error: 'critical', warn: 'high' }; // info → dropped
 
-export function parseDepcruiseOutput(jsonText) {
-  const j = JSON.parse(jsonText);
+export function parseDepcruiseOutput(j) {
   return (j.summary?.violations ?? []).map((v) => ({
     rule: v.rule?.name ?? 'unknown', severity: v.rule?.severity ?? 'error', from: v.from, to: v.to,
   }));
@@ -19,6 +18,7 @@ export function depcruiseViolations(parsed) {
   for (const v of parsed) {
     const severity = SEVERITY_MAP[v.severity];
     if (!severity) continue;
+    if (!v.from) continue;
     out.push({
       id: `depcruise-${v.rule}`, severity, category: 'architecture',
       file: v.from, line: 1, fullLine: '',
@@ -47,14 +47,11 @@ export default {
     if (!rulesFile(config, cfg)) return { available: false, reason: 'no depcruise rules file' };
     return { available: true };
   },
-  run(config, cfg) {
-    const res = runTool(localBin(config.repoRoot, 'depcruise'), [
-      '--config', rulesFile(config, cfg), '--output-type', 'json', ...config.rootsRel,
-    ], { cwd: config.repoRoot, timeout: (cfg.timeout ?? 60) * 1000 });
-    if (!res.ok) return { violations: [], errors: [`depcruise failed: ${res.error}`] };
-    let parsed;
-    try { parsed = parseDepcruiseOutput(res.stdout); }
-    catch (e) { return { violations: [], errors: [`depcruise JSON parse error: ${e}`] }; }
-    return { violations: depcruiseViolations(parsed), errors: [] };
+  async run(config, cfg) {
+    const { data, errors } = await runJsonTool('depcruise', localBin(config.repoRoot, 'depcruise'),
+      ['--config', rulesFile(config, cfg), '--output-type', 'json', ...config.rootsRel],
+      { cwd: config.repoRoot, timeout: (cfg.timeout ?? 60) * 1000 });
+    if (data == null) return { violations: [], errors };
+    return { violations: depcruiseViolations(parseDepcruiseOutput(data)), errors };
   },
 };
