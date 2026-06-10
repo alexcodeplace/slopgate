@@ -1,0 +1,10 @@
+{
+  "name": "slop-gate",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Global code-quality / anti-slop gate — engine shared, rules per-project.",
+  "bin": { "slop-gate": "bin/slop-gate" },
+  "scripts": {
+    "self-test": "node bin/slop-gate --self-test --config rules/baseline/selftest.config.mjs"
+  }
+}
