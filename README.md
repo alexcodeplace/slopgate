@@ -558,7 +558,7 @@ baseline: [],
 
 Run `slopgate baseline --config .slopgate/config.mjs` to baseline existing clones. Now:
 - Commits pass unless they introduce NEW duplications
-- Track paydown via `slopgate audit`
+- Track paydown via `slopgate baseline --prune` (drops resolved entries)
 
 ### Example 3: Custom Architecture Rules
 
