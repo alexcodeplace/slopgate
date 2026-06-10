@@ -12,8 +12,8 @@ const has = (f) => args.includes(f);
 const valOf = (f) => { const i = args.indexOf(f); return i === -1 ? null : args[i + 1]; };
 
 /** Full-repo commit-tier snapshot, filtered like the gate filters (severity + suppressions). */
-function snapshotViolations(config) {
-  const { violations, notices } = collectViolations('full', config, 'commit');
+async function snapshotViolations(config) {
+  const { violations, notices } = await collectViolations('full', config, 'commit');
   for (const n of notices) process.stderr.write(`⚠ SLOPGATE: ${n}\n`);
   return applyGateFilters(violations, config, 'staged');
 }
@@ -45,7 +45,7 @@ async function main() {
       // drop entries whose fingerprint no longer occurs; never adds new ones
       const bl = loadBaseline(config.baselinePath);
       if (bl.error || bl.missing) { process.stderr.write('slopgate: no valid baseline to prune\n'); process.exit(2); }
-      const current = new Set(snapshotViolations(config).map(fingerprintViolation));
+      const current = new Set((await snapshotViolations(config)).map(fingerprintViolation));
       const kept = Object.fromEntries(Object.entries(bl.entries).filter(([fp]) => current.has(fp)));
       const dropped = Object.keys(bl.entries).length - Object.keys(kept).length;
       writeBaselineRaw(config.baselinePath, kept, new Date().toISOString());
@@ -57,7 +57,7 @@ async function main() {
       process.stderr.write('slopgate: baseline.json exists — use `baseline --update` to re-snapshot (this re-absorbs ALL current violations) or `baseline --prune` to drop resolved entries\n');
       process.exit(2);
     }
-    const snap = snapshotViolations(config);
+    const snap = await snapshotViolations(config);
     const n = writeBaseline(config.baselinePath, snap, new Date().toISOString());
     process.stdout.write(`slopgate: baseline written — ${n} entr${n === 1 ? 'y' : 'ies'} → ${config.baselinePath}\n`);
     process.exit(0);
@@ -70,9 +70,9 @@ async function main() {
   if (tierFlag && tierFlag !== 'fast' && tierFlag !== 'commit') {
     process.stderr.write('slopgate: --tier must be fast|commit\n'); process.exit(2);
   }
-  if (has('--staged')) process.exit(runGate('staged', config, { tier: tierFlag ?? undefined }).code);
+  if (has('--staged')) process.exit((await runGate('staged', config, { tier: tierFlag ?? undefined })).code);
   const fileTarget = valOf('--file');
-  if (fileTarget) { config._fileTarget = fileTarget; process.exit(runGate('file', config, { tier: tierFlag ?? undefined }).code); }
+  if (fileTarget) process.exit((await runGate('file', config, { tier: tierFlag ?? undefined, fileTarget })).code);
 
   process.stderr.write('slopgate: no mode (use --staged | --file <p> | --self-test | init [dir] | baseline [--update|--prune] | install-hooks)\n');
   process.exit(2);

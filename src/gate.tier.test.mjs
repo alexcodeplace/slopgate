@@ -39,12 +39,12 @@ CHECKERS.push(fake);
 const config = await resolveConfig(join(repo, '.slopgate/config.mjs'));
 
 // fast tier: regex fires, checker does NOT
-const fast = collectViolations('staged', config, 'fast');
+const fast = await collectViolations('staged', config, 'fast');
 assert('fast tier: regex violation present', fast.violations.some((v) => v.id === 'no-stubs-placeholder'));
 assert('fast tier: checker not run', !fast.violations.some((v) => v.id === 'fake-finding'));
 
 // commit tier: checker runs, engine tagged, lineHash attached
-const commit = collectViolations('staged', config, 'commit');
+const commit = await collectViolations('staged', config, 'commit');
 const fakeV = commit.violations.find((v) => v.id === 'fake-finding');
 assert('commit tier: checker violation present', !!fakeV);
 assert('checker violation engine-tagged', fakeV.engine === 'checker:fake');
@@ -52,25 +52,42 @@ assert('checker violation has lineHash', typeof fakeV.lineHash === 'string' && f
 
 // disabled checker never runs even if registered
 const noCfg = { ...config, checkers: {} };
-const none = collectViolations('staged', noCfg, 'commit');
+const none = await collectViolations('staged', noCfg, 'commit');
 assert('unconfigured checker skipped silently', !none.violations.some((v) => v.id === 'fake-finding'));
 
 // runGate commit tier blocks (exit 1), fast staged ignores baseline
-const gateRes = runGate('staged', config);
+const gateRes = await runGate('staged', config);
 assert('staged default = commit tier, blocks', gateRes.code === 1);
 
 // baseline absorbs → exit 0
 writeBaseline(config.baselinePath, gateRes.violations, '2026-06-10T00:00:00Z');
-const after = runGate('staged', config);
+const after = await runGate('staged', config);
 assert('all baselined → exit 0', after.code === 0 && after.violations.length === 0);
 
 // new violation on top of baseline → exit 1 with only the new one
 writeFileSync(join(repo, 'src/a.ts'), '// placeholder for now\nconst ok = 1;\n// TODO: implement later\n');
 execSync('git add src/a.ts', { cwd: repo });
-const fresh = runGate('staged', config);
+const fresh = await runGate('staged', config);
 assert('only NEW violation fails', fresh.code === 1 && fresh.violations.length === 1 && fresh.violations[0].line === 3 && fresh.violations[0].id === 'no-stubs-placeholder');
 assert('baselined ones still absorbed', !fresh.violations.some((v) => v.line === 1 || v.id === 'fake-finding'));
 
 CHECKERS.pop();
+
+// crash isolation: thrown run() degrades to notice, gate still completes
+{
+  const boom = { id: 'boom', detect: () => ({ available: true }), run: () => { throw new Error('kaboom'); } };
+  const orig = CHECKERS.slice();
+  CHECKERS.length = 0;
+  CHECKERS.push(boom);
+  try {
+    const boomCfg = { ...config, checkers: { boom: {} } };
+    const { notices } = await collectViolations('staged', boomCfg, 'commit');
+    assert('checker run() throw → crashed notice', notices.some((n) => /boom crashed: .*kaboom/.test(n)));
+  } finally {
+    CHECKERS.length = 0;
+    CHECKERS.push(...orig);
+  }
+}
+
 rmSync(repo, { recursive: true, force: true });
 process.exit(failed ? 1 : 0);

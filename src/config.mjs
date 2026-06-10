@@ -76,5 +76,6 @@ export async function resolveConfig(configPath) {
       ? (isAbsolute(raw.suppressions) ? raw.suppressions : resolve(configDir, raw.suppressions))
       : join(configDir, 'suppressions.json'),
     fixturesDirs: [BASELINE_FIXTURES_DIR, raw.fixtures ? resolve(configDir, raw.fixtures) : null].filter(Boolean),
+    checkerConcurrency: raw.checkerConcurrency ?? 3,
   };
 }
