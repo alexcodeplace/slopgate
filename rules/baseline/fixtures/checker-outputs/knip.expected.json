@@ -1,0 +1,6 @@
+[
+  { "type": "files", "file": "src/orphan.ts", "line": 1, "name": "src/orphan.ts" },
+  { "type": "exports", "file": "src/util.ts", "line": 14, "name": "unusedHelper" },
+  { "type": "types", "file": "src/util.ts", "line": 2, "name": "UnusedType" },
+  { "type": "dependencies", "file": "package.json", "line": 12, "name": "left-pad" }
+]

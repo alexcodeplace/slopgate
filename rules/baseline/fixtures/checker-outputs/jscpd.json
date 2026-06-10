@@ -1,0 +1,13 @@
+{
+  "duplicates": [
+    {
+      "format": "typescript",
+      "lines": 18,
+      "tokens": 120,
+      "firstFile": { "name": "src/features/a.ts", "start": 10, "end": 27, "startLoc": { "line": 10, "column": 1 }, "endLoc": { "line": 27, "column": 2 } },
+      "secondFile": { "name": "src/features/b.ts", "start": 40, "end": 57, "startLoc": { "line": 40, "column": 1 }, "endLoc": { "line": 57, "column": 2 } },
+      "fragment": "function dup() { /* body */ }"
+    }
+  ],
+  "statistics": {}
+}
