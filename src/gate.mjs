@@ -1,5 +1,5 @@
 // src/gate.mjs
-import { runPatternScan, collectRegexViolations } from './regex-engine.mjs';
+import { scanRegex } from './regex-engine.mjs';
 import { runAstGrepScan } from './ast-engine.mjs';
 import { loadSuppressions, isSuppressed, lineHash } from './suppressions.mjs';
 import { listSourceFiles } from './enumerate.mjs';
@@ -19,7 +19,7 @@ export function collectViolations(mode, config, tier) {
   const notices = [];
   if (files.length === 0 && mode !== 'full') return { violations: [], notices };
 
-  const violations = collectRegexViolations(config, runPatternScan(config, opts));
+  const violations = scanRegex(config, files, { fileMode: mode === 'file' });
 
   const ast = runAstGrepScan(config, mode === 'full' ? null : files);
   if (!ast.available) notices.push(ast.errors.join('; '));
