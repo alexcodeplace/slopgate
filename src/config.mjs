@@ -57,6 +57,13 @@ export async function resolveConfig(configPath) {
     if (existsSync(abs) && statSync(abs).isDirectory()) astRuleDirs.push(abs);
   }
 
+  // commit-tier checkers: absent/false => disabled; true => {}; object => options
+  const checkers = {};
+  for (const [name, v] of Object.entries(raw.checkers ?? {})) {
+    if (v === false || v == null) continue;
+    checkers[name] = v === true ? {} : v;
+  }
+
   const rootsRel = (raw.roots ?? ['src']);
   return {
     repoRoot, configDir,
@@ -66,6 +73,9 @@ export async function resolveConfig(configPath) {
     skipDirs: new Set(raw.skipDirs ?? ['node_modules', 'dist', 'tests']),
     patterns: dedupedPatterns,
     astRuleDirs,
+    checkers,
+    astDisable: new Set(raw.astDisable ?? []),
+    baselinePath: join(configDir, 'baseline.json'),
     gate: { file: raw.gate?.file ?? ['critical', 'high'], staged: raw.gate?.staged ?? ['critical', 'high'] },
     suppressionsPath: raw.suppressions
       ? (isAbsolute(raw.suppressions) ? raw.suppressions : resolve(configDir, raw.suppressions))
