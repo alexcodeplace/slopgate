@@ -6,6 +6,8 @@ FILE=$(node -e "
 let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{try{process.stdout.write(JSON.parse(d).tool_input?.file_path||'')}catch{process.stdout.write('')}});" <<< "$TOOL_JSON" 2>/dev/null) || exit 0
 [ -n "$FILE" ] || exit 0
 case "$FILE" in *.test.ts|*.test.tsx) exit 0 ;; *.ts|*.tsx|*.astro) ;; *) exit 0 ;; esac
+# Skip fixture files — they are intentional violation examples for slop-gate self-test.
+case "$FILE" in */.slop-gate/fixtures/*|*/slop-gate/*/fixtures/*) exit 0 ;; esac
 
 ROOT=$(git -C "$(dirname "$FILE")" rev-parse --show-toplevel 2>/dev/null) || exit 0
 CONFIG="$ROOT/.slop-gate/config.mjs"
