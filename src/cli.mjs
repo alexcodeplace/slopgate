@@ -7,6 +7,9 @@ import { runInit } from './init.mjs';
 import { loadBaseline, writeBaseline, writeBaselineRaw, fingerprintViolation } from './ratchet.mjs';
 import { installPreCommitHook } from './install-hooks.mjs';
 import { installSkills } from './install-skills.mjs';
+import { recordIncidents } from './stats/record.mjs';
+import { readRows, globalStatsPath, projectStatsPath } from './stats/store.mjs';
+import { aggregate, formatStats, DIMENSIONS } from './stats/query.mjs';
 
 const args = process.argv.slice(2);
 const has = (f) => args.includes(f);
@@ -29,6 +32,22 @@ async function main() {
   if (has('init')) {
     const dir = valOf('init') || process.cwd();
     process.exit(runInit(dir));
+  }
+
+  if (has('stats')) {
+    const by = valOf('--by') ?? 'rule';
+    if (!DIMENSIONS[by]) {
+      process.stderr.write(`slopgate: --by must be ${Object.keys(DIMENSIONS).join('|')}\n`);
+      process.exit(2);
+    }
+    const since = valOf('--since') ?? undefined;
+    const json = has('--json');
+    const configPath = valOf('--config');
+    const rows = configPath
+      ? readRows(projectStatsPath(await resolveConfig(configPath)))
+      : readRows(globalStatsPath());
+    process.stdout.write(formatStats(aggregate(rows, { by, since }), { json }) + '\n');
+    process.exit(0);
   }
 
   if (has('install-hooks')) {
@@ -79,11 +98,18 @@ async function main() {
   if (tierFlag && tierFlag !== 'fast' && tierFlag !== 'commit') {
     process.stderr.write('slopgate: --tier must be fast|commit\n'); process.exit(2);
   }
-  if (has('--staged')) process.exit((await runGate('staged', config, { tier: tierFlag ?? undefined })).code);
+  if (has('--staged')) {
+    const r = await runGate('staged', config, { tier: tierFlag ?? undefined });
+    if (r.code === 1) {
+      try { recordIncidents(r.violations, config, { mode: 'staged' }); }
+      catch (e) { process.stderr.write(`⚠ SLOPGATE: stats record failed (${e}) — ignored\n`); }
+    }
+    process.exit(r.code);
+  }
   const fileTarget = valOf('--file');
   if (fileTarget) process.exit((await runGate('file', config, { tier: tierFlag ?? undefined, fileTarget })).code);
 
-  process.stderr.write('slopgate: no mode (use --staged | --file <p> | --self-test | init [dir] | baseline [--update|--prune] | install-hooks)\n');
+  process.stderr.write('slopgate: no mode (use --staged | --file <p> | --self-test | init [dir] | baseline [--update|--prune] | install-hooks | install-skills [--force] | stats [--by rule|model|project|severity|engine|category] [--since <iso>] [--json] [--config <p>])\n');
   process.exit(2);
 }
 main().catch((e) => { process.stderr.write(`slopgate: ${e?.stack || e}\n`); process.exit(1); });
