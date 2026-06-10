@@ -18,7 +18,6 @@
   "engines": { "node": ">=18" },
   "scripts": {
     "self-test": "node bin/slopgate --self-test --config rules/baseline/selftest.config.mjs",
-    "test": "node --test \"src/**/*.test.mjs\"",
-    "postinstall": "node bin/slopgate install-skills"
+    "test": "node --test \"src/**/*.test.mjs\""
   }
 }
