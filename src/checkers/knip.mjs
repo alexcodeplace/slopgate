@@ -45,9 +45,7 @@ export default {
     return { available: true };
   },
   async run(config, cfg) {
-    const bin = localBin(config.repoRoot, 'knip');
-    if (!bin) return { violations: [], errors: ['knip failed: no local knip binary'] };
-    const { data, errors } = await runJsonTool('knip', bin,
+    const { data, errors } = await runJsonTool('knip', localBin(config.repoRoot, 'knip'),
       ['--reporter', 'json', '--no-exit-code'], { cwd: config.repoRoot, timeout: (cfg.timeout ?? 90) * 1000 });
     if (data == null) return { violations: [], errors };
     const findings = parseKnipOutput(data);

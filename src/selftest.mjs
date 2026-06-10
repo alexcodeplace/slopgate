@@ -66,7 +66,7 @@ export function runSelfTest(config) {
   const fixDir = join(dirname(fileURLToPath(import.meta.url)), '../rules/baseline/fixtures/checker-outputs');
   const PARSER_FIXTURES = [
     { id: 'tsc', input: 'tsc.txt', expected: 'tsc.expected.json', parse: (t) => parseTscOutput(t) },
-    { id: 'knip', input: 'knip.json', expected: 'knip.expected.json', parse: (t) => parseKnipOutput(t) },
+    { id: 'knip', input: 'knip.json', expected: 'knip.expected.json', parse: (t) => parseKnipOutput(JSON.parse(t)) },
     { id: 'jscpd', input: 'jscpd.json', expected: 'jscpd.expected.json', parse: (t) => parseJscpdReport(t) },
     { id: 'depcruise', input: 'depcruise.json', expected: 'depcruise.expected.json', parse: (t) => parseDepcruiseOutput(t) },
     { id: 'type-coverage', input: 'type-coverage.txt', expected: 'type-coverage.expected.json', parse: (t) => parseTypeCoverageOutput(t, '/repo') },

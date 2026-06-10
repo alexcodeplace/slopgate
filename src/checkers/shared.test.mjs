@@ -52,6 +52,12 @@ test('runToolAsync returns ok:false (never throws) for a missing binary', async 
   assert.ok(res.error);
 });
 
+test('runToolAsync resolves ok:false (never throws) when bin is null', async () => {
+  const res = await runToolAsync(null, [], { cwd: process.cwd(), timeout: 5000 });
+  assert.equal(res.ok, false);
+  assert.ok(res.error);
+});
+
 test('runJsonTool parses stdout JSON', async () => {
   const r = await runJsonTool('demo', process.execPath, ['-e', 'process.stdout.write(JSON.stringify({a:1}))'], { cwd: process.cwd(), timeout: 5000 });
   assert.deepEqual(r.data, { a: 1 });

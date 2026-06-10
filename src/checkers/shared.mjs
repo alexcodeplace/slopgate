@@ -24,14 +24,18 @@ export function sourceLine(repoRoot, file, line) {
 /** Async sibling of runTool. Same return shape; never rejects. */
 export function runToolAsync(bin, args, { cwd, timeout } = {}) {
   return new Promise((resolve) => {
-    execFile(bin, args, { encoding: 'utf8', cwd, timeout, maxBuffer: 64 * 1024 * 1024 }, (err, stdout, stderr) => {
-      if (err) {
-        const killed = err.killed || err.signal;
-        resolve({ ok: false, error: killed ? `killed by signal ${err.signal}` : String(err), stdout: stdout ?? '', stderr: stderr ?? '', status: typeof err.code === 'number' ? err.code : null });
-      } else {
-        resolve({ ok: true, error: null, stdout: stdout ?? '', stderr: stderr ?? '', status: 0 });
-      }
-    });
+    try {
+      execFile(bin, args, { encoding: 'utf8', cwd, timeout, maxBuffer: 64 * 1024 * 1024 }, (err, stdout, stderr) => {
+        if (err) {
+          const killed = err.killed || err.signal;
+          resolve({ ok: false, error: killed ? `killed by signal ${err.signal}` : String(err), stdout: stdout ?? '', stderr: stderr ?? '', status: typeof err.code === 'number' ? err.code : null });
+        } else {
+          resolve({ ok: true, error: null, stdout: stdout ?? '', stderr: stderr ?? '', status: 0 });
+        }
+      });
+    } catch (e) {
+      resolve({ ok: false, error: String(e), stdout: '', stderr: '', status: null });
+    }
   });
 }
 
