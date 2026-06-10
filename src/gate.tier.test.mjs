@@ -19,10 +19,10 @@ assert('every checker has detect+run', CHECKERS.every((c) => typeof c.detect ===
 
 const repo = mkdtempSync(join(tmpdir(), 'slopgate-gate-'));
 execSync('git init -q', { cwd: repo });
-mkdirSync(join(repo, '.slop-gate'), { recursive: true });
+mkdirSync(join(repo, '.slopgate'), { recursive: true });
 mkdirSync(join(repo, 'src'), { recursive: true });
 writeFileSync(join(repo, 'src/a.ts'), '// placeholder for now\nconst ok = 1;\n');
-writeFileSync(join(repo, '.slop-gate/config.mjs'), `export default {
+writeFileSync(join(repo, '.slopgate/config.mjs'), `export default {
   roots: ['src'],
   baseline: ['no-stubs'],
   checkers: { 'fake': true },
@@ -36,7 +36,7 @@ const fake = {
 };
 CHECKERS.push(fake);
 
-const config = await resolveConfig(join(repo, '.slop-gate/config.mjs'));
+const config = await resolveConfig(join(repo, '.slopgate/config.mjs'));
 
 // fast tier: regex fires, checker does NOT
 const fast = collectViolations('staged', config, 'fast');

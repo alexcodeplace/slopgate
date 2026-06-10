@@ -1,12 +1,12 @@
-# Contributing to slop-gate
+# Contributing to slopgate
 
-Thank you for contributing to slop-gate! This guide covers development setup, testing, and how to add new features.
+Thank you for contributing to slopgate! This guide covers development setup, testing, and how to add new features.
 
 ## Development Setup
 
 ```bash
-git clone https://github.com/alexcodeplace/slop-gate.git
-cd slop-gate
+git clone https://github.com/alexcodeplace/slopgate.git
+cd slopgate
 npm install
 npm run self-test
 ```
@@ -16,9 +16,9 @@ The project uses Node.js native `node --test` runner (no external test framework
 ## Project Structure
 
 ```
-slop-gate/
+slopgate/
 ├── bin/
-│   └── slop-gate                       # CLI entry point
+│   └── slopgate                       # CLI entry point
 ├── src/
 │   ├── cli.mjs                         # Command dispatcher
 │   ├── config.mjs                      # Config loader + resolver
@@ -339,18 +339,18 @@ Commit messages:
 
 ### Enable Verbose Output
 
-Set `DEBUG=slop-gate:*` (if logging is added):
+Set `DEBUG=slopgate:*` (if logging is added):
 
 ```bash
-DEBUG=slop-gate:* npm run self-test
+DEBUG=slopgate:* npm run self-test
 ```
 
 ### Inspect Violations
 
-Use `slop-gate --file` on a sample file:
+Use `slopgate --file` on a sample file:
 
 ```bash
-node bin/slop-gate --file src/app.ts --config rules/baseline/selftest.config.mjs
+node bin/slopgate --file src/app.ts --config rules/baseline/selftest.config.mjs
 ```
 
 ### Check Config Resolution
@@ -360,7 +360,7 @@ Create a test config, then inspect output:
 ```bash
 node -e "
 import { resolveConfig } from './src/config.mjs';
-const cfg = await resolveConfig('.slop-gate/config.mjs');
+const cfg = await resolveConfig('.slopgate/config.mjs');
 console.log(JSON.stringify(cfg, null, 2));
 "
 ```

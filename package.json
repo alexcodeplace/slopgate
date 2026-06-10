@@ -1,18 +1,18 @@
 {
-  "name": "slop-gate",
+  "name": "slopgate",
   "version": "1.0.0",
   "type": "module",
   "description": "Global code-quality / anti-slop gate — engine shared, rules per-project.",
   "license": "MIT",
   "author": "Alex <git@alex.org.il>",
-  "repository": { "type": "git", "url": "git+https://github.com/alexcodeplace/slop-gate.git" },
-  "homepage": "https://github.com/alexcodeplace/slop-gate#readme",
-  "bugs": { "url": "https://github.com/alexcodeplace/slop-gate/issues" },
-  "bin": { "slop-gate": "bin/slop-gate" },
+  "repository": { "type": "git", "url": "git+https://github.com/alexcodeplace/slopgate.git" },
+  "homepage": "https://github.com/alexcodeplace/slopgate#readme",
+  "bugs": { "url": "https://github.com/alexcodeplace/slopgate/issues" },
+  "bin": { "slopgate": "bin/slopgate" },
   "files": ["bin", "src", "hooks", "rules"],
   "engines": { "node": ">=18" },
   "scripts": {
-    "self-test": "node bin/slop-gate --self-test --config rules/baseline/selftest.config.mjs",
+    "self-test": "node bin/slopgate --self-test --config rules/baseline/selftest.config.mjs",
     "test": "node --test \"src/**/*.test.mjs\""
   }
 }

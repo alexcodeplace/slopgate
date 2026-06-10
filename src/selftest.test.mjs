@@ -17,7 +17,7 @@ if (!haveAstGrep) {
 }
 
 const root = mkdtempSync(join(tmpdir(), 'slopgate-selftest-'));
-const sg = join(root, '.slop-gate');
+const sg = join(root, '.slopgate');
 mkdirSync(join(sg, 'rules/ast'), { recursive: true });
 mkdirSync(join(sg, 'fixtures/src'), { recursive: true });
 mkdirSync(join(root, 'src'), { recursive: true });

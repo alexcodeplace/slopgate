@@ -11,15 +11,15 @@ import { fileURLToPath } from 'node:url';
 
 // engine root = parent of src/ (this file lives in src/)
 export const ENGINE_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
-export const MARKER_BEGIN = '# slop-gate-hook v1 BEGIN';
-export const MARKER_END = '# slop-gate-hook v1 END';
+export const MARKER_BEGIN = '# slopgate-hook v1 BEGIN';
+export const MARKER_END = '# slopgate-hook v1 END';
 
 function hookBlock() {
   return [
     MARKER_BEGIN,
     'SLOPGATE_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)',
-    'if [ -n "$SLOPGATE_ROOT" ] && [ -f "$SLOPGATE_ROOT/.slop-gate/config.mjs" ]; then',
-    `  node ${ENGINE_ROOT}/bin/slop-gate --staged --config "$SLOPGATE_ROOT/.slop-gate/config.mjs" || exit 1`,
+    'if [ -n "$SLOPGATE_ROOT" ] && [ -f "$SLOPGATE_ROOT/.slopgate/config.mjs" ]; then',
+    `  node ${ENGINE_ROOT}/bin/slopgate --staged --config "$SLOPGATE_ROOT/.slopgate/config.mjs" || exit 1`,
     'fi',
     MARKER_END,
   ].join('\n');

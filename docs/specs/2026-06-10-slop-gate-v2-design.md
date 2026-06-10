@@ -1,12 +1,12 @@
-# Slop-Gate v2 — Two-Tier Gate, Checker Adapters, Ratchet Baseline, Native Pre-Commit
+# Slopgate v2 — Two-Tier Gate, Checker Adapters, Ratchet Baseline, Native Pre-Commit
 
 Date: 2026-06-10
 Status: Draft → for plan
-Scope: sub-project 1 of 3. Sub-project 2 (`/slop-gate` LLM-judge review skill, on-demand only) and sub-project 3 (rule harvesting from past mistakes) get separate specs after this ships.
+Scope: sub-project 1 of 3. Sub-project 2 (`/slopgate` LLM-judge review skill, on-demand only) and sub-project 3 (rule harvesting from past mistakes) get separate specs after this ships.
 
 ## 1. Problem
 
-Slop-gate v1 catches only what regex + ast-grep can express, and only at two Claude Code hook points (post-edit, pre-commit-command). Gaps:
+Slopgate v1 catches only what regex + ast-grep can express, and only at two Claude Code hook points (post-edit, pre-commit-command). Gaps:
 
 1. **Detection** — type errors hidden behind the bans it enforces (`as any` is banned, but a structurally wrong type passes), dead/orphaned code, reimplemented-instead-of-imported duplicates, swallowed errors.
 2. **Enforcement** — commits from a terminal, another agent, or an IDE bypass the gate entirely (Claude PreToolUse hook only sees Claude's own Bash calls).
@@ -18,7 +18,7 @@ Slop-gate v1 catches only what regex + ast-grep can express, and only at two Cla
 - Heavy checkers: **tsc --noEmit**, **knip** (dead/unused), **jscpd** (copy-paste), **dependency-cruiser** (architecture: layers, cycles, orphans), **type-coverage** (any-propagation), **diff-shape** (mixed-concern commits), plus new **semantic / test-slop / comment-slop ast+regex packs** (cheap, run in both tiers).
 - New enforcement point: **native git pre-commit hook** installed by init. No pre-push, no CI (future option).
 - Pre-existing violations: **ratchet baseline** — snapshot at init, only NEW violations fail, counts only go down.
-- **`slop-gate audit`** — non-gating periodic architecture-health report (churn×size hotspots, fan-out, barrel files, ratchet progress).
+- **`slopgate audit`** — non-gating periodic architecture-health report (churn×size hotspots, fan-out, barrel files, ratchet progress).
 - LLM-judge review = separate on-demand skill, never hooked (sub-project 2).
 
 ## 3. Architecture
@@ -28,7 +28,7 @@ Slop-gate v1 catches only what regex + ast-grep can express, and only at two Cla
 ```
 git commit
   └─ .git/hooks/pre-commit            (native, installed by init)
-       └─ slop-gate --staged --config <repo>/.slop-gate/config.mjs
+       └─ slopgate --staged --config <repo>/.slopgate/config.mjs
             ├─ resolveConfig            (+ checkers section, tier resolution)
             ├─ enumerate staged files
             ├─ regex engine             (existing)
@@ -86,9 +86,9 @@ Per-checker timeout (config-overridable defaults: tsc 120s, knip 90s, jscpd 60s,
 - A clone produces ONE violation only if at least one of its two sides overlaps a staged file (commit tier passes the staged list); report points at the staged side and names the other side in the excerpt ("duplicates src/x.ts:10-42"). Severity `high`, category `duplication`, `ruleId: 'jscpd-clone'`.
 
 **dependency-cruiser** (`src/checkers/depcruise.mjs`)
-- `detect`: local depcruise binary + rules file (`.slop-gate/depcruise.cjs`, falling back to project `.dependency-cruiser.{js,cjs,json}`).
+- `detect`: local depcruise binary + rules file (`.slopgate/depcruise.cjs`, falling back to project `.dependency-cruiser.{js,cjs,json}`).
 - `run`: `depcruise --config <rules> --output-type json <rootsRel>` from repoRoot. One violation per rule transgression: `ruleId: 'depcruise-<ruleName>'`, category `architecture`, severity from rule severity (`error`→critical, `warn`→high, `info`→dropped). File = `from` module, `line: 1`, excerpt names the offending edge (`src/ui/x.ts → src/db/y.ts violates no-ui-to-db`).
-- Init scaffolds a starter `.slop-gate/depcruise.cjs` with universal rules (`no-circular`, `no-orphans`); layer-boundary rules are per-project and authored during `slop-gate-init` convention mining.
+- Init scaffolds a starter `.slopgate/depcruise.cjs` with universal rules (`no-circular`, `no-orphans`); layer-boundary rules are per-project and authored during `slopgate-init` convention mining.
 - This is the primary "catch bad architecture programmatically" surface: intended layering is encoded as rules, violations gate commits.
 
 **type-coverage** (`src/checkers/type-coverage.mjs`)
@@ -106,7 +106,7 @@ Fingerprint (internal to this module): `sha256(source | ruleId | relPath | norma
 - `normalizedMessage` = violation title/message with all digit runs replaced by `#` (kills line/col churn inside tsc messages).
 - No line number in the fingerprint ⇒ survives unrelated edits shifting lines. Trimmed source-line text disambiguates repeated identical violations in one file; N identical (same file, same rule, same line text) violations collapse to one fingerprint — acceptable: ratchet stays sound for "did something NEW appear".
 
-`baseline.json` (lives in `.slop-gate/`, committed):
+`baseline.json` (lives in `.slopgate/`, committed):
 
 ```json
 { "version": 1, "generated": "2026-06-10T...", "entries": { "<fp>": { "ruleId": "tsc-TS2322", "file": "src/x.ts" } } }
@@ -118,12 +118,12 @@ API:
 - `writeBaseline(path, violations)` — full snapshot.
 
 Gate behavior (commit tier only; fast tier never consults baseline — post-edit feedback should show everything in the touched file):
-- Baseline missing ⇒ empty baseline (everything is new) + one-line hint: `run: slop-gate baseline --config …`.
+- Baseline missing ⇒ empty baseline (everything is new) + one-line hint: `run: slopgate baseline --config …`.
 - Report prints `N pre-existing (baselined) ignored` when N > 0.
 
 CLI:
-- `slop-gate baseline --config <c>` — create if missing; refuse to overwrite without `--update` (prevents accidentally re-baselining fresh slop).
-- `slop-gate baseline --update --config <c>` — full re-snapshot (runs a full-repo commit-tier scan, all checkers).
+- `slopgate baseline --config <c>` — create if missing; refuse to overwrite without `--update` (prevents accidentally re-baselining fresh slop).
+- `slopgate baseline --update --config <c>` — full re-snapshot (runs a full-repo commit-tier scan, all checkers).
 - `--prune` (combinable) — drop entries whose fingerprint no longer occurs.
 
 ### 3.5 New rule packs (rules/baseline/)
@@ -145,7 +145,7 @@ All ast rules ship with canary + negative fixtures in `rules/baseline/fixtures/`
 | `pass-through-fn` | exported function whose body is a single call forwarding its own params verbatim (`export const f = (a,b) => g(a,b)`) — decorative seam | high |
 | `delegating-wrapper` | exported class where every method body is a single delegation to one wrapped field | high |
 
-(Deeper depth analysis — export-ratio, single-consumer modules, co-change coupling — is graph-level, not per-file: lives in `slop-gate audit` §3.9. Deletion-test/seam-audit judgment calls live in the LLM-judge skill, sub-project 2.)
+(Deeper depth analysis — export-ratio, single-consumer modules, co-change coupling — is graph-level, not per-file: lives in `slopgate audit` §3.9. Deletion-test/seam-audit judgment calls live in the LLM-judge skill, sub-project 2.)
 
 **Test-slop pack** (opt-in baseline pack `test-slop`; rules carry `includeGlobs: ['**/*.test.*', '**/tests/**']`):
 
@@ -164,18 +164,18 @@ New config key `astDisable: ['rule-id', ...]` — filters ast violations by id p
 
 ### 3.6 Native pre-commit installer
 
-New CLI `slop-gate install-hooks --config <c>`; `slop-gate init` calls it.
+New CLI `slopgate install-hooks --config <c>`; `slopgate init` calls it.
 
 - Resolve hooks dir: `git config core.hooksPath` if set, else `<gitdir>/hooks`.
-- No existing `pre-commit` ⇒ write ours (marker line `# slop-gate-hook v1`), `chmod +x`:
+- No existing `pre-commit` ⇒ write ours (marker line `# slopgate-hook v1`), `chmod +x`:
 
 ```bash
 #!/usr/bin/env bash
-# slop-gate-hook v1
+# slopgate-hook v1
 ROOT=$(git rev-parse --show-toplevel) || exit 0
-CONFIG="$ROOT/.slop-gate/config.mjs"
+CONFIG="$ROOT/.slopgate/config.mjs"
 [ -f "$CONFIG" ] || exit 0
-exec node /home/user/Projects/slop-gate/bin/slop-gate --staged --config "$CONFIG"
+exec node /home/user/Projects/slopgate/bin/slopgate --staged --config "$CONFIG"
 ```
 
 - Existing hook containing our marker ⇒ rewrite (idempotent upgrade).
@@ -183,7 +183,7 @@ exec node /home/user/Projects/slop-gate/bin/slop-gate --staged --config "$CONFIG
 - Engine path is embedded absolute (this is a single-machine personal tool; engine repo location is stable).
 - `--no-verify` bypass remains possible — documented, acceptable (user-intentional override; CI is the future answer).
 
-### 3.7 Config additions (`.slop-gate/config.mjs`)
+### 3.7 Config additions (`.slopgate/config.mjs`)
 
 ```js
 export default {
@@ -193,7 +193,7 @@ export default {
     tsc:          true,          // or { tsconfig: 'tsconfig.app.json', timeout: 120 }
     knip:         true,
     jscpd:        { minTokens: 50 },
-    depcruise:    true,          // rules: .slop-gate/depcruise.cjs
+    depcruise:    true,          // rules: .slopgate/depcruise.cjs
     typeCoverage: true,
     diffShape:    { maxDirs: 5 },
     // false / absent => disabled even if detected
@@ -208,7 +208,7 @@ Resolver: absent `checkers` key ⇒ all disabled (explicit opt-in; init scaffold
 - Group violations by source: `regex`, `ast`, `checker:<id>`.
 - Footer lines: skipped checkers (`⚠ skipped: knip (no knip config)`), baselined count, infra errors.
 
-### 3.9 `slop-gate audit` command (`src/audit.mjs`)
+### 3.9 `slopgate audit` command (`src/audit.mjs`)
 
 Non-gating architecture-health report. Always exits 0; meant to run periodically (manually or via wrap-up skill), not on commit. Sections:
 
@@ -267,7 +267,7 @@ Infra errors never flip the exit code by themselves; violations always do.
 ## 7. Out of scope (explicit) + backlog
 
 Sub-projects (own spec each, after v2 ships):
-- **Sub-project 2: `/slop-gate` LLM-judge skill** — on-demand staged-diff review; the only layer for true deletion-test/seam-audit judgment, "semantically duplicates existing util", "this abstraction is decorative". Never hook-triggered.
+- **Sub-project 2: `/slopgate` LLM-judge skill** — on-demand staged-diff review; the only layer for true deletion-test/seam-audit judgment, "semantically duplicates existing util", "this abstraction is decorative". Never hook-triggered.
 - **Sub-project 3: rule harvesting loop** — mine learn-from-mistakes outputs + repeated violations into new rule-pack candidates.
 
 Backlog (recorded, deliberately not in v2):

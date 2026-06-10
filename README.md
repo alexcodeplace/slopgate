@@ -1,4 +1,4 @@
-# slop-gate
+# slopgate
 
 A global code-quality / anti-slop gate for Claude Code and git. Engine is shared, rules are per-project.
 
@@ -43,24 +43,24 @@ A global code-quality / anti-slop gate for Claude Code and git. Engine is shared
 ## Install
 
 ```bash
-npm install slop-gate
+npm install slopgate
 ```
 
 Then onboard a project:
 
 ```bash
-npx slop-gate init [path-to-repo]
+npx slopgate init [path-to-repo]
 ```
 
 This:
 1. Detects TypeScript roots, file extensions, and package layout
-2. Scaffolds `.slop-gate/config.mjs` with detected checkers enabled
-3. Writes `.slop-gate/suppressions.json` and `.slop-gate/depcruise.cjs` (starter)
-4. Creates `.slop-gate/convention-sources.json` (hints for authoring project rules from local skills/agents/docs)
-5. Creates `.slop-gate/rules/ast/` and `.slop-gate/fixtures/src/` directories
+2. Scaffolds `.slopgate/config.mjs` with detected checkers enabled
+3. Writes `.slopgate/suppressions.json` and `.slopgate/depcruise.cjs` (starter)
+4. Creates `.slopgate/convention-sources.json` (hints for authoring project rules from local skills/agents/docs)
+5. Creates `.slopgate/rules/ast/` and `.slopgate/fixtures/src/` directories
 6. Installs git pre-commit hook (or appends to existing)
 7. Merges Claude Code hook settings into `.claude/settings.json`
-8. Prints next steps (including: run `slop-gate baseline --config .slop-gate/config.mjs`)
+8. Prints next steps (including: run `slopgate baseline --config .slopgate/config.mjs`)
 
 ---
 
@@ -68,24 +68,24 @@ This:
 
 ### Run the gate on staged changes (pre-commit):
 ```bash
-slop-gate --staged --config .slop-gate/config.mjs
+slopgate --staged --config .slopgate/config.mjs
 ```
 
 ### Run on a single file (post-edit, fast tier):
 ```bash
-slop-gate --file src/app.ts --config .slop-gate/config.mjs
+slopgate --file src/app.ts --config .slopgate/config.mjs
 ```
 
 ### Create/update the baseline:
 ```bash
 # Create baseline (refuses if it exists)
-slop-gate baseline --config .slop-gate/config.mjs
+slopgate baseline --config .slopgate/config.mjs
 
 # Update baseline (re-snapshot all current violations)
-slop-gate baseline --update --config .slop-gate/config.mjs
+slopgate baseline --update --config .slopgate/config.mjs
 
 # Prune baseline (remove entries no longer occurring)
-slop-gate baseline --prune --config .slop-gate/config.mjs
+slopgate baseline --prune --config .slopgate/config.mjs
 ```
 
 ### Run self-test:
@@ -95,14 +95,14 @@ npm run self-test
 
 ### Install or reinstall hooks:
 ```bash
-slop-gate install-hooks --config .slop-gate/config.mjs
+slopgate install-hooks --config .slopgate/config.mjs
 ```
 
 ---
 
 ## Command Reference
 
-### `slop-gate init [dir]`
+### `slopgate init [dir]`
 Onboard a new repository. Detects roots, extensions, installed checkers, and scaffolds project structure.
 
 **Args:**
@@ -110,23 +110,23 @@ Onboard a new repository. Detects roots, extensions, installed checkers, and sca
 - No `--config` required; generates config during init
 
 **Creates:**
-- `.slop-gate/config.mjs` — project config (roots, extensions, rule packs, checkers, baseline/suppressions paths)
-- `.slop-gate/suppressions.json` — line-level violation suppressions (empty initially)
-- `.slop-gate/depcruise.cjs` — starter dependency-cruiser rules (if depcruise detected)
-- `.slop-gate/convention-sources.json` — hints for authoring project-specific rule packs
-- `.slop-gate/rules/ast/` and `.slop-gate/fixtures/src/` — directories for custom rules and fixtures
+- `.slopgate/config.mjs` — project config (roots, extensions, rule packs, checkers, baseline/suppressions paths)
+- `.slopgate/suppressions.json` — line-level violation suppressions (empty initially)
+- `.slopgate/depcruise.cjs` — starter dependency-cruiser rules (if depcruise detected)
+- `.slopgate/convention-sources.json` — hints for authoring project-specific rule packs
+- `.slopgate/rules/ast/` and `.slopgate/fixtures/src/` — directories for custom rules and fixtures
 - `.git/hooks/pre-commit` — native git pre-commit hook (creates new or appends to existing)
 - `.claude/settings.json` — Claude Code hook entries (idempotent merge)
 
-**Next step:** Run `slop-gate baseline --config .slop-gate/config.mjs` to create the initial ratchet baseline
+**Next step:** Run `slopgate baseline --config .slopgate/config.mjs` to create the initial ratchet baseline
 
 ---
 
-### `slop-gate --staged --config <path>`
+### `slopgate --staged --config <path>`
 Run commit-tier gate on staged files. Used by git pre-commit hook and Claude Code PreToolUse hook.
 
 **Flags:**
-- `--config <path>` (required) — path to `.slop-gate/config.mjs`
+- `--config <path>` (required) — path to `.slopgate/config.mjs`
 - `--tier fast|commit` (optional) — override default tier (default: commit for `--staged`)
 
 **Exit codes:**
@@ -141,12 +141,12 @@ Run commit-tier gate on staged files. Used by git pre-commit hook and Claude Cod
 
 ---
 
-### `slop-gate --file <path> --config <path>`
+### `slopgate --file <path> --config <path>`
 Run fast-tier gate on a single file (post-edit). Used by Claude Code PostToolUse hook.
 
 **Flags:**
 - `--file <path>` (required) — repo-relative path to check
-- `--config <path>` (required) — path to `.slop-gate/config.mjs`
+- `--config <path>` (required) — path to `.slopgate/config.mjs`
 - `--tier fast|commit` (optional) — override default tier (default: fast for `--file`)
 
 **Exit codes:** same as `--staged`
@@ -155,7 +155,7 @@ Run fast-tier gate on a single file (post-edit). Used by Claude Code PostToolUse
 
 ---
 
-### `slop-gate baseline --config <path> [--update] [--prune]`
+### `slopgate baseline --config <path> [--update] [--prune]`
 Manage the ratchet baseline.
 
 **Flags:**
@@ -172,23 +172,23 @@ Manage the ratchet baseline.
 
 ---
 
-### `slop-gate install-hooks --config <path>`
+### `slopgate install-hooks --config <path>`
 Install or upgrade the git pre-commit hook.
 
 **Flags:**
 - `--config <path>` (required)
 
 **Behavior:**
-- No hook exists → create new hook with slop-gate check
-- Hook exists with slop-gate marker → upgrade (idempotent)
-- Foreign hook exists → append slop-gate block before final `exec` (preserves other hooks)
+- No hook exists → create new hook with slopgate check
+- Hook exists with slopgate marker → upgrade (idempotent)
+- Foreign hook exists → append slopgate block before final `exec` (preserves other hooks)
 
 **Hook location:** `<git-dir>/hooks/pre-commit` (or respects `git config core.hooksPath`)
 
 ---
 
 
-### `slop-gate --self-test --config <path>`
+### `slopgate --self-test --config <path>`
 Internal: validate regex + AST engines and checker parsers against fixtures.
 
 **Flags:**
@@ -251,13 +251,13 @@ The ratchet prevents violations from blocking adoption of new rules or onboardin
 
 ### How It Works
 
-1. **At init:** `slop-gate baseline --config ...` creates `.slop-gate/baseline.json` with a snapshot of ALL current violations.
+1. **At init:** `slopgate baseline --config ...` creates `.slopgate/baseline.json` with a snapshot of ALL current violations.
 
 2. **On commit:** The gate compares the current full-repo commit-tier scan against the baseline. Violations whose fingerprint is in the baseline are ignored (baselined); NEW violations block the commit.
 
-3. **Paydown:** As issues are fixed, their fingerprint disappears from the current scan. `slop-gate baseline --prune` removes old entries from the baseline, lowering the bar.
+3. **Paydown:** As issues are fixed, their fingerprint disappears from the current scan. `slopgate baseline --prune` removes old entries from the baseline, lowering the bar.
 
-4. **Re-snapshot:** `slop-gate baseline --update` does a full re-scan and updates the baseline (use after intentionally widening rules or adding new checkers).
+4. **Re-snapshot:** `slopgate baseline --update` does a full re-scan and updates the baseline (use after intentionally widening rules or adding new checkers).
 
 ### Fingerprint Stability
 
@@ -276,7 +276,7 @@ Fingerprints do NOT include the line number, so they survive unrelated edits shi
 
 ---
 
-## Config Reference (`.slop-gate/config.mjs`)
+## Config Reference (`.slopgate/config.mjs`)
 
 ```javascript
 export default {
@@ -296,7 +296,7 @@ export default {
     tsc:           true,                   // or { tsconfig: 'tsconfig.json', timeout: 120 }
     knip:          true,
     jscpd:         { minTokens: 50 },      // token threshold (optional)
-    depcruise:     true,                   // uses .slop-gate/depcruise.cjs
+    depcruise:     true,                   // uses .slopgate/depcruise.cjs
     typeCoverage:  true,
     diffShape:     { maxDirs: 5 },         // max root dirs per commit (optional)
     // false or absent = disabled
@@ -311,7 +311,7 @@ export default {
   // File paths (relative to repo root)
   suppressions: './suppressions.json',     // line-level exemptions
   fixtures: './fixtures',                  // test fixture canaries
-  // baselinePath is auto-computed: .slop-gate/baseline.json
+  // baselinePath is auto-computed: .slopgate/baseline.json
 };
 ```
 
@@ -437,7 +437,7 @@ Place fixtures in `rules/baseline/fixtures/` with `.case` and `.output` JSON fil
 
 ### Claude Code Hooks
 
-Init wires slop-gate into `.claude/settings.json`:
+Init wires slopgate into `.claude/settings.json`:
 
 ```json
 {
@@ -447,7 +447,7 @@ Init wires slop-gate into `.claude/settings.json`:
       "hooks": [
         {
           "type": "command",
-          "command": "/path/to/slop-gate/hooks/commit-hook.sh"
+          "command": "/path/to/slopgate/hooks/commit-hook.sh"
         }
       ]
     }],
@@ -456,7 +456,7 @@ Init wires slop-gate into `.claude/settings.json`:
       "hooks": [
         {
           "type": "command",
-          "command": "/path/to/slop-gate/hooks/edit-hook.sh"
+          "command": "/path/to/slopgate/hooks/edit-hook.sh"
         }
       ]
     }]
@@ -464,8 +464,8 @@ Init wires slop-gate into `.claude/settings.json`:
 }
 ```
 
-- **PreToolUse** (commit-hook.sh) — fires before Bash tool use; checks for `git commit` in the command and runs `slop-gate --staged`
-- **PostToolUse** (edit-hook.sh) — fires after Edit/Write; runs `slop-gate --file` on the touched file (fast tier, 5-second timeout)
+- **PreToolUse** (commit-hook.sh) — fires before Bash tool use; checks for `git commit` in the command and runs `slopgate --staged`
+- **PostToolUse** (edit-hook.sh) — fires after Edit/Write; runs `slopgate --file` on the touched file (fast tier, 5-second timeout)
 
 ### Git Pre-Commit Hook
 
@@ -474,9 +474,9 @@ Init wires slop-gate into `.claude/settings.json`:
 ```bash
 #!/usr/bin/env bash
 ROOT=$(git rev-parse --show-toplevel) || exit 0
-CONFIG="$ROOT/.slop-gate/config.mjs"
+CONFIG="$ROOT/.slopgate/config.mjs"
 [ -f "$CONFIG" ] || exit 0
-exec node /path/to/slop-gate/bin/slop-gate --staged --config "$CONFIG"
+exec node /path/to/slopgate/bin/slopgate --staged --config "$CONFIG"
 ```
 
 The hook can be bypassed with `git commit --no-verify`, which is intentional (user-initiated escape hatch).
@@ -485,7 +485,7 @@ The hook can be bypassed with `git commit --no-verify`, which is intentional (us
 
 ## Suppressions
 
-Edit `.slop-gate/suppressions.json`:
+Edit `.slopgate/suppressions.json`:
 
 ```json
 {
@@ -535,7 +535,7 @@ gate: { staged: ['critical', 'high'] },
 
 Commit a file with `const x = y as any;`:
 ```
-slop-gate: 1 violation(s)
+slopgate: 1 violation(s)
 
 ast › as-any-cast
   src/utils.ts:42
@@ -556,13 +556,13 @@ checkers: { jscpd: { minTokens: 50 } },
 baseline: [],
 ```
 
-Run `slop-gate baseline --config .slop-gate/config.mjs` to baseline existing clones. Now:
+Run `slopgate baseline --config .slopgate/config.mjs` to baseline existing clones. Now:
 - Commits pass unless they introduce NEW duplications
-- Track paydown via `slop-gate audit`
+- Track paydown via `slopgate audit`
 
 ### Example 3: Custom Architecture Rules
 
-Create `.slop-gate/depcruise.cjs`:
+Create `.slopgate/depcruise.cjs`:
 ```javascript
 module.exports = {
   forbidden: [
@@ -597,7 +597,7 @@ The `console-debug-left` rule fires everywhere except this project.
 ```
 git commit
   └─ .git/hooks/pre-commit
-       └─ slop-gate --staged --config <repo>/.slop-gate/config.mjs
+       └─ slopgate --staged --config <repo>/.slopgate/config.mjs
             ├─ Enumerate staged files
             ├─ Regex engine (patterns → violations)
             ├─ AST engine (ast-grep rules → violations)
@@ -633,7 +633,7 @@ Tool crash / timeout → `⚠ skipped: <id> (<reason>)` warning, gate continues 
 - **Git-only** — no other VCS support
 - **No auto-fix** — violations are reported, not automatically corrected
 - **No CI integration yet** — hooks are local and Claude Code only; CI layer is future work
-- **`slop-gate audit` command** — planned for v2 (non-gating architecture-health report: hotspots, module shape, co-change coupling, ratchet progress tracking)
+- **`slopgate audit` command** — planned for v2 (non-gating architecture-health report: hotspots, module shape, co-change coupling, ratchet progress tracking)
 - **Embeddings-based semantic duplicate detection** — planned, not in v1
 - **API-surface diff gate** — track breaking changes to public exports (future)
 - **LLM-judge skill** — on-demand deep review of architectural debt (separate sub-project)

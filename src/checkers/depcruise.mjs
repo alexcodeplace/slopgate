@@ -1,6 +1,6 @@
 // src/checkers/depcruise.mjs
 /** dependency-cruiser adapter — the architecture gate: layer boundaries, cycles,
- *  orphans, encoded as rules in .slop-gate/depcruise.cjs (project-pinned). */
+ *  orphans, encoded as rules in .slopgate/depcruise.cjs (project-pinned). */
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { localBin, runTool } from './shared.mjs';

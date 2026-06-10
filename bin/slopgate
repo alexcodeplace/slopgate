@@ -1,5 +1,5 @@
 #!/usr/bin/env node
 import('../src/cli.mjs').catch((e) => {
-  process.stderr.write(`slop-gate: ${e?.stack || e}\n`);
+  process.stderr.write(`slopgate: ${e?.stack || e}\n`);
   process.exit(1);
 });

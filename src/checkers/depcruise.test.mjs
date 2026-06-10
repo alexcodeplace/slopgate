@@ -23,14 +23,14 @@ assert('category architecture', vios[0].category === 'architecture' && vios[0].f
 
 // detect: needs bin + a rules file
 const root = mkdtempSync(join(tmpdir(), 'slopgate-dc-'));
-const config = { repoRoot: root, configDir: join(root, '.slop-gate') };
+const config = { repoRoot: root, configDir: join(root, '.slopgate') };
 mkdirSync(config.configDir, { recursive: true });
 assert('no bin → unavailable', depcruise.detect(config, {}).available === false);
 mkdirSync(join(root, 'node_modules/.bin'), { recursive: true });
 writeFileSync(join(root, 'node_modules/.bin/depcruise'), '');
 assert('bin but no rules → unavailable', depcruise.detect(config, {}).available === false);
 writeFileSync(join(config.configDir, 'depcruise.cjs'), 'module.exports={};');
-assert('slop-gate rules file → available', depcruise.detect(config, {}).available === true);
+assert('slopgate rules file → available', depcruise.detect(config, {}).available === true);
 assert('id', depcruise.id === 'depcruise');
 
 rmSync(root, { recursive: true, force: true });
