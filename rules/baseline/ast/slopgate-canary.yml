@@ -1,0 +1,9 @@
+id: slopgate-canary
+language: tsx
+severity: error
+message: slopgate self-test canary
+note: '{"severity":"high","category":"convention","resolution":"self-test only — must only ever match fixtures/"}'
+files:
+  - '**/fixtures/**'
+rule:
+  pattern: __SLOPGATE_AST_CANARY__
