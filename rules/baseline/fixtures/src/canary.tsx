@@ -1,4 +1,4 @@
-// Fixture for slop-gate self-test. Contains deliberate canary tokens.
+// Fixture for slopgate self-test. Contains deliberate canary tokens.
 // no-stubs SHOULD match stub markers (not bare placeholder UI/i18n tokens):
 // placeholder for now
 // TODO: implement later
