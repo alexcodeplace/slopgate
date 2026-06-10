@@ -12,8 +12,8 @@ import { printGateReport } from './report.mjs';
 export function runGate(mode, config) {
   const opts = mode === 'staged' ? { staged: true } : { file: config._fileTarget };
   const files = listSourceFiles(config, opts);
-  const scanOpts = mode === 'staged' ? {} : opts;
-  if (files.length === 0 && mode !== 'staged') return { violations: [], code: 0 };
+  const scanOpts = opts;
+  if (files.length === 0) return { violations: [], code: 0 };
 
   const allow = new Set(config.gate[mode] ?? ['critical', 'high']);
   const sup = loadSuppressions(config.suppressionsPath);
