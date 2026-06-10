@@ -9,7 +9,12 @@
   "homepage": "https://github.com/alexcodeplace/slopgate#readme",
   "bugs": { "url": "https://github.com/alexcodeplace/slopgate/issues" },
   "bin": { "slopgate": "bin/slopgate" },
-  "files": ["bin", "src", "hooks", "rules"],
+  "files": [
+    "bin", "src", "hooks", "rules",
+    "!**/*.test.mjs",
+    "!rules/baseline/fixtures",
+    "!rules/baseline/selftest.config.mjs"
+  ],
   "engines": { "node": ">=18" },
   "scripts": {
     "self-test": "node bin/slopgate --self-test --config rules/baseline/selftest.config.mjs",

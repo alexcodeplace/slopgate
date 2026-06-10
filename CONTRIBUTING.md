@@ -36,7 +36,6 @@ slopgate/
 │   │   ├── shared.mjs                  # Shared checker utilities
 │   │   └── *.test.mjs                  # Checker tests
 │   ├── ratchet.mjs                     # Baseline fingerprinting + filtering
-│   ├── audit.mjs                       # Architecture health report
 │   ├── report.mjs                      # Violation output formatter
 │   ├── suppressions.mjs                # Suppression line-hash logic
 │   ├── install-hooks.mjs               # Git hook installer
