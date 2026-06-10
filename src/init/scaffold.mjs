@@ -16,6 +16,7 @@ module.exports = {
 
 const COMMIT_HOOK = `${ENGINE_ROOT}/hooks/commit-hook.sh`;
 const EDIT_HOOK = `${ENGINE_ROOT}/hooks/edit-hook.sh`;
+const SESSION_HOOK = `${ENGINE_ROOT}/hooks/session-start.sh`;
 
 const PRE_TOOL = { matcher: 'Bash', command: COMMIT_HOOK };
 const POST_TOOL = { matcher: 'Edit|Write', command: EDIT_HOOK };
@@ -85,6 +86,7 @@ export function mergeSettingsJson(targetDir) {
       hooks: {
         PreToolUse: [{ matcher: PRE_TOOL.matcher, hooks: [{ type: 'command', command: PRE_TOOL.command }] }],
         PostToolUse: [{ matcher: POST_TOOL.matcher, hooks: [{ type: 'command', command: POST_TOOL.command }] }],
+        SessionStart: [{ hooks: [{ type: 'command', command: SESSION_HOOK }] }],
       },
     };
     writeFileSync(settingsPath, `${JSON.stringify(settings, null, 2)}\n`);
@@ -100,8 +102,9 @@ export function mergeSettingsJson(targetDir) {
   }
   const addedPre = ensureHookEntry(settings, 'PreToolUse', PRE_TOOL);
   const addedPost = ensureHookEntry(settings, 'PostToolUse', POST_TOOL);
+  const addedSession = ensureHookEntry(settings, 'SessionStart', { matcher: undefined, command: SESSION_HOOK });
 
-  if (!addedPre && !addedPost) return 'already-present';
+  if (!addedPre && !addedPost && !addedSession) return 'already-present';
 
   copyFileSync(settingsPath, `${settingsPath}.bak`);
   writeFileSync(settingsPath, `${JSON.stringify(settings, null, 2)}\n`);
