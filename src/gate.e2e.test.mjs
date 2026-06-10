@@ -49,6 +49,10 @@ assert('baselined count reported', r4.stderr.includes('baselined'));
 const r5 = gate('baseline');
 assert('second baseline refused without --update', r5.status === 2);
 
+// 4b. --prune + --update together: prune guard false → update re-snapshot runs
+const r5b = gate('baseline', '--prune', '--update');
+assert('--prune + --update skips prune, runs update', r5b.status === 0 && r5b.stdout.includes('baseline written') && !/baseline pruned/.test(r5b.stdout));
+
 // 5. NEW violation still blocks
 writeFileSync(join(REPO, 'src/b.ts'), 'export const b = 1; // TODO: implement\n');
 execSync('git add src/b.ts', { cwd: REPO });
