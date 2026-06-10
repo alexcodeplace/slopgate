@@ -18,6 +18,7 @@ export function runSelfTest(config) {
   if (!ast.available) {
     console.error(`WARN ast-grep unavailable — bucket-B self-test skipped: ${ast.errors.join('; ')}`);
   } else if (!ast.violations.some((v) => v.id === 'slopgate-canary')) {
+    if (ast.errors?.length) for (const e of ast.errors) console.error(`FAIL ast: ${e}`);
     console.error('FAIL ast-grep canary: slopgate-canary did not fire on fixtures'); failed++;
   } else {
     console.error(`OK ast-grep canary (${ast.violations.length} fixture violations)`);
