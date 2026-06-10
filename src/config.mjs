@@ -40,15 +40,10 @@ export async function resolveConfig(configPath) {
     for (const p of mod) patterns.push(validatePattern(p, relPath));
   }
 
-  // dedupe by id (last-wins: project overrides baseline on collision)
+  // dedupe by id (last-wins value, first-occurrence order — both guaranteed by Map)
   const byId = new Map();
   for (const p of patterns) byId.set(p.id, p);
-  const order = [];
-  const seen = new Set();
-  for (const p of patterns) {
-    if (!seen.has(p.id)) { order.push(p.id); seen.add(p.id); }
-  }
-  const dedupedPatterns = order.map((id) => byId.get(id));
+  const dedupedPatterns = [...byId.values()];
 
   // ast rule dirs: baseline ast + project ast (if present)
   const astRuleDirs = [BASELINE_AST_DIR];

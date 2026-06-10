@@ -2,6 +2,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runAstGrepScan } from './ast-engine.mjs';
+import { compileLineRegex } from './regex-engine.mjs';
 import { parseTscOutput } from './checkers/tsc.mjs';
 import { parseKnipOutput } from './checkers/knip.mjs';
 import { parseJscpdReport } from './checkers/jscpd.mjs';
@@ -14,7 +15,7 @@ export function runSelfTest(config) {
   for (const p of config.patterns) {
     if (!p.canary) { console.error(`WARN ${p.id}: no canary — cannot prove rule still fires`); continue; }
     let re;
-    try { re = new RegExp(p.pattern, p.flags || undefined); } catch (e) { console.error(`FAIL ${p.id}: regex invalid: ${e}`); failed++; continue; }
+    try { re = compileLineRegex(p.pattern, p.flags); } catch (e) { console.error(`FAIL ${p.id}: regex invalid: ${e}`); failed++; continue; }
     if (!re.test(p.canary)) { console.error(`FAIL ${p.id}: canary not matched: ${p.canary}`); failed++; }
     else console.error(`OK ${p.id}`);
     for (const neg of [].concat(p.negativeCanary ?? [])) {

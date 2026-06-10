@@ -1,7 +1,16 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { listSourceFiles } from './enumerate.mjs';
 import { lineHash } from './suppressions.mjs';
+
+// g/y make RegExp.prototype.test stateful (lastIndex advances) → alternate-line
+// matches when scanning line-by-line. Strip them for line scanning.
+const STATEFUL_FLAGS = /[gy]/g;
+
+/** Compile a rule's regex for line-by-line scanning (never stateful). */
+export function compileLineRegex(pattern, flags) {
+  const safe = (flags || '').replace(STATEFUL_FLAGS, '');
+  return new RegExp(pattern, safe || undefined);
+}
 
 function pathMatchesGlobs(filePath, globs) {
   if (!globs?.length) return false;
@@ -17,60 +26,57 @@ function pathMatchesGlobs(filePath, globs) {
   });
 }
 
-function searchPattern(config, files, pattern, flags, excludeGlobs) {
-  const re = new RegExp(pattern, flags || undefined);
-  const byFile = new Map();
+/**
+ * Single-pass regex scan: read each file once, test every pattern against every line,
+ * apply per-pattern minFiles thresholds, expand surviving hits into violations.
+ * @param {import('./config.mjs').ResolvedConfig} config
+ * @param {string[]} files repo-relative source paths (already enumerated by the caller)
+ * @param {{ fileMode?: boolean }} [opts] fileMode → drop cross-file (minFiles>1) rules
+ * @returns {{ id:string, severity:string, category:string, file:string, line:number, lineHash:string, text:string, resolution:string, engine:'regex' }[]}
+ */
+export function scanRegex(config, files, { fileMode = false } = {}) {
+  const compiled = [];
+  for (const p of config.patterns) {
+    if (fileMode && (p.minFiles ?? 1) > 1) continue; // cross-file thresholds meaningless on one file
+    try { compiled.push({ p, re: compileLineRegex(p.pattern, p.flags) }); }
+    catch { /* unparseable pattern: skip, mirrors prior swallow */ }
+  }
+
+  // pass 1: one read per file; record hits per pattern as file -> [{line, text}]
+  const hits = new Map(); // patternId -> Map(file -> [{line, text}])
   for (const file of files) {
-    if (pathMatchesGlobs(file, excludeGlobs)) continue;
-    const lines = readFileSync(join(config.repoRoot, file), 'utf8').split('\n');
-    for (let i = 0; i < lines.length; i++) {
-      if (re.test(lines[i])) {
-        if (!byFile.has(file)) byFile.set(file, []);
-        byFile.get(file).push(i + 1);
+    let lines;
+    try { lines = readFileSync(join(config.repoRoot, file), 'utf8').split('\n'); }
+    catch { continue; }
+    for (const { p, re } of compiled) {
+      if (pathMatchesGlobs(file, p.excludeGlobs)) continue;
+      let perFile = null;
+      for (let i = 0; i < lines.length; i++) {
+        if (re.test(lines[i])) {
+          (perFile ??= []).push({ line: i + 1, text: lines[i] });
+        }
+      }
+      if (perFile) {
+        let byFile = hits.get(p.id);
+        if (!byFile) { byFile = new Map(); hits.set(p.id, byFile); }
+        byFile.set(file, perFile);
       }
     }
   }
-  return byFile;
-}
 
-/**
- * @param {import('./config.mjs').ResolvedConfig} config
- * @param {{ staged?:boolean, file?:string }} opts
- * @returns {{ id:string, severity:string, category:string, resolution:string, files:string[], byFile:Map }[]}
- */
-export function runPatternScan(config, opts = {}) {
-  const files = listSourceFiles(config, opts);
-  const fileMode = !!opts.file;
-  const findings = [];
-  for (const p of config.patterns) {
-    if (fileMode && (p.minFiles ?? 1) > 1) continue; // cross-file thresholds meaningless on one file
-    let byFile;
-    try { byFile = searchPattern(config, files, p.pattern, p.flags, p.excludeGlobs); }
-    catch { continue; }
-    const hitFiles = [...byFile.keys()].sort();
-    if (hitFiles.length < (p.minFiles ?? 1)) continue;
-    findings.push({ id: p.id, severity: p.severity, category: p.category, resolution: p.resolution, files: hitFiles, byFile });
-  }
-  return findings;
-}
-
-/** Expand findings into per-line violations (critical/high gated upstream). */
-export function collectRegexViolations(config, findings) {
+  // pass 2: minFiles threshold + expand to violations (no re-read, no re-test)
   const violations = [];
-  for (const f of findings) {
-    const pat = config.patterns.find((p) => p.id === f.id);
-    const re = new RegExp(pat.pattern, pat.flags || undefined);
-    for (const file of f.files) {
-      const lines = readFileSync(join(config.repoRoot, file), 'utf8').split('\n');
-      for (let i = 0; i < lines.length; i++) {
-        if (re.test(lines[i])) {
-          violations.push({
-            id: f.id, severity: f.severity, category: f.category, file, line: i + 1,
-            lineHash: lineHash(lines[i]),
-            text: lines[i].trim().slice(0, 90),
-            resolution: f.resolution, engine: 'regex',
-          });
-        }
+  for (const { p } of compiled) {
+    const byFile = hits.get(p.id);
+    if (!byFile || byFile.size < (p.minFiles ?? 1)) continue;
+    for (const file of [...byFile.keys()].sort()) {
+      for (const { line, text } of byFile.get(file)) {
+        violations.push({
+          id: p.id, severity: p.severity, category: p.category, file, line,
+          lineHash: lineHash(text),
+          text: text.trim().slice(0, 90),
+          resolution: p.resolution, engine: 'regex',
+        });
       }
     }
   }
