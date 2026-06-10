@@ -6,9 +6,11 @@
  */
 import { execSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync, chmodSync, mkdirSync } from 'node:fs';
-import { join, isAbsolute } from 'node:path';
+import { join, isAbsolute, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const ENGINE_ROOT = '/home/user/Projects/slop-gate';
+// engine root = parent of src/ (this file lives in src/)
+export const ENGINE_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 export const MARKER_BEGIN = '# slop-gate-hook v1 BEGIN';
 export const MARKER_END = '# slop-gate-hook v1 END';
 
