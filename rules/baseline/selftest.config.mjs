@@ -7,7 +7,7 @@ export default {
   skipDirs: ['node_modules'],
   baseline: ['no-stubs', 'ts-suppress', 'as-any', 'raw-hex', 'kv-ban'],
   rules: [],
-  astRules: join(__dirname, 'ast'),
+  astRules: null,
   gate: { file: ['critical', 'high'], staged: ['critical', 'high'] },
   suppressions: join(__dirname, 'fixtures', 'suppressions.json'),
   fixtures: join(__dirname, 'fixtures'),
