@@ -85,9 +85,28 @@ async function main() {
       process.stderr.write('slopgate: baseline.json exists — use `baseline --update` to re-snapshot (this re-absorbs ALL current violations) or `baseline --prune` to drop resolved entries\n');
       process.exit(2);
     }
+    const old = exists ? loadBaseline(config.baselinePath) : { entries: {} };
     const snap = await snapshotViolations(config);
     const n = writeBaseline(config.baselinePath, snap, new Date().toISOString());
-    process.stdout.write(`slopgate: baseline written — ${n} entr${n === 1 ? 'y' : 'ies'} → ${config.baselinePath}\n`);
+    if (exists) {
+      // show what --update amnesties: every "added" fingerprint is fresh slop being legitimized
+      const fps = new Set(snap.map((v) => fingerprintViolation(v)));
+      const seen = new Set();
+      const added = snap.filter((v) => {
+        const fp = fingerprintViolation(v);
+        if (old.entries[fp] || seen.has(fp)) return false;
+        seen.add(fp); return true;
+      });
+      const removed = Object.keys(old.entries).filter((fp) => !fps.has(fp)).length;
+      const byRule = {};
+      for (const v of added) byRule[v.id] = (byRule[v.id] ?? 0) + 1;
+      const top = Object.entries(byRule).sort((a, b) => b[1] - a[1]).slice(0, 5)
+        .map(([id, c]) => `${id}×${c}`).join(', ');
+      process.stdout.write(`slopgate: baseline updated — ${n} entries (+${added.length} newly absorbed, −${removed} resolved)${top ? ` — absorbed: ${top}` : ''}\n`);
+      if (added.length) process.stdout.write('slopgate: ⚠ newly absorbed entries are violations being LEGITIMIZED — review before committing baseline.json\n');
+    } else {
+      process.stdout.write(`slopgate: baseline written — ${n} entr${n === 1 ? 'y' : 'ies'} → ${config.baselinePath}\n`);
+    }
     process.exit(0);
   }
 

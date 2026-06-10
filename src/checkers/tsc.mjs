@@ -6,7 +6,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { localBin, runToolAsync, sourceLine } from './shared.mjs';
+import { localBin, runToolAsync, sourceLine, ensureCacheDir } from './shared.mjs';
 
 export function resolveTscBin(repoRoot) {
   const local = localBin(repoRoot, 'tsc');
@@ -33,6 +33,18 @@ export function parseTscOutput(stdout) {
   return errors;
 }
 
+/** File-less `error TSnnnn:` lines = config/CLI problems (bad flag, broken tsconfig).
+ *  Surfaced as infra errors — without this, a misconfigured tsc run parses to zero
+ *  violations and silently passes the gate. */
+export function parseTscConfigErrors(stdout) {
+  const out = [];
+  for (const raw of stdout.split('\n')) {
+    const m = /^error (TS\d+): (.*)$/.exec(raw);
+    if (m) out.push(`${m[1]}: ${m[2]}`);
+  }
+  return out;
+}
+
 export default {
   id: 'tsc',
   detect(config, cfg) {
@@ -49,10 +61,17 @@ export default {
     const errors = [];
     if (resolved.source === 'path') errors.push('tsc: using PATH binary (version not pinned — results may differ from CI)');
     for (const rel of tsconfigList(cfg)) {
-      const res = await runToolAsync(bin, ['--noEmit', '--pretty', 'false', '-p', join(config.repoRoot, rel)], {
+      const flags = ['--noEmit', '--pretty', 'false', '-p', join(config.repoRoot, rel)];
+      if (cfg.incremental !== false) {
+        // full-project semantics, delta cost: cached tsbuildinfo in self-gitignored .slopgate/cache
+        const slug = rel.replace(/[^\w.-]+/g, '_');
+        flags.push('--incremental', '--tsBuildInfoFile', join(ensureCacheDir(config), `tsc-${slug}.tsbuildinfo`));
+      }
+      const res = await runToolAsync(bin, flags, {
         cwd: config.repoRoot, timeout: (cfg.timeout ?? 120) * 1000,
       });
       if (!res.ok && res.status == null) { errors.push(`tsc(${rel}) failed: ${res.error}`); continue; }
+      for (const ce of parseTscConfigErrors(res.stdout)) errors.push(`tsc(${rel}) failed: ${ce}`);
       violations.push(...parseTscOutput(res.stdout).map((e) => ({
         id: `tsc-${e.code}`, severity: 'high', category: 'types',
         file: e.file, line: e.line,

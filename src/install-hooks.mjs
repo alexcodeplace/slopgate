@@ -15,11 +15,20 @@ export const MARKER_BEGIN = '# slopgate-hook v1 BEGIN';
 export const MARKER_END = '# slopgate-hook v1 END';
 
 function hookBlock() {
+  // node path embedded at install time: GUI git clients (IDE commit button) run hooks
+  // without the shell PATH, so a bare `node` silently no-ops there.
   return [
     MARKER_BEGIN,
     'SLOPGATE_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)',
+    `SLOPGATE_ENGINE="${ENGINE_ROOT}/bin/slopgate"`,
+    `SLOPGATE_NODE="${process.execPath}"`,
+    '[ -x "$SLOPGATE_NODE" ] || SLOPGATE_NODE=node',
     'if [ -n "$SLOPGATE_ROOT" ] && [ -f "$SLOPGATE_ROOT/.slopgate/config.mjs" ]; then',
-    `  node ${ENGINE_ROOT}/bin/slopgate --staged --config "$SLOPGATE_ROOT/.slopgate/config.mjs" || exit 1`,
+    '  if [ -f "$SLOPGATE_ENGINE" ]; then',
+    '    "$SLOPGATE_NODE" "$SLOPGATE_ENGINE" --staged --config "$SLOPGATE_ROOT/.slopgate/config.mjs" || exit 1',
+    '  else',
+    '    echo "slopgate: engine missing at $SLOPGATE_ENGINE — gate SKIPPED" >&2',
+    '  fi',
     'fi',
     MARKER_END,
   ].join('\n');

@@ -1,13 +1,22 @@
 // src/checkers/shared.mjs
 /** Shared checker plumbing: local-bin resolution (no global/npx — deterministic versions),
  *  spawn wrapper (timeout → ok:false, never throws), source-line lookup for lineHash. */
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { spawnSync, execFile } from 'node:child_process';
 import { join } from 'node:path';
 
 export function localBin(repoRoot, name) {
   const p = join(repoRoot, 'node_modules/.bin', name);
   return existsSync(p) ? p : null;
+}
+
+/** Per-repo slopgate cache dir (tsbuildinfo, checker health). Self-gitignoring. */
+export function ensureCacheDir(config) {
+  const dir = join(config.configDir ?? join(config.repoRoot, '.slopgate'), 'cache');
+  mkdirSync(dir, { recursive: true });
+  const gi = join(dir, '.gitignore');
+  if (!existsSync(gi)) writeFileSync(gi, '*\n');
+  return dir;
 }
 
 export function runTool(bin, args, { cwd, timeout }) {
