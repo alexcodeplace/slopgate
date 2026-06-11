@@ -1,0 +1,101 @@
+{
+  "repoRoot": "/home/user/Projects/slopgate/.worktrees/feat/rust-rewrite-phase01",
+  "configDir": "/home/user/Projects/slopgate/.worktrees/feat/rust-rewrite-phase01/.slopgate",
+  "roots": [
+    "/home/user/Projects/slopgate/.worktrees/feat/rust-rewrite-phase01/src"
+  ],
+  "rootsRel": [
+    "src"
+  ],
+  "exts": [
+    ".ts",
+    ".tsx",
+    ".astro"
+  ],
+  "skipDirs": [
+    "node_modules",
+    "dist",
+    "tests",
+    ".worktrees"
+  ],
+  "patterns": [
+    {
+      "id": "no-stubs-placeholder",
+      "title": "Stub / placeholder / not-implemented marker",
+      "category": "convention",
+      "severity": "critical",
+      "pattern": "(?:for now|in a real app|placeholder\\s+(?:for now|implementation|impl|until)\\b|TODO: ?implement|not implemented)",
+      "flags": "i",
+      "description": "Stub or deferred-work marker — global rule forbids stubs/placeholders/workarounds.",
+      "resolution": "Implement the real behavior now; remove the placeholder.",
+      "canary": "// placeholder for now",
+      "negativeCanary": [
+        "placeholder={t('x')}",
+        "placeholder:text-ink",
+        "admin.incidents.titlePlaceholder",
+        "const namePlaceholder = 1"
+      ]
+    },
+    {
+      "id": "ts-suppress-added",
+      "title": "TypeScript suppression directive",
+      "category": "convention",
+      "severity": "high",
+      "pattern": "(?:\\/\\/\\s*|\\/\\*\\s*)?@ts-(?:ignore|expect-error|nocheck)\\b",
+      "description": "Suppressing the type checker instead of fixing the cause.",
+      "resolution": "Fix the underlying type error; remove the suppression.",
+      "canary": "// @ts-expect-error",
+      "negativeCanary": [
+        "/* eslint-disable zync/no-raw-html-in-pages */"
+      ]
+    },
+    {
+      "id": "as-any-cast",
+      "title": "`as any` cast",
+      "category": "convention",
+      "severity": "high",
+      "pattern": "as any\\b",
+      "description": "Escape-hatch cast that disables type safety.",
+      "resolution": "Use a precise type or a discriminated narrowing.",
+      "canary": "const x = foo as any;"
+    }
+  ],
+  "astRuleDirs": [
+    "/home/user/Projects/slopgate/.worktrees/feat/rust-rewrite-phase01/rules/baseline/ast",
+    "/home/user/Projects/slopgate/.worktrees/feat/rust-rewrite-phase01/.slopgate/rules/ast"
+  ],
+  "checkers": {
+    "diff-shape": {
+      "maxDirs": 5
+    }
+  },
+  "astDisable": [],
+  "baselinePath": "/home/user/Projects/slopgate/.worktrees/feat/rust-rewrite-phase01/.slopgate/baseline.json",
+  "gate": {
+    "file": [
+      "critical",
+      "high"
+    ],
+    "staged": [
+      "critical",
+      "high"
+    ]
+  },
+  "suppressionsPath": "/home/user/Projects/slopgate/.worktrees/feat/rust-rewrite-phase01/.slopgate/suppressions.json",
+  "fixturesDirs": [
+    "/home/user/Projects/slopgate/.worktrees/feat/rust-rewrite-phase01/rules/baseline/fixtures",
+    "/home/user/Projects/slopgate/.worktrees/feat/rust-rewrite-phase01/.slopgate/fixtures"
+  ],
+  "checkerConcurrency": 3,
+  "uxAstSeverity": {},
+  "uxAstAll": [
+    "ux-div-onclick",
+    "ux-anchor-no-href",
+    "ux-img-no-alt",
+    "ux-button-no-type",
+    "ux-img-no-dimensions",
+    "ux-media-no-dimensions",
+    "ux-async-onclick-no-disable",
+    "ux-modal-no-close"
+  ]
+}
