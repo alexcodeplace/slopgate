@@ -2,6 +2,7 @@ import { mkdirSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { installPreCommitHook } from './install-hooks.mjs';
 import { installSkills } from './install-skills.mjs';
+import { installAgentHooks } from './install-agent-hooks.mjs';
 import {
   detectRoots,
   detectExts,
@@ -40,6 +41,7 @@ export function runInit(targetDir, options = {}) {
   try { hookAction = installPreCommitHook(targetDir).action; } catch { /* not a git repo */ }
 
   installSkills();
+  const agentResults = installAgentHooks();
 
   writeFileSync(
     join(base, 'convention-sources.json'),
@@ -64,6 +66,13 @@ export function runInit(targetDir, options = {}) {
     process.stdout.write(`settings:  ${settingsAction} (.claude/settings.json)\n`);
     process.stdout.write(`checkers:  ${JSON.stringify(Object.keys(checkers))}\n`);
     process.stdout.write(`pre-commit hook: ${hookAction}\n`);
+    if (agentResults.length) {
+      for (const r of agentResults) {
+        process.stdout.write(`agent hooks:     ${r.label} — ${r.action}\n`);
+      }
+    } else {
+      process.stdout.write('agent hooks:     no agent CLIs detected\n');
+    }
     process.stdout.write('\nNEXT STEPS:\n');
     process.stdout.write('  1. Review .slopgate/convention-sources.json for project rule candidates\n');
     process.stdout.write('  2. Author project rule packs in .slopgate/rules/\n');

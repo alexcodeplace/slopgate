@@ -7,6 +7,7 @@ import { runInit } from './init.mjs';
 import { loadBaseline, writeBaseline, writeBaselineRaw, fingerprintViolation } from './ratchet.mjs';
 import { installPreCommitHook } from './install-hooks.mjs';
 import { installSkills } from './install-skills.mjs';
+import { installAgentHooks, removeAgentHooks, statusAgentHooks, AGENTS } from './install-agent-hooks.mjs';
 import { recordIncidents } from './stats/record.mjs';
 import { readRows, globalStatsPath, projectStatsPath } from './stats/store.mjs';
 import { aggregate, formatStats, DIMENSIONS } from './stats/query.mjs';
@@ -49,6 +50,60 @@ async function main() {
     const { action, path } = installPreCommitHook(config.repoRoot);
     process.stdout.write(`slopgate: pre-commit hook ${action} (${path})\n`);
     process.exit(0);
+  }
+
+  if (has('agent-hooks')) {
+    const sub = args[args.indexOf('agent-hooks') + 1];
+    const validSubs = ['install', 'reinstall', 'remove', 'status'];
+    const rawAgent = valOf('--agent');
+    const agentIds = rawAgent ? rawAgent.split(',').map(s => s.trim()) : undefined;
+
+    if (agentIds) {
+      const unknown = agentIds.filter(id => !AGENTS.some(a => a.id === id));
+      if (unknown.length) {
+        process.stderr.write(`slopgate: unknown agent(s): ${unknown.join(', ')} — valid: ${AGENTS.map(a => a.id).join(', ')}\n`);
+        process.exit(2);
+      }
+    }
+
+    if (!sub || sub === 'status' || !validSubs.includes(sub)) {
+      const rows = statusAgentHooks();
+      const SYMBOL = { installed: '✓', partial: '~', 'not-installed': '✗', 'not-detected': '-', 'invalid-json': '!' };
+      for (const r of rows) {
+        const sym = SYMBOL[r.status] ?? '?';
+        const det = r.detected ? 'detected' : 'not detected';
+        process.stdout.write(`  ${sym}  ${r.label.padEnd(28)}  ${r.status.padEnd(13)}  (${det})  ${r.path}\n`);
+      }
+      process.exit(!sub || sub === 'status' ? 0 : 2);
+    }
+
+    if (sub === 'install' || sub === 'reinstall') {
+      if (sub === 'reinstall') {
+        const rem = removeAgentHooks({ agentIds });
+        for (const r of rem) if (r.action === 'removed') process.stdout.write(`slopgate: agent-hooks ${r.label} — removed (reinstalling)\n`);
+      }
+      const results = installAgentHooks({ agentIds });
+      if (results.length === 0) {
+        process.stdout.write('slopgate: no agent CLIs detected — pass --agent <id> to install for a specific agent\n');
+      }
+      for (const r of results) {
+        if (r.action === 'invalid-json') {
+          process.stderr.write(`slopgate: agent-hooks ${r.label} — ${r.path} is not valid JSON, left untouched\n`);
+        } else {
+          process.stdout.write(`slopgate: agent-hooks ${r.label} — ${r.action} (${r.path})\n`);
+        }
+      }
+      process.exit(0);
+    }
+
+    if (sub === 'remove') {
+      const results = removeAgentHooks({ agentIds });
+      for (const r of results) process.stdout.write(`slopgate: agent-hooks ${r.label} — ${r.action} (${r.path})\n`);
+      process.exit(0);
+    }
+
+    process.stderr.write(`slopgate: agent-hooks usage: agent-hooks [status|install|reinstall|remove] [--agent id1,id2]\n`);
+    process.exit(2);
   }
 
   if (has('install-skills')) {
@@ -133,7 +188,7 @@ async function main() {
   const fileTarget = valOf('--file');
   if (fileTarget) process.exit((await runGate('file', config, { tier: tierFlag ?? undefined, fileTarget })).code);
 
-  process.stderr.write('slopgate: no mode (use --staged | --file <p> | --self-test | init [dir] | baseline [--update|--prune] | install-hooks | install-skills [--force] | audit [--since-days N] [--json] | stats [--by rule|model|project|severity|engine|category] [--since <iso>] [--json] [--config <p>])\n');
+  process.stderr.write('slopgate: no mode (use --staged | --file <p> | --self-test | init [dir] | baseline [--update|--prune] | install-hooks | install-skills [--force] | agent-hooks [status|install|reinstall|remove] [--agent <id>] | audit [--since-days N] [--json] | stats [--by rule|model|project|severity|engine|category] [--since <iso>] [--json] [--config <p>])\n');
   process.exit(2);
 }
 main().catch((e) => { process.stderr.write(`slopgate: ${e?.stack || e}\n`); process.exit(1); });
