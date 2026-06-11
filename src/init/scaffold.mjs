@@ -41,9 +41,11 @@ export default {
   // line to enable it; value = severity ('advisory' reports but never blocks a
   // commit, 'high' gates). Delete the whole block to opt out entirely.
   // ux: {
-  //   a11y: 'high',      // §11 <div onClick>→<button>, semantic HTML (gates)
-  //   cls:  'high',      // §13 <img> without width/height → layout shift (gates)
-  //   taste: 'advisory', // §0/§6/§26 emoji-icon, "Trusted by", Lorem, linear easing (reports only)
+  //   a11y:     'high',     // §11 <div onClick>→<button>, anchor-no-href, img-no-alt, button-no-type, +tabindex
+  //   cls:      'high',     // §13 <img>/<video>/<iframe> without width/height → layout shift
+  //   feedback: 'high',     // §3 async onClick on a <button> with no disabled state (double-submit)
+  //   taste:    'advisory', // §0/§6/§26 emoji-icon, "Trusted by", Lorem, drop-shadow, linear/long motion (reports only)
+  //   advisory: 'advisory', // heuristic nudges: modal-no-close, index-as-key, view-state-not-in-URL (reports only)
   // },
 
   // project-owned rule packs (pinned, in this repo)

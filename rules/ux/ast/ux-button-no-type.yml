@@ -1,0 +1,11 @@
+id: ux-button-no-type
+language: tsx
+severity: error
+message: <button> without an explicit type — defaults to "submit" and can fire forms
+note: '{"severity":"high","category":"convention","resolution":"Add type=\"button\" (or type=\"submit\" intentionally). A typeless button inside a form submits it on click — a classic silent bug (ANTI-SLOP UX §3/§11)."}'
+rule:
+  any:
+    - all:
+        - kind: jsx_opening_element
+        - has: { field: name, regex: '^button$' }
+        - not: { has: { kind: jsx_attribute, regex: '^type=' } }

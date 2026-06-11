@@ -121,9 +121,11 @@ never auto-enabled. The scaffold writes it as a commented template. Decide wheth
   Sub-modules (`ux:` keys, value = severity; `'advisory'` reports but never blocks, `'high'` gates):
   | key | catches | default |
   |-----|---------|---------|
-  | `a11y` | `<div onClick>`→`<button>`, non-semantic interactive els (§11) | `high` |
-  | `cls` | `<img>` without width/height → layout shift (§13) | `high` |
-  | `taste` | emoji-as-icon, "Trusted by", Lorem ipsum, robotic microcopy, heavy drop-shadow, linear easing (§0/§6/§26) | `advisory` |
+  | `a11y` | `<div onClick>`→`<button>`, anchor-no-href, img-no-alt, button-no-type, positive tabIndex (§11) | `high` |
+  | `cls` | `<img>`/`<video>`/`<iframe>` without width/height → layout shift (§13) | `high` |
+  | `feedback` | async `onClick` button with no `disabled` state → double-submit (§3/§12) | `high` |
+  | `taste` | emoji-as-icon, "Trusted by", Lorem ipsum, robotic microcopy, heavy drop-shadow, linear/long motion (§0/§6/§26) | `advisory` |
+  | `advisory` | modal-no-close, index-as-key, view-state-not-in-URL — higher false-positive nudges (§10/§14) | `advisory` |
 
   Use AskUserQuestion (multi-select sub-modules + a severity choice). On consent, uncomment/author the
   `ux:` block in `.slopgate/config.mjs`. Opt-out UX is symmetric: deleting a key disables one sub-module,

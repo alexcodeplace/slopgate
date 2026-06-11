@@ -292,8 +292,10 @@ export default {
   // UX module (optional) — off by default, opt-in per sub-module
   ux: {
     a11y: 'high',        // Accessibility violations (gate commits)
-    cls: 'high',         // Cumulative Layout Shift violations (gate commits)  
+    cls: 'high',         // Cumulative Layout Shift violations (gate commits)
+    feedback: 'high',    // Silent async / double-submit (gate commits)
     taste: 'advisory',   // Design taste violations (report only, don't gate)
+    advisory: 'advisory',// Heuristic nudges (report only, higher false-positive)
     // taste: 'medium',  // equivalent to 'advisory'
     // taste: true,      // use sub-module default severity
     // omit key = that sub-module OFF
@@ -306,9 +308,13 @@ export default {
 
 | Key | Catches | Default Severity | Framework § |
 |-----|---------|------------------|-------------|
-| `a11y` | onClick on `<div>`/`<span>` without role | `high` | §11 |
-| `cls` | `<img>` without width/height | `high` | §13 |
-| `taste` | emoji in UI, "trusted by" clichés, Lorem ipsum, robotic microcopy, heavy drop shadows, linear easing | `medium` | §0/§6/§26 |
+| `a11y` | onClick on `<div>`/`<span>` without role; `<a onClick>` without href; `<img>` without alt; `<button>` without type; positive `tabIndex` | `high` | §11 |
+| `cls` | `<img>`/`<video>`/`<iframe>` without width/height | `high` | §13 |
+| `feedback` | async `onClick` on a `<button>` with no `disabled` state (double-submit, silent wait) | `high` | §3/§12 |
+| `taste` | emoji in UI, "trusted by" clichés, Lorem ipsum, robotic microcopy, heavy drop shadows, linear/long (>300ms) motion | `medium` | §0/§6/§26 |
+| `advisory` | modal without `onClose`; array index as React `key`; view state (tab/page/filter) in `useState` instead of the URL | `medium` | §10/§14 |
+
+Magic hardcoded colors/spacing (`#hex`, `rgb()`/`hsl()`, multi-digit `px`) are caught by the baseline `raw-hex` pack (§15), independent of the UX module.
 
 ### Severity Levels
 
