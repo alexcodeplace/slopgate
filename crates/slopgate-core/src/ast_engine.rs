@@ -231,7 +231,7 @@ pub fn run_ast_grep_scan(
         };
     }
 
-    with_temp_dir("slopgate-sg-", |dir| {
+    let scan = with_temp_dir("slopgate-sg-", |dir| {
         let sg_config = dir.join("sgconfig.yml");
         let yml = format!(
             "ruleDirs:\n{}\n",
@@ -261,6 +261,7 @@ pub fn run_ast_grep_scan(
         let mut cmd = Command::new(&bin);
         cmd.args(&arg_refs).current_dir(repo_root);
 
+        // PHASE-2: subprocess timeout (60s, mirrors ast-engine.mjs spawnSync timeout)
         let output = match cmd.output() {
             Ok(o) => o,
             Err(e) => {
@@ -306,7 +307,16 @@ pub fn run_ast_grep_scan(
             violations,
             errors,
         }
-    })
+    });
+
+    match scan {
+        Ok(result) => result,
+        Err(e) => AstGrepScanResult {
+            available: false,
+            violations: vec![],
+            errors: vec![format!("ast-grep failed: {e}")],
+        },
+    }
 }
 
 fn truncate_chars(s: &str, max: usize) -> String {
@@ -485,6 +495,59 @@ mod tests {
         assert!(got.available);
         assert!(got.violations.is_empty());
         assert!(got.errors.is_empty());
+    }
+
+    #[test]
+    fn run_scan_temp_dir_failure_unavailable() {
+        let _guard = crate::temp::TMPDIR_TEST_LOCK.lock().unwrap();
+        let dir = TempDir::new().unwrap();
+        let rule_dir = dir.path().join("rules/ast");
+        fs::create_dir_all(&rule_dir).unwrap();
+        let bin_dir = dir.path().join("node_modules/.bin");
+        fs::create_dir_all(&bin_dir).unwrap();
+        fs::write(bin_dir.join("ast-grep"), "#!/bin/sh\n").unwrap();
+
+        let not_a_dir = dir.path().join("blocking-tmp");
+        fs::write(&not_a_dir, "x").unwrap();
+
+        let prev = std::env::var("TMPDIR").ok();
+        // SAFETY: serialized via TMPDIR_TEST_LOCK; restored before return.
+        unsafe { std::env::set_var("TMPDIR", &not_a_dir) };
+
+        let config = ResolvedConfig {
+            repo_root: dir.path().to_string_lossy().into_owned(),
+            config_dir: dir.path().to_string_lossy().into_owned(),
+            roots: vec![],
+            roots_rel: vec!["src".to_string()],
+            exts: Default::default(),
+            skip_dirs: Default::default(),
+            patterns: vec![],
+            ast_rule_dirs: vec![rule_dir.to_string_lossy().into_owned()],
+            checkers: Default::default(),
+            ast_disable: Default::default(),
+            baseline_path: String::new(),
+            suppressions_path: String::new(),
+            fixtures_dirs: vec![],
+            checker_concurrency: 1,
+            gate: crate::config::GateAllow {
+                file: Default::default(),
+                staged: Default::default(),
+            },
+            ux_ast_severity: Default::default(),
+            ux_ast_all: Default::default(),
+        };
+
+        let got = run_ast_grep_scan(&config, None, &AstGrepScanOpts::default());
+
+        match prev {
+            Some(p) => unsafe { std::env::set_var("TMPDIR", p) },
+            None => unsafe { std::env::remove_var("TMPDIR") },
+        }
+
+        assert!(!got.available);
+        assert!(got.violations.is_empty());
+        assert_eq!(got.errors.len(), 1);
+        assert!(got.errors[0].starts_with("ast-grep failed:"));
     }
 
     #[test]
