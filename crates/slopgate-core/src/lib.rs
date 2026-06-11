@@ -17,3 +17,4 @@ pub mod checkers;
 pub mod init;
 pub mod install;
 pub mod rules;
+pub mod selftest;
