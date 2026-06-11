@@ -47,6 +47,15 @@ export const BASELINE_PACKS = {
     resolution: 'Use a CSS custom property / design token.',
     excludeGlobs: ['**/tokens.css', '**/tokens/**'],
     canary: 'color: #ff0044;',
+  }, {
+    id: 'raw-px-spacing', title: 'Magic px spacing instead of a design token',
+    category: 'convention', severity: 'high',
+    pattern: ':\\s*\\d{2,}px\\b',
+    description: 'Hardcoded multi-digit px value in a style declaration — bypasses the spacing scale (ANTI-SLOP UX §15).',
+    resolution: 'Use a spacing token / utility scale (var(--space-md), Tailwind p-4) instead of a raw px literal.',
+    excludeGlobs: ['**/tokens.css', '**/tokens/**', '**/*.stories.*'],
+    canary: 'margin-top: 17px;',
+    negativeCanary: ['border: 1px solid;', 'padding: var(--space-4);', 'gap: 8px;'],
   }],
   'kv-ban': [{
     id: 'kv-binding-usage', title: 'Cloudflare KV usage',
@@ -104,5 +113,63 @@ export const BASELINE_PACKS = {
       'const q = `SELECT id FROM users WHERE id = $1 FOR UPDATE`;',
       'const q = `SELECT SUM(amount) FROM ledger GROUP by user_id`;',
     ],
+  }],
+
+  // ── UX module (optional) ──────────────────────────────────────────────
+  // Opinionated UI-hygiene rules from the ANTI-SLOP UX framework. Opt in per
+  // sub-module. ux-taste = subjective taste/cliché checks; ships at MEDIUM so
+  // it reports but does NOT gate by default. Remove from baseline[] to opt out.
+  'ux-taste': [{
+    id: 'ux-emoji-in-ui', title: 'Emoji used as UI icon / bullet',
+    category: 'convention', severity: 'medium',
+    pattern: '[\\u{1F300}-\\u{1FAFF}]|[\\u{2600}-\\u{26FF}]|[\\u{2700}-\\u{27BF}]',
+    flags: 'u',
+    description: 'Emoji as a section marker, bullet, or icon — generic AI-slop tell (ANTI-SLOP UX §0).',
+    resolution: 'Use a real icon component or text label; reserve emoji for user content.',
+    excludeGlobs: ['**/*.test.*', '**/*.spec.*', '**/*.md'],
+    canary: 'const label = "🚀 Launch";',
+    negativeCanary: ['const arrow = "->";', 'const x = 1;'],
+  }, {
+    id: 'ux-trusted-by-cliche', title: '"Trusted by" logo-strip cliché',
+    category: 'convention', severity: 'medium',
+    pattern: 'Trusted by',
+    flags: 'i',
+    description: 'Generic "Trusted by" social-proof strip under the hero — AI landing-page cliché (ANTI-SLOP UX §0).',
+    resolution: 'Show concrete, specific proof (a real case study, metric, or quote) or drop it.',
+    excludeGlobs: ['**/*.test.*', '**/*.spec.*'],
+    canary: '<p>Trusted by 10,000 teams</p>',
+    negativeCanary: ['const trustedByPolicy = true;'],
+  }, {
+    id: 'ux-lorem-ipsum', title: 'Lorem ipsum placeholder copy',
+    category: 'convention', severity: 'medium',
+    pattern: 'lorem ipsum',
+    flags: 'i',
+    description: 'Generic Lorem ipsum in a functional draft — never tests real text wrapping (ANTI-SLOP UX §6).',
+    resolution: 'Use domain-specific, realistic placeholder copy.',
+    canary: '<p>Lorem ipsum dolor sit amet</p>',
+  }, {
+    id: 'ux-robotic-microcopy', title: 'Robotic / generic microcopy',
+    category: 'convention', severity: 'medium',
+    pattern: '\\b(?:Submit Data|Click [Hh]ere)\\b',
+    description: 'Robotic placeholder microcopy instead of human, contextual labels (ANTI-SLOP UX §6).',
+    resolution: 'Write what the action does: "Save changes", "Send invite" — not "Submit Data".',
+    canary: '<button>Submit Data</button>',
+    negativeCanary: ['submitData();', 'const clickHandler = 1;'],
+  }, {
+    id: 'ux-heavy-drop-shadow', title: 'Heavy floating drop-shadow card',
+    category: 'convention', severity: 'medium',
+    pattern: '\\bshadow-2xl\\b',
+    description: 'Floating card with a heavy drop shadow — generic AI-slop aesthetic (ANTI-SLOP UX §0).',
+    resolution: 'Use a subtle elevation token or a hairline border for separation.',
+    canary: '<div className="card shadow-2xl">',
+    negativeCanary: ['<div className="shadow-sm">'],
+  }, {
+    id: 'ux-linear-easing', title: 'Linear easing on UI motion',
+    category: 'convention', severity: 'medium',
+    pattern: '\\bease-linear\\b|timing-function:\\s*linear\\b|easing:\\s*[\'"]linear[\'"]',
+    description: 'Linear easing reads as robotic — UI motion should use spring/bezier curves (ANTI-SLOP UX §26).',
+    resolution: 'Use ease-out / a custom cubic-bezier / spring physics; keep motion 200–300ms.',
+    canary: '<div className="transition ease-linear">',
+    negativeCanary: ['className="transition ease-in-out"', "transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1)"],
   }],
 };
