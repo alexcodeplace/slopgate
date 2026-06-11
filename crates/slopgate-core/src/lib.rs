@@ -9,6 +9,7 @@ pub mod ratchet;
 pub mod ast_engine;
 pub mod regex_engine;
 pub mod enumerate;
+pub mod gate;
 pub mod temp;
 pub mod audit;
 pub mod stats;

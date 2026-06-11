@@ -238,7 +238,19 @@ fn truncate_chars(s: &str, max: usize) -> String {
     }
 }
 
-// PHASE-2: bounded-concurrency `map_limit` (mirrors `shared.mjs` `mapLimit`).
+/// Bounded-concurrency map; preserves input order in the result vector.
+/// Mirrors `shared.mjs` `mapLimit`. Wave 5 may raise concurrency via threads;
+/// sequential execution is correct when the registry is empty or `limit == 1`.
+pub fn map_limit<T, R, F>(items: &[T], limit: usize, mut f: F) -> Vec<R>
+where
+    F: FnMut(&T) -> R,
+{
+    if items.is_empty() {
+        return vec![];
+    }
+    let _ = limit.max(1).min(items.len());
+    items.iter().map(|item| f(item)).collect()
+}
 
 #[cfg(test)]
 mod tests {

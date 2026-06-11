@@ -1,6 +1,7 @@
 //! Gate report formatting (DISPLAY surface). Returns `String` for testability; the bin prints it later.
 
 use serde::{Deserialize, Serialize};
+use std::io::{self, Write};
 
 /// Canonical violation shape used across the engine (regex, ast, checkers, ratchet, suppressions).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -93,6 +94,22 @@ pub fn render_gate_report(violations: &[Violation], mode: &str, baselined: u32) 
         "False positive? NEVER edit suppressions.json yourself — ask the user via AskUserQuestion.\n\n",
     );
     out
+}
+
+/// Print the human-facing gate report to stderr (mirrors `src/report.mjs` `printGateReport`).
+pub fn print_gate_report(violations: &[Violation], mode: &str, baselined_count: u32) {
+    let _ = print_gate_report_to(violations, mode, baselined_count, &mut io::stderr());
+}
+
+/// Same as [`print_gate_report`] but writes to an arbitrary writer (unit tests).
+pub fn print_gate_report_to(
+    violations: &[Violation],
+    mode: &str,
+    baselined_count: u32,
+    w: &mut dyn Write,
+) -> io::Result<()> {
+    let report = render_gate_report(violations, mode, baselined_count);
+    w.write_all(report.as_bytes())
 }
 
 #[cfg(test)]
