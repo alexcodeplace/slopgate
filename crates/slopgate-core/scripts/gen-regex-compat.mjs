@@ -19,11 +19,32 @@ function collectPatterns() {
   return out;
 }
 
+const ARABIC_ZERO = '\u0660';
+const ARABIC_SIX = '\u0666';
+
+/** Non-`u` patterns using `\d` must reject Arabic-Indic digits (U+0660–U+0669). */
+function nonAsciiDigitLines(p) {
+  const flags = p.flags ?? '';
+  if (flags.includes('u') || !/\\d/.test(p.pattern)) return [];
+  switch (p.id) {
+    case 'raw-px-spacing':
+      return [`style={{ padding: '${ARABIC_ZERO}${ARABIC_SIX}px' }}`];
+    case 'ux-long-motion':
+      return [
+        `duration-5${ARABIC_ZERO}${ARABIC_ZERO}`,
+        `duration-${ARABIC_ZERO}${ARABIC_ZERO}${ARABIC_ZERO}`,
+      ];
+    default:
+      return [`const n = ${ARABIC_ZERO}${ARABIC_SIX};`];
+  }
+}
+
 function casesFor(p) {
   const re = compileLineRegex(p.pattern, p.flags);
   const lines = [];
   if (p.canary) lines.push(p.canary);
   for (const n of p.negativeCanary ?? []) lines.push(n);
+  for (const line of nonAsciiDigitLines(p)) lines.push(line);
   // Ensure at least one match and one non-match per pattern.
   const seen = new Set();
   const cases = [];
@@ -42,7 +63,7 @@ function casesFor(p) {
   if (!cases.some((c) => !c.match)) {
     throw new Error(`pattern ${p.id}: could not derive a non-match case`);
   }
-  return cases.slice(0, 4);
+  return cases;
 }
 
 const vector = collectPatterns().map((p) => ({

@@ -19,6 +19,10 @@
       {
         "line": "admin.incidents.titlePlaceholder",
         "match": false
+      },
+      {
+        "line": "const namePlaceholder = 1",
+        "match": false
       }
     ]
   },
@@ -86,6 +90,14 @@
       },
       {
         "line": "gap: 8px;",
+        "match": false
+      },
+      {
+        "line": "src=\"/icon-24px.svg\"",
+        "match": false
+      },
+      {
+        "line": "style={{ padding: '٠٦px' }}",
         "match": false
       }
     ]
@@ -418,6 +430,14 @@
       },
       {
         "line": "duration-300",
+        "match": false
+      },
+      {
+        "line": "duration-5٠٠",
+        "match": false
+      },
+      {
+        "line": "duration-٠٠٠",
         "match": false
       }
     ]

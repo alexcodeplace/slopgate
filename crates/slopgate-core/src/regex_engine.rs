@@ -25,17 +25,31 @@ fn asciiize_shorthands(pattern: &str) -> String {
     let bytes = pattern.as_bytes();
     let mut i = 0;
     let mut in_class = false;
+    // Byte index where an immediate `]` is literal (right after `[` or `[^`).
+    let mut class_literal_close: Option<usize> = None;
     while i < bytes.len() {
-        if !in_class && bytes[i] == b'\\' && i + 1 < bytes.len() {
+        if bytes[i] == b'\\' && i + 1 < bytes.len() && !is_escaped(pattern, i) {
             let esc = bytes[i + 1];
-            let rep = match esc {
-                b'd' => Some("[0-9]"),
-                b'D' => Some("[^0-9]"),
-                b'w' => Some("[0-9A-Za-z_]"),
-                b'W' => Some("[^0-9A-Za-z_]"),
-                b's' => Some("[\\t\\n\\r\\f\\v ]"),
-                b'S' => Some("[^\\t\\n\\r\\f\\v ]"),
-                _ => None,
+            let rep = if in_class {
+                match esc {
+                    b'd' => Some("0-9"),
+                    b'D' => Some("\x00-\x2F\x3A-\u{10FFFF}"),
+                    b'w' => Some("0-9A-Za-z_"),
+                    b'W' => Some("\x00-\x2F\x3A-\x40\x5B-\x5E\x60-\u{10FFFF}"),
+                    b's' => Some(" \t\n\r\x0c\x0b"),
+                    b'S' => Some("\x00-\x08\x0B\x0C\x0E-\x1F\x21-\u{10FFFF}"),
+                    _ => None,
+                }
+            } else {
+                match esc {
+                    b'd' => Some("[0-9]"),
+                    b'D' => Some("[^0-9]"),
+                    b'w' => Some("[0-9A-Za-z_]"),
+                    b'W' => Some("[^0-9A-Za-z_]"),
+                    b's' => Some("[\\t\\n\\r\\f\\v ]"),
+                    b'S' => Some("[^\\t\\n\\r\\f\\v ]"),
+                    _ => None,
+                }
             };
             if let Some(r) = rep {
                 out.push_str(r);
@@ -44,10 +58,20 @@ fn asciiize_shorthands(pattern: &str) -> String {
             }
         }
         let ch = pattern[i..].chars().next().unwrap();
-        if ch == '[' && (i == 0 || !is_escaped(pattern, i)) {
-            in_class = true;
-        } else if ch == ']' && in_class && !is_escaped(pattern, i) {
-            in_class = false;
+        if !is_escaped(pattern, i) {
+            if ch == '[' && !in_class {
+                in_class = true;
+                let mut start = i + ch.len_utf8();
+                if bytes.get(start) == Some(&b'^') {
+                    start += 1;
+                }
+                class_literal_close = Some(start);
+            } else if ch == ']' && in_class {
+                if class_literal_close != Some(i) {
+                    in_class = false;
+                    class_literal_close = None;
+                }
+            }
         }
         out.push(ch);
         i += ch.len_utf8();
@@ -146,15 +170,18 @@ fn regex_matches(re: &Regex, line: &str) -> bool {
 }
 
 fn violation_text(line: &str) -> String {
-    truncate_chars(line.trim(), 90)
-}
-
-fn truncate_chars(s: &str, max: usize) -> String {
-    if s.chars().count() <= max {
-        s.to_string()
-    } else {
-        s.chars().take(max).collect()
+    let trimmed = line.trim();
+    if trimmed.encode_utf16().count() <= 90 {
+        return trimmed.to_string();
     }
+    let mut units = 0usize;
+    trimmed
+        .chars()
+        .take_while(|c| {
+            units += c.len_utf16();
+            units <= 90
+        })
+        .collect()
 }
 
 /// Two-pass regex scan mirroring `scanRegex` in `regex-engine.mjs`.
@@ -289,6 +316,13 @@ mod tests {
     #[test]
     fn non_u_d_matches_ascii_digit_not_arabic_indic() {
         let re = compile_line_regex(r"\d", "").unwrap();
+        assert!(regex_matches(&re, "0"));
+        assert!(!regex_matches(&re, "\u{0660}"));
+    }
+
+    #[test]
+    fn non_u_class_d_matches_ascii_not_arabic_indic() {
+        let re = compile_line_regex(r"[\d]", "").unwrap();
         assert!(regex_matches(&re, "0"));
         assert!(!regex_matches(&re, "\u{0660}"));
     }
