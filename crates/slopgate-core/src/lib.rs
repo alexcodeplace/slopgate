@@ -1,3 +1,4 @@
+pub mod help;
 pub mod error;
 pub mod hash;
 pub mod glob;
