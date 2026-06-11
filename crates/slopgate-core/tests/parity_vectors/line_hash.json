@@ -1,0 +1,26 @@
+[
+  {
+    "line": "",
+    "hash": "da39a3ee5e6b4b0d3255bfef95601890afd80709"
+  },
+  {
+    "line": "  const x = 1  ",
+    "hash": "0af7838e349e54b48cb0385b0993fcb177cafcb1"
+  },
+  {
+    "line": "tab\tinside",
+    "hash": "f2c31dc5cfa70f1d8a16aca73f08e7112989728b"
+  },
+  {
+    "line": "unicode ✓ café",
+    "hash": "81db870bf0ec8fbae4429931612f51744e1e4fb8"
+  },
+  {
+    "line": "   ",
+    "hash": "da39a3ee5e6b4b0d3255bfef95601890afd80709"
+  },
+  {
+    "line": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "hash": "e62ca5609e96073ffdc80ad480510d6de0a13f3e"
+  }
+]

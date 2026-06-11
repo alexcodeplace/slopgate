@@ -1,0 +1,16 @@
+[package]
+name = "slopgate-core"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha1 = { workspace = true }
+sha2 = { workspace = true }
+regex = { workspace = true }
+walkdir = { workspace = true }
+tempfile = { workspace = true }
+toml = "1.1.2"
+indexmap = "2"

@@ -1,0 +1,32 @@
+[
+  {
+    "glob": "**/components/**",
+    "path": "src/components/Foo.tsx",
+    "match": true
+  },
+  {
+    "glob": "**/components/**",
+    "path": "src/lib/Foo.tsx",
+    "match": false
+  },
+  {
+    "glob": "**/*.tsx",
+    "path": "a/b/c.tsx",
+    "match": true
+  },
+  {
+    "glob": "src/*.ts",
+    "path": "src/x.ts",
+    "match": true
+  },
+  {
+    "glob": "src/*.ts",
+    "path": "src/x/y.ts",
+    "match": false
+  },
+  {
+    "glob": "**/a.ts",
+    "path": "a.ts",
+    "match": true
+  }
+]

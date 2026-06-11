@@ -1,0 +1,32 @@
+[
+  {
+    "v": {
+      "engine": "regex",
+      "id": "no-stubs",
+      "file": "src/a.ts",
+      "text": "TODO line 12",
+      "fullLine": "  // TODO line 12  "
+    },
+    "fp": "04ef432739b1ad33"
+  },
+  {
+    "v": {
+      "engine": "checker:tsc",
+      "id": "tsc-TS2304",
+      "file": "src/b.tsx",
+      "text": "Cannot find name 99",
+      "fullLine": "foo(bar)"
+    },
+    "fp": "4e42c426a3524fa7"
+  },
+  {
+    "v": {
+      "engine": "",
+      "id": "x",
+      "file": "f",
+      "text": "",
+      "fullLine": ""
+    },
+    "fp": "2e75625a3ef995d8"
+  }
+]
