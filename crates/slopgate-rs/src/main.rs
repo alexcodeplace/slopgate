@@ -11,7 +11,10 @@ use slopgate_core::ratchet::{
     fingerprint_violation, load_baseline, write_baseline, write_baseline_raw, BaselineEntry,
 };
 use slopgate_core::selftest::run_self_test;
-use slopgate_core::stats::query::{aggregate, format_stats, Row};
+use slopgate_core::help::HELP_TEXT;
+use slopgate_core::stats::query::{
+    aggregate, aggregate_dashboard, format_dashboard, format_stats, Row, DIMENSIONS,
+};
 use slopgate_core::stats::record::record_incidents;
 use slopgate_core::stats::store::{global_stats_path_in, project_stats_path, read_rows};
 use serde_json::Value;
@@ -20,9 +23,6 @@ use std::io::Write;
 use std::path::Path;
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
-
-const DIMENSIONS: &[&str] = &["rule", "model", "project", "severity", "engine", "category"];
-const USAGE: &str = "slopgate: no mode (use --staged | --file <p> | --self-test | init [dir] | baseline [--update|--prune] | install-hooks | install-skills [--force] | agent-hooks [status|install|reinstall|remove] [--agent <id>] | audit [--since-days N] [--json] | stats [--by rule|model|project|severity|engine|category] [--since <iso>] [--json] [--config <p>])";
 
 fn has(args: &[String], flag: &str) -> bool {
     args.iter().any(|a| a == flag)
@@ -158,7 +158,10 @@ enum ConfigResult {
 
 fn require_config(args: &[String], stderr: &mut dyn Write) -> ConfigResult {
     let Some(config_path) = val_of(args, "--config") else {
-        write_slopgate_err(stderr, "slopgate: --config <path> required");
+        write_slopgate_err(
+            stderr,
+            "slopgate: --config <path> required — run 'slopgate --help'",
+        );
         return ConfigResult::Exit(2);
     };
     match resolve_config(config_path) {
@@ -203,6 +206,16 @@ fn dispatch(
     stderr: &mut dyn Write,
     home: &Path,
 ) -> Result<i32, String> {
+    let user_args = args.get(1..).unwrap_or(&[]);
+    if user_args.is_empty()
+        || has(args, "--help")
+        || has(args, "-h")
+        || user_args.first().is_some_and(|a| a == "help")
+    {
+        write!(stdout, "{HELP_TEXT}\n").map_err(|e| e.to_string())?;
+        return Ok(0);
+    }
+
     if args.get(1).is_some_and(|a| a == "--version") {
         writeln_stdout(stdout, &format!("slopgate-rs {}", env!("CARGO_PKG_VERSION")));
         return Ok(0);
@@ -216,17 +229,8 @@ fn dispatch(
     }
 
     if has(args, "stats") {
-        let by = val_of(args, "--by").unwrap_or("rule");
-        if !DIMENSIONS.contains(&by) {
-            write_slopgate_err(
-                stderr,
-                &format!(
-                    "slopgate: --by must be {}",
-                    DIMENSIONS.join("|")
-                ),
-            );
-            return Ok(2);
-        }
+        let by_present = has(args, "--by");
+        let by_flag = val_of(args, "--by");
         let since = val_of(args, "--since");
         let json = has(args, "--json");
         let rows = if let Some(config_path) = val_of(args, "--config") {
@@ -235,7 +239,19 @@ fn dispatch(
         } else {
             parse_rows(&read_rows(&global_stats_path_in(home)))
         };
-        let aggregated = aggregate(&rows, Some(by), since)?;
+        if !by_present {
+            let dashboard = aggregate_dashboard(&rows, since)?;
+            writeln_stdout(stdout, &format_dashboard(&dashboard, json));
+            return Ok(0);
+        }
+        if !by_flag.is_some_and(|by| DIMENSIONS.contains(&by)) {
+            write_slopgate_err(
+                stderr,
+                &format!("slopgate: --by must be {}", DIMENSIONS.join("|")),
+            );
+            return Ok(2);
+        }
+        let aggregated = aggregate(&rows, by_flag, since)?;
         writeln_stdout(stdout, &format_stats(&aggregated, json));
         return Ok(0);
     }
@@ -614,7 +630,10 @@ fn dispatch(
         return Ok(result.code);
     }
 
-    write_slopgate_err(stderr, USAGE);
+    write_slopgate_err(
+        stderr,
+        "slopgate: unknown command — run 'slopgate --help'",
+    );
     Ok(2)
 }
 
@@ -704,7 +723,10 @@ mod tests {
     fn missing_config_returns_two() {
         let (code, _, err) = run_capture(vec!["slopgate-rs".into(), "--file".into(), "x.ts".into()]);
         assert_eq!(code, 2);
-        assert_eq!(err, "slopgate: --config <path> required\n");
+        assert_eq!(
+            err,
+            "slopgate: --config <path> required — run 'slopgate --help'\n"
+        );
     }
 
     #[test]
@@ -726,12 +748,128 @@ mod tests {
     }
 
     #[test]
-    fn no_mode_returns_two_with_usage() {
+    fn no_mode_returns_two_with_unknown_command() {
         let dir = setup_tmp_repo();
         let args = base_args(dir.path());
         let (code, _, err) = run_capture(args);
         assert_eq!(code, 2);
-        assert_eq!(err, format!("{USAGE}\n"));
+        assert_eq!(
+            err,
+            "slopgate: unknown command — run 'slopgate --help'\n"
+        );
+    }
+
+    #[test]
+    fn help_exits_zero_and_prints_help() {
+        let (code, out, _) = run_capture(vec!["slopgate-rs".into(), "--help".into()]);
+        assert_eq!(code, 0);
+        assert_eq!(out, format!("{HELP_TEXT}\n"));
+    }
+
+    #[test]
+    fn bare_stats_prints_dashboard_sections() {
+        let home = TempDir::new().unwrap();
+
+        let (code, out, _) =
+            run_capture_with_home(vec!["slopgate-rs".into(), "stats".into()], home.path());
+        assert_eq!(code, 0);
+        assert!(out.contains("0 incident(s) stopped"));
+        assert!(!out.contains("BY RULE"));
+    }
+
+    #[test]
+    fn stats_with_sample_rows_prints_dashboard_sections() {
+        use slopgate_core::stats::store::append_row;
+
+        let home = TempDir::new().unwrap();
+        let stats_path = home.path().join(".slopgate/stats.jsonl");
+        fs::create_dir_all(stats_path.parent().unwrap()).unwrap();
+        let row = Row {
+            ts: Some("2026-01-01T10:00:00.000Z".into()),
+            rule_id: Some("no-stubs".into()),
+            project: Some("slopgate".into()),
+            model: Some("claude".into()),
+            severity: None,
+            engine: None,
+            category: None,
+            file: None,
+            line: None,
+        };
+        append_row(
+            &stats_path,
+            &serde_json::to_value(&row).expect("row json"),
+        )
+        .unwrap();
+
+        let (code, out, _) =
+            run_capture_with_home(vec!["slopgate-rs".into(), "stats".into()], home.path());
+        assert_eq!(code, 0);
+        assert!(out.contains("BY RULE"));
+        assert!(out.contains("BY MODEL"));
+        assert!(out.contains("BY PROJECT"));
+    }
+
+    #[test]
+    fn stats_by_single_dimension() {
+        use slopgate_core::stats::store::append_row;
+
+        let home = TempDir::new().unwrap();
+        let stats_path = home.path().join(".slopgate/stats.jsonl");
+        fs::create_dir_all(stats_path.parent().unwrap()).unwrap();
+        let row = Row {
+            ts: Some("2026-01-01T10:00:00.000Z".into()),
+            rule_id: Some("no-stubs".into()),
+            project: Some("slopgate".into()),
+            model: Some("claude".into()),
+            severity: None,
+            engine: None,
+            category: None,
+            file: None,
+            line: None,
+        };
+        append_row(
+            &stats_path,
+            &serde_json::to_value(&row).expect("row json"),
+        )
+        .unwrap();
+
+        let (code, out, _) = run_capture_with_home(
+            vec![
+                "slopgate-rs".into(),
+                "stats".into(),
+                "--by".into(),
+                "model".into(),
+            ],
+            home.path(),
+        );
+        assert_eq!(code, 0);
+        assert!(out.contains("1 incident(s) stopped"));
+        assert!(!out.contains("BY RULE"));
+        assert!(out.contains("MODEL"));
+        assert!(out.contains("claude"));
+    }
+
+    #[test]
+    fn stats_by_without_value_returns_two() {
+        let (code, _, err) = run_capture(vec!["slopgate-rs".into(), "stats".into(), "--by".into()]);
+        assert_eq!(code, 2);
+        assert_eq!(
+            err,
+            "slopgate: --by must be rule|model|project|severity|engine|category\n"
+        );
+    }
+
+    #[test]
+    fn unknown_command_returns_two() {
+        let dir = setup_tmp_repo();
+        let mut args = base_args(dir.path());
+        args.push("bogus".into());
+        let (code, _, err) = run_capture(args);
+        assert_eq!(code, 2);
+        assert_eq!(
+            err,
+            "slopgate: unknown command — run 'slopgate --help'\n"
+        );
     }
 
     #[test]
