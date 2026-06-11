@@ -1,4 +1,10 @@
+pub mod depcruise;
 pub mod diff_shape;
-pub mod shared;
 pub mod health;
 pub mod index;
+pub mod jscpd;
+pub mod knip;
+pub mod leakscan;
+pub mod shared;
+pub mod tsc;
+pub mod type_coverage;
