@@ -7,12 +7,16 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
+use crate::install::agent_hooks::home_dir;
+
+/// Cross-project global store under `home` (`~/.slopgate/stats.jsonl` when `home` is `$HOME`).
+pub fn global_stats_path_in(home: &Path) -> PathBuf {
+    home.join(".slopgate").join("stats.jsonl")
+}
+
 /// Cross-project global store (`~/.slopgate/stats.jsonl`).
 pub fn global_stats_path() -> PathBuf {
-    let home = std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("/"));
-    home.join(".slopgate").join("stats.jsonl")
+    global_stats_path_in(&home_dir())
 }
 
 /// Config object slice used for project store path (mirrors `config.configDir` in JS).
@@ -79,8 +83,9 @@ mod tests {
 
     #[test]
     fn global_stats_path_under_home_slopgate() {
-        let path = global_stats_path();
-        assert!(path.ends_with(".slopgate/stats.jsonl"));
+        let home = TempDir::new().unwrap();
+        let path = global_stats_path_in(home.path());
+        assert_eq!(path, home.path().join(".slopgate/stats.jsonl"));
     }
 
     #[test]
