@@ -1,0 +1,17 @@
+id: ux-div-onclick
+language: tsx
+severity: error
+message: onClick on a <div>/<span> — not keyboard-focusable, breaks a11y
+note: '{"severity":"high","category":"convention","resolution":"Use a native <button> (or add role + tabIndex + onKeyDown). Semantic HTML first — ANTI-SLOP UX §11."}'
+rule:
+  any:
+    - all:
+        - kind: jsx_opening_element
+        - has: { field: name, regex: '^(div|span)$' }
+        - has: { kind: jsx_attribute, regex: '^onClick' }
+        - not: { has: { kind: jsx_attribute, regex: '^role=' } }
+    - all:
+        - kind: jsx_self_closing_element
+        - has: { field: name, regex: '^(div|span)$' }
+        - has: { kind: jsx_attribute, regex: '^onClick' }
+        - not: { has: { kind: jsx_attribute, regex: '^role=' } }

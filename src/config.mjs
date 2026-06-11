@@ -4,6 +4,7 @@ import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { BASELINE_PACKS, BASELINE_AST_DIR, BASELINE_FIXTURES_DIR } from '../rules/baseline/index.mjs';
 import { STACK_PACKS } from '../rules/stack/index.mjs';
+import { UX_PACKS, UX_AST_DIR, UX_ALL_AST_IDS, resolveUxSeverity } from '../rules/ux/index.mjs';
 
 /** @typedef {import('../rules/baseline/index.mjs')} _b */
 
@@ -46,6 +47,21 @@ export async function resolveConfig(configPath) {
     for (const p of mod) patterns.push(validatePattern(p, relPath));
   }
 
+  // UX module (optional): opt-in per sub-module via ux:{ <name>: severity }.
+  // A value of 'advisory' aliases to medium (non-gating); omit a key to disable.
+  // Regex rules join `patterns` (severity overridden to the chosen value); ast
+  // rule ids are collected so the engine only keeps/gates enabled ux ast rules.
+  const uxAstSeverity = new Map();
+  let uxEnabledAst = false;
+  for (const [key, value] of Object.entries(raw.ux ?? {})) {
+    const pack = UX_PACKS[key];
+    if (!pack) throw new Error(`slopgate: unknown ux sub-module "${key}" (known: ${Object.keys(UX_PACKS).join(', ')})`);
+    const sev = resolveUxSeverity(value, pack);
+    if (!sev) continue; // disabled
+    for (const p of pack.regex) patterns.push(validatePattern({ ...p, severity: sev }, `ux:${key}`));
+    for (const id of pack.astIds) { uxAstSeverity.set(id, sev); uxEnabledAst = true; }
+  }
+
   // dedupe by id (last-wins value, first-occurrence order — both guaranteed by Map)
   const byId = new Map();
   for (const p of patterns) byId.set(p.id, p);
@@ -57,6 +73,8 @@ export async function resolveConfig(configPath) {
     const abs = isAbsolute(raw.astRules) ? raw.astRules : resolve(configDir, raw.astRules);
     if (existsSync(abs) && statSync(abs).isDirectory()) astRuleDirs.push(abs);
   }
+  // UX ast rules only scanned when a ux sub-module that owns ast rules is enabled.
+  if (uxEnabledAst) astRuleDirs.push(UX_AST_DIR);
 
   // commit-tier checkers: absent/false => disabled; true => {}; object => options
   const checkers = {};
@@ -83,5 +101,9 @@ export async function resolveConfig(configPath) {
       : join(configDir, 'suppressions.json'),
     fixturesDirs: [BASELINE_FIXTURES_DIR, raw.fixtures ? resolve(configDir, raw.fixtures) : null].filter(Boolean),
     checkerConcurrency: raw.checkerConcurrency ?? 3,
+    // UX module ast gating: which ux ast ids are enabled (id → severity), and the
+    // full set of ux ast ids so the engine can DROP any that aren't enabled.
+    uxAstSeverity,
+    uxAstAll: new Set(UX_ALL_AST_IDS),
   };
 }
