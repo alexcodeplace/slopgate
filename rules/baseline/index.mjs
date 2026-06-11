@@ -50,12 +50,12 @@ export const BASELINE_PACKS = {
   }, {
     id: 'raw-px-spacing', title: 'Magic px spacing instead of a design token',
     category: 'convention', severity: 'high',
-    pattern: ':\\s*\\d{2,}px\\b',
-    description: 'Hardcoded multi-digit px value in a style declaration — bypasses the spacing scale (ANTI-SLOP UX §15).',
+    pattern: '[:\\s\'"]\\d{2,}px\\b',
+    description: 'Hardcoded multi-digit px value in a style declaration — bypasses the spacing scale (ANTI-SLOP UX §15). Matches CSS (margin: 24px) and JS object/inline styles (style={{ padding: \'24px\' }}).',
     resolution: 'Use a spacing token / utility scale (var(--space-md), Tailwind p-4) instead of a raw px literal.',
     excludeGlobs: ['**/tokens.css', '**/tokens/**', '**/*.stories.*'],
-    canary: 'margin-top: 17px;',
-    negativeCanary: ['border: 1px solid;', 'padding: var(--space-4);', 'gap: 8px;'],
+    canary: "style={{ padding: '24px' }}",
+    negativeCanary: ['border: 1px solid;', 'padding: var(--space-4);', 'gap: 8px;', 'src="/icon-24px.svg"'],
   }, {
     id: 'raw-rgb-color', title: 'Hardcoded rgb()/hsl() color',
     category: 'convention', severity: 'high',
