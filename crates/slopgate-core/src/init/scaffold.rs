@@ -178,48 +178,12 @@ pub fn merge_agent_hooks_file(
     file_path: &Path,
     engine_root: &Path,
 ) -> Result<(String, PathBuf), SlopError> {
-    let (commit, edit, session) = hook_paths(engine_root);
-    let existed = file_path.is_file();
-    let mut root = if existed {
-        let raw = fs::read_to_string(file_path)
-            .map_err(|e| SlopError::Io(format!("read {}: {e}", file_path.display())))?;
-        match serde_json::from_str::<Value>(&raw) {
-            Ok(v) => v,
-            Err(_) => return Ok(("invalid-json".to_string(), file_path.to_path_buf())),
-        }
-    } else {
-        json!({})
-    };
-
-    if !root.is_object() {
-        root = json!({});
-    }
-
-    let added_session = ensure_hook_entry(&mut root, "SessionStart", None, &session);
-    let added_pre = ensure_hook_entry(&mut root, "PreToolUse", Some("Bash"), &commit);
-    let added_post = ensure_hook_entry(&mut root, "PostToolUse", Some("Edit|Write"), &edit);
-
-    if !added_session && !added_pre && !added_post {
-        return Ok(("already-present".to_string(), file_path.to_path_buf()));
-    }
-
-    if let Some(parent) = file_path.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|e| SlopError::Io(format!("mkdir {}: {e}", parent.display())))?;
-    }
-    if existed {
-        let bak = format!("{}.bak", file_path.display());
-        fs::copy(file_path, &bak)
-            .map_err(|e| SlopError::Io(format!("copy {} -> {bak}: {e}", file_path.display())))?;
-    }
-    let rendered = format!("{}\n", serde_json::to_string_pretty(&root).map_err(|e| {
-        SlopError::Parse(format!("serialize {}: {e}", file_path.display()))
-    })?);
-    fs::write(file_path, rendered)
-        .map_err(|e| SlopError::Io(format!("write {}: {e}", file_path.display())))?;
-
-    let action = if existed { "merged" } else { "created" };
-    Ok((action.to_string(), file_path.to_path_buf()))
+    crate::install::agent_hooks::merge_hooks(file_path, engine_root).map(|r| {
+        (
+            r.action.to_string(),
+            r.path,
+        )
+    })
 }
 
 /// Merge slopgate agent hooks into `.claude/settings.json`.

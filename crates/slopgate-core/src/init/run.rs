@@ -5,9 +5,10 @@ use crate::init::detect_stack::{
     build_convention_sources, detect_checkers, detect_exts, detect_roots, detect_skip_dirs,
 };
 use crate::init::scaffold::{
-    convention_sources_json, format_config_toml, format_suppressions_json, merge_agent_hooks_file,
-    merge_settings_json, DetectedConfig, DEPCRUISE_STARTER,
+    convention_sources_json, format_config_toml, format_suppressions_json, merge_settings_json,
+    DetectedConfig, DEPCRUISE_STARTER,
 };
+use crate::install::agent_hooks::install_agent_hooks as install_detected_agent_hooks;
 use crate::install::hooks::{install_pre_commit_hook, HookInstallAction};
 use crate::install::skills::{default_skills_dest, install_skills};
 use std::fs;
@@ -20,61 +21,6 @@ use std::process::Command;
 pub struct AgentHookResult {
     pub label: String,
     pub action: String,
-}
-
-struct AgentDef {
-    #[allow(dead_code)]
-    id: &'static str,
-    label: &'static str,
-    commands: &'static [&'static str],
-    rel_path: &'static str,
-}
-
-const AGENTS: &[AgentDef] = &[
-    AgentDef {
-        id: "claude",
-        label: "claude / cld / cursor-agent",
-        commands: &["claude", "cld", "cursor-agent"],
-        rel_path: ".claude/settings.json",
-    },
-    AgentDef {
-        id: "codex",
-        label: "codex",
-        commands: &["codex"],
-        rel_path: ".codex/hooks.json",
-    },
-    AgentDef {
-        id: "grok",
-        label: "grok",
-        commands: &["grok"],
-        rel_path: ".grok/hooks/slopgate.json",
-    },
-    AgentDef {
-        id: "gemini",
-        label: "gemini",
-        commands: &["gemini"],
-        rel_path: ".gemini/settings.json",
-    },
-];
-
-fn which(cmd: &str) -> bool {
-    Command::new("which")
-        .arg(cmd)
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
-}
-
-fn agent_detected(agent: &AgentDef) -> bool {
-    agent.commands.iter().any(|cmd| which(cmd))
-}
-
-fn home_dir() -> PathBuf {
-    std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("/"))
 }
 
 /// Engine repo root (`parent of src/`), resolved from this crate's manifest dir.
@@ -107,19 +53,11 @@ fn hook_action_label(action: HookInstallAction) -> &'static str {
 }
 
 fn install_agent_hooks(engine_root: &Path) -> Vec<AgentHookResult> {
-    let home = home_dir();
-    AGENTS
-        .iter()
-        .filter(|a| agent_detected(a))
-        .filter_map(|a| {
-            let file_path = home.join(a.rel_path);
-            match merge_agent_hooks_file(&file_path, engine_root) {
-                Ok((action, _)) => Some(AgentHookResult {
-                    label: a.label.to_string(),
-                    action,
-                }),
-                Err(_) => None,
-            }
+    install_detected_agent_hooks(engine_root, None)
+        .into_iter()
+        .map(|r| AgentHookResult {
+            label: r.label,
+            action: r.action,
         })
         .collect()
 }
