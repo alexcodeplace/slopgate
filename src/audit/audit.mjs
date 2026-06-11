@@ -50,21 +50,26 @@ export function buildHotspots(sources, churn90, churn30, { sinceDays, oldSourceO
       score: hotspotScore(churnLong, comp),
       accel: acceleration(churnShort, SHORT_DAYS, churnLong, sinceDays),
       untested: !hasTest(file),
-      locDelta: oldSourceOf ? (() => {
-        const old = oldSourceOf(file);
-        return old ? comp.loc - complexity(old).loc : null;
-      })() : null,
+      locDelta: null,
     });
   }
   rows.sort((a, b) => b.score - a.score);
-  return { rows: rows.slice(0, 10) };
+  const top = rows.slice(0, 10);
+  if (oldSourceOf) {
+    for (const row of top) {
+      const old = oldSourceOf(row.file);
+      row.locDelta = old ? row.loc - complexity(old).loc : null;
+    }
+  }
+  return { rows: top };
 }
 
 /** Flags when top author share ≥ 0.8 AND commits ≥ 5. */
 export function buildKnowledge(dirShares, { shareThreshold = 0.8, minCommits = 5 } = {}) {
   const rows = dirShares.map(({ dir, shares }) => {
     const top = shares[0];
-    const flagged = !!(top && top.share >= shareThreshold && top.commits >= minCommits);
+    const total = shares.reduce((acc, s) => acc + s.commits, 0);
+    const flagged = !!(top && top.share >= shareThreshold && total >= minCommits);
     return {
       dir,
       topAuthor: top?.author ?? null,
@@ -124,7 +129,6 @@ function hotspotLines(hs) {
 function moduleShapeLines(sources, modules) {
   const lines = [];
   const fans = fanMetrics(modules ?? []);
-  const fanByMod = new Map(fans.map((f) => [f.module, f]));
 
   for (const [file, source] of sources) {
     const er = exportRatio(source);
@@ -172,11 +176,14 @@ function ratchetLines(bl, currentCount, burndown) {
   return lines;
 }
 
-function exemptionLines(sup, pruned, health) {
+function exemptionLines(sup, pruned, health, config) {
   const lines = [];
   if (sup.error) lines.push(`suppressions.json malformed: ${sup.error}`);
   else lines.push(`active suppressions: ${sup.entries.length}`);
   if (pruned.pruned.length) lines.push(`stale suppressions (dry-run): ${pruned.pruned.length}`);
+  if (config?.astDisable?.size > 0) {
+    lines.push(`astDisable exemptions: ${[...config.astDisable].join(', ')} — still justified?`);
+  }
   if (health) {
     for (const [id, st] of Object.entries(health.checkers ?? {})) {
       if (st.consecutiveFailures >= 2) {
@@ -299,7 +306,7 @@ export async function runAudit(config, { sinceDays = 90, json = false } = {}) {
       if (existsSync(healthPath)) {
         try { health = JSON.parse(readFileSync(healthPath, 'utf8')); } catch { /* malformed */ }
       }
-      sections.push({ title: 'Exemptions & checker health', lines: exemptionLines(sup, pruned, health) });
+      sections.push({ title: 'Exemptions & checker health', lines: exemptionLines(sup, pruned, health, config) });
     } catch (e) { notices.push(`exemptions skipped (${e})`); }
 
     // Gate effectiveness (stats.jsonl)
