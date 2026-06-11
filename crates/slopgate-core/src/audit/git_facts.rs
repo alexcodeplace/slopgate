@@ -8,6 +8,8 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::process::Command;
 
+use serde::Serialize;
+
 /// Author commit share within a path prefix and time window.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AuthorShare {
@@ -17,7 +19,7 @@ pub struct AuthorShare {
 }
 
 /// Entry-count sample for a committed JSON file at one revision.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct JsonEntryPoint {
     pub ts: String,
     pub count: usize,
