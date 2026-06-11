@@ -3,18 +3,26 @@
 use std::io;
 use std::path::Path;
 
+/// Make a temp dir under `base`, pass its path to `f`, then remove it (even if `f` panics).
+/// Returns `f`'s result, or an I/O error when tempdir creation fails.
+pub fn with_temp_dir_in<T, F>(base: impl AsRef<Path>, prefix: &str, f: F) -> Result<T, io::Error>
+where
+    F: FnOnce(&Path) -> T,
+{
+    let dir = tempfile::Builder::new()
+        .prefix(prefix)
+        .tempdir_in(base.as_ref())?;
+    Ok(f(dir.path()))
+}
+
 /// Make a temp dir, pass its path to `f`, then remove it (even if `f` panics).
 /// Returns `f`'s result, or an I/O error when tempdir creation fails.
 pub fn with_temp_dir<T, F>(prefix: &str, f: F) -> Result<T, io::Error>
 where
     F: FnOnce(&Path) -> T,
 {
-    let dir = tempfile::Builder::new().prefix(prefix).tempdir()?;
-    Ok(f(dir.path()))
+    with_temp_dir_in(std::env::temp_dir(), prefix, f)
 }
-
-#[cfg(test)]
-pub(crate) static TMPDIR_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 #[cfg(test)]
 mod tests {
@@ -37,21 +45,11 @@ mod tests {
 
     #[test]
     fn with_temp_dir_returns_err_when_creation_fails() {
-        let _guard = TMPDIR_TEST_LOCK.lock().unwrap();
         let parent = tempfile::TempDir::new().unwrap();
         let not_a_dir = parent.path().join("not-a-dir");
         fs::write(&not_a_dir, "blocking").unwrap();
 
-        let prev = std::env::var("TMPDIR").ok();
-        // SAFETY: serialized via TMPDIR_TEST_LOCK; restored before return.
-        unsafe { std::env::set_var("TMPDIR", &not_a_dir) };
-
-        let result = with_temp_dir("slopgate-fail-", |_| ());
-        match prev {
-            Some(p) => unsafe { std::env::set_var("TMPDIR", p) },
-            None => unsafe { std::env::remove_var("TMPDIR") },
-        }
-
+        let result = with_temp_dir_in(&not_a_dir, "slopgate-fail-", |_| ());
         assert!(result.is_err());
     }
 

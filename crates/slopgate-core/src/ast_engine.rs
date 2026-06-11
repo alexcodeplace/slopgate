@@ -4,7 +4,7 @@
 
 use crate::config::ResolvedConfig;
 use crate::report::Violation;
-use crate::temp::with_temp_dir;
+use crate::temp::with_temp_dir_in;
 use serde_json::Value;
 use std::ffi::OsStr;
 use std::fs;
@@ -173,6 +173,15 @@ pub fn run_ast_grep_scan(
     files: Option<&[String]>,
     opts: &AstGrepScanOpts,
 ) -> AstGrepScanResult {
+    run_ast_grep_scan_in(config, files, opts, std::env::temp_dir())
+}
+
+fn run_ast_grep_scan_in(
+    config: &ResolvedConfig,
+    files: Option<&[String]>,
+    opts: &AstGrepScanOpts,
+    temp_base: impl AsRef<Path>,
+) -> AstGrepScanResult {
     let rule_dirs: Vec<&str> = config
         .ast_rule_dirs
         .iter()
@@ -231,7 +240,7 @@ pub fn run_ast_grep_scan(
         };
     }
 
-    let scan = with_temp_dir("slopgate-sg-", |dir| {
+    let scan = with_temp_dir_in(temp_base, "slopgate-sg-", |dir| {
         let sg_config = dir.join("sgconfig.yml");
         let yml = format!(
             "ruleDirs:\n{}\n",
@@ -499,7 +508,6 @@ mod tests {
 
     #[test]
     fn run_scan_temp_dir_failure_unavailable() {
-        let _guard = crate::temp::TMPDIR_TEST_LOCK.lock().unwrap();
         let dir = TempDir::new().unwrap();
         let rule_dir = dir.path().join("rules/ast");
         fs::create_dir_all(&rule_dir).unwrap();
@@ -509,10 +517,6 @@ mod tests {
 
         let not_a_dir = dir.path().join("blocking-tmp");
         fs::write(&not_a_dir, "x").unwrap();
-
-        let prev = std::env::var("TMPDIR").ok();
-        // SAFETY: serialized via TMPDIR_TEST_LOCK; restored before return.
-        unsafe { std::env::set_var("TMPDIR", &not_a_dir) };
 
         let config = ResolvedConfig {
             repo_root: dir.path().to_string_lossy().into_owned(),
@@ -537,12 +541,7 @@ mod tests {
             ux_ast_all: Default::default(),
         };
 
-        let got = run_ast_grep_scan(&config, None, &AstGrepScanOpts::default());
-
-        match prev {
-            Some(p) => unsafe { std::env::set_var("TMPDIR", p) },
-            None => unsafe { std::env::remove_var("TMPDIR") },
-        }
+        let got = run_ast_grep_scan_in(&config, None, &AstGrepScanOpts::default(), &not_a_dir);
 
         assert!(!got.available);
         assert!(got.violations.is_empty());
