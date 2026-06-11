@@ -1,6 +1,6 @@
 //! Hashing primitives. line_hash = sha1 (suppression key); fingerprint = sha256→16hex (ratchet key).
 use regex::Regex;
-use sha1::{Digest as _, Sha1};
+use sha1::Sha1;
 use sha2::{Digest as Sha2Digest, Sha256};
 
 /// sha1-hex of the trimmed line. Mirrors suppressions.mjs lineHash.
