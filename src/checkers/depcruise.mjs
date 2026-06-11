@@ -40,6 +40,17 @@ function rulesFile(config, cfg) {
   return candidates.find(existsSync) ?? null;
 }
 
+/** Shared raw-JSON invocation — checker reads .summary.violations, audit reads .modules.
+ *  Returns { data, errors } like runJsonTool; data null when binary/rules missing. */
+export async function runDepcruiseJson(config, cfg = {}) {
+  const bin = localBin(config.repoRoot, 'depcruise');
+  if (!bin) return { data: null, errors: ['no local depcruise binary'] };
+  const rules = rulesFile(config, cfg);
+  if (!rules) return { data: null, errors: ['no depcruise rules file'] };
+  return runJsonTool('depcruise', bin, ['--config', rules, '--output-type', 'json', ...config.rootsRel],
+    { cwd: config.repoRoot, timeout: (cfg.timeout ?? 60) * 1000 });
+}
+
 export default {
   id: 'depcruise',
   detect(config, cfg) {
@@ -48,9 +59,7 @@ export default {
     return { available: true };
   },
   async run(config, cfg) {
-    const { data, errors } = await runJsonTool('depcruise', localBin(config.repoRoot, 'depcruise'),
-      ['--config', rulesFile(config, cfg), '--output-type', 'json', ...config.rootsRel],
-      { cwd: config.repoRoot, timeout: (cfg.timeout ?? 60) * 1000 });
+    const { data, errors } = await runDepcruiseJson(config, cfg);
     if (data == null) return { violations: [], errors };
     return { violations: depcruiseViolations(parseDepcruiseOutput(data)), errors };
   },

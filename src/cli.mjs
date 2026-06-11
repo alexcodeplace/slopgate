@@ -1,7 +1,7 @@
 // src/cli.mjs
 import { existsSync } from 'node:fs';
 import { resolveConfig } from './config.mjs';
-import { runGate, collectViolations, applyGateFilters } from './gate.mjs';
+import { runGate, snapshotViolations } from './gate.mjs';
 import { runSelfTest } from './selftest.mjs';
 import { runInit } from './init.mjs';
 import { loadBaseline, writeBaseline, writeBaselineRaw, fingerprintViolation } from './ratchet.mjs';
@@ -10,17 +10,11 @@ import { installSkills } from './install-skills.mjs';
 import { recordIncidents } from './stats/record.mjs';
 import { readRows, globalStatsPath, projectStatsPath } from './stats/store.mjs';
 import { aggregate, formatStats, DIMENSIONS } from './stats/query.mjs';
+import { runAudit } from './audit/audit.mjs';
 
 const args = process.argv.slice(2);
 const has = (f) => args.includes(f);
 const valOf = (f) => { const i = args.indexOf(f); return i === -1 ? null : args[i + 1]; };
-
-/** Full-repo commit-tier snapshot, filtered like the gate filters (severity + suppressions). */
-async function snapshotViolations(config) {
-  const { violations, notices } = await collectViolations('full', config, 'commit');
-  for (const n of notices) process.stderr.write(`⚠ SLOPGATE: ${n}\n`);
-  return applyGateFilters(violations, config, 'staged');
-}
 
 async function requireConfig() {
   const configPath = valOf('--config');
@@ -62,6 +56,17 @@ async function main() {
     const results = installSkills({ force });
     for (const r of results) process.stdout.write(`slopgate: skill ${r.name} — ${r.action}\n`);
     if (results.length === 0) process.stdout.write('slopgate: no skills to install\n');
+    process.exit(0);
+  }
+
+  if (has('audit')) {
+    const config = await requireConfig();
+    const sinceDays = Number(valOf('--since-days') ?? 90);
+    if (!Number.isFinite(sinceDays) || sinceDays <= 0) {
+      process.stderr.write('slopgate: --since-days must be a positive number\n');
+      process.exit(2);
+    }
+    process.stdout.write(await runAudit(config, { sinceDays, json: has('--json') }) + '\n');
     process.exit(0);
   }
 
@@ -128,7 +133,7 @@ async function main() {
   const fileTarget = valOf('--file');
   if (fileTarget) process.exit((await runGate('file', config, { tier: tierFlag ?? undefined, fileTarget })).code);
 
-  process.stderr.write('slopgate: no mode (use --staged | --file <p> | --self-test | init [dir] | baseline [--update|--prune] | install-hooks | install-skills [--force] | stats [--by rule|model|project|severity|engine|category] [--since <iso>] [--json] [--config <p>])\n');
+  process.stderr.write('slopgate: no mode (use --staged | --file <p> | --self-test | init [dir] | baseline [--update|--prune] | install-hooks | install-skills [--force] | audit [--since-days N] [--json] | stats [--by rule|model|project|severity|engine|category] [--since <iso>] [--json] [--config <p>])\n');
   process.exit(2);
 }
 main().catch((e) => { process.stderr.write(`slopgate: ${e?.stack || e}\n`); process.exit(1); });
