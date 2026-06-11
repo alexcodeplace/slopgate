@@ -10,8 +10,9 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
 use crate::config::ResolvedConfig;
+use crate::install::agent_hooks::home_dir;
 use crate::report::Violation;
-use crate::stats::store::{append_row, global_stats_path, project_stats_path};
+use crate::stats::store::{append_row, global_stats_path_in, project_stats_path};
 
 const SESSION_TTL_MS: f64 = 8.0 * 60.0 * 60.0 * 1000.0;
 
@@ -38,27 +39,29 @@ fn hex_digest(bytes: &[u8]) -> String {
     s
 }
 
-fn home_slopgate_sessions_dir() -> PathBuf {
-    let home = std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("/"));
+fn home_slopgate_sessions_dir_in(home: &Path) -> PathBuf {
     home.join(".slopgate").join("sessions")
 }
 
-/// Resolve the recording model. Precedence: env `SLOPGATE_MODEL` → SessionStart file
-/// (`~/.slopgate/sessions/<key>.json`) → `unknown`. Never panics.
-pub fn resolve_session(repo_root: &str) -> ResolvedSession {
-    if let Ok(model) = std::env::var("SLOPGATE_MODEL") {
-        if !model.is_empty() {
-            return ResolvedSession {
-                model,
-                session_id: None,
-                started_at: None,
-            };
-        }
+/// Resolve the recording model. Precedence: `model_override` → env `SLOPGATE_MODEL` →
+/// SessionStart file (`~/.slopgate/sessions/<key>.json`) → `unknown`. Never panics.
+pub fn resolve_session_in(
+    home: &Path,
+    repo_root: &str,
+    model_override: Option<&str>,
+) -> ResolvedSession {
+    if let Some(model) = model_override
+        .map(str::to_string)
+        .or_else(|| std::env::var("SLOPGATE_MODEL").ok().filter(|m| !m.is_empty()))
+    {
+        return ResolvedSession {
+            model,
+            session_id: None,
+            started_at: None,
+        };
     }
 
-    let path = home_slopgate_sessions_dir().join(format!("{}.json", session_key(repo_root)));
+    let path = home_slopgate_sessions_dir_in(home).join(format!("{}.json", session_key(repo_root)));
     let Ok(raw) = fs::read_to_string(&path) else {
         return unknown_session();
     };
@@ -83,6 +86,11 @@ pub fn resolve_session(repo_root: &str) -> ResolvedSession {
         session_id: session.session_id,
         started_at: session.started_at,
     }
+}
+
+/// Resolve session using the real `$HOME` (production callers read home once at the call site).
+pub fn resolve_session(repo_root: &str) -> ResolvedSession {
+    resolve_session_in(&home_dir(), repo_root, None)
 }
 
 fn unknown_session() -> ResolvedSession {
@@ -243,12 +251,25 @@ fn build_row(
 /// Append one row per blocked violation to the global + project stores.
 /// Fail-open: store errors are swallowed (no panic); returns rows successfully written.
 pub fn record_incidents(violations: &[Violation], config: &ResolvedConfig, mode: &str) -> usize {
+    let home = home_dir();
+    record_incidents_in(violations, config, mode, &home)
+}
+
+/// Like [`record_incidents`] but uses an explicit `home` for the global stats path and session file.
+pub fn record_incidents_in(
+    violations: &[Violation],
+    config: &ResolvedConfig,
+    mode: &str,
+    home: &Path,
+) -> usize {
     record_incidents_to_paths(
         violations,
         config,
         mode,
-        &global_stats_path(),
+        &global_stats_path_in(home),
         &project_stats_path(config),
+        home,
+        None,
     )
 }
 
@@ -258,12 +279,14 @@ fn record_incidents_to_paths(
     mode: &str,
     global_path: &Path,
     project_path: &Path,
+    home: &Path,
+    model_override: Option<&str>,
 ) -> usize {
     if violations.is_empty() {
         return 0;
     }
 
-    let session = resolve_session(&config.repo_root);
+    let session = resolve_session_in(home, &config.repo_root, model_override);
     let ts = iso_timestamp_now();
     let project = repo_basename(&config.repo_root);
 
@@ -286,50 +309,7 @@ mod tests {
     use super::*;
     use crate::config::resolve_config_str;
     use std::fs;
-    use std::sync::{Mutex, MutexGuard};
     use tempfile::TempDir;
-
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
-
-    struct EnvGuard {
-        _lock: MutexGuard<'static, ()>,
-        home: Option<std::ffi::OsString>,
-        model: Option<std::ffi::OsString>,
-    }
-
-    impl EnvGuard {
-        fn new(home: &Path) -> Self {
-            let lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-            let home_prev = std::env::var_os("HOME");
-            let model_prev = std::env::var_os("SLOPGATE_MODEL");
-            std::env::set_var("HOME", home);
-            std::env::remove_var("SLOPGATE_MODEL");
-            Self {
-                _lock: lock,
-                home: home_prev,
-                model: model_prev,
-            }
-        }
-
-        fn with_model(home: &Path, model: &str) -> Self {
-            let guard = Self::new(home);
-            std::env::set_var("SLOPGATE_MODEL", model);
-            guard
-        }
-    }
-
-    impl Drop for EnvGuard {
-        fn drop(&mut self) {
-            match &self.home {
-                Some(v) => std::env::set_var("HOME", v),
-                None => std::env::remove_var("HOME"),
-            }
-            match &self.model {
-                Some(v) => std::env::set_var("SLOPGATE_MODEL", v),
-                None => std::env::remove_var("SLOPGATE_MODEL"),
-            }
-        }
-    }
 
     fn test_config(root: &Path) -> ResolvedConfig {
         let toml = fs::read_to_string(format!(
@@ -360,10 +340,9 @@ mod tests {
     }
 
     #[test]
-    fn resolve_session_prefers_slopgate_model_env() {
+    fn resolve_session_in_uses_model_override() {
         let dir = TempDir::new().unwrap();
-        let _guard = EnvGuard::with_model(dir.path(), "claude-opus");
-        let session = resolve_session(dir.path().to_str().unwrap());
+        let session = resolve_session_in(dir.path(), dir.path().to_str().unwrap(), Some("claude-opus"));
         assert_eq!(
             session,
             ResolvedSession {
@@ -377,8 +356,7 @@ mod tests {
     #[test]
     fn resolve_session_reads_session_file() {
         let dir = TempDir::new().unwrap();
-        let _guard = EnvGuard::new(dir.path());
-        let sessions = home_slopgate_sessions_dir();
+        let sessions = home_slopgate_sessions_dir_in(dir.path());
         fs::create_dir_all(&sessions).unwrap();
         let key = session_key(dir.path().to_str().unwrap());
         fs::write(
@@ -387,7 +365,7 @@ mod tests {
         )
         .unwrap();
 
-        let session = resolve_session(dir.path().to_str().unwrap());
+        let session = resolve_session_in(dir.path(), dir.path().to_str().unwrap(), None);
         assert_eq!(session.model, "gpt-4");
         assert_eq!(session.session_id.as_deref(), Some("sess-1"));
     }
@@ -395,8 +373,7 @@ mod tests {
     #[test]
     fn resolve_session_expired_ttl_returns_unknown() {
         let dir = TempDir::new().unwrap();
-        let _guard = EnvGuard::new(dir.path());
-        let sessions = home_slopgate_sessions_dir();
+        let sessions = home_slopgate_sessions_dir_in(dir.path());
         fs::create_dir_all(&sessions).unwrap();
         let key = session_key(dir.path().to_str().unwrap());
         fs::write(
@@ -405,7 +382,7 @@ mod tests {
         )
         .unwrap();
 
-        let session = resolve_session(dir.path().to_str().unwrap());
+        let session = resolve_session_in(dir.path(), dir.path().to_str().unwrap(), None);
         assert_eq!(session.model, "unknown");
         assert!(session.session_id.is_none());
     }
@@ -413,7 +390,6 @@ mod tests {
     #[test]
     fn record_incidents_writes_n_rows_with_expected_fields() {
         let repo = TempDir::new().unwrap();
-        let _guard = EnvGuard::with_model(repo.path(), "test-model");
         let config = test_config(repo.path());
         let global_path = repo.path().join("global-stats.jsonl");
         let project_path = project_stats_path(&config);
@@ -430,6 +406,8 @@ mod tests {
             "staged",
             &global_path,
             &project_path,
+            repo.path(),
+            Some("test-model"),
         );
         assert_eq!(written, 3);
 
@@ -458,13 +436,12 @@ mod tests {
     fn record_incidents_empty_returns_zero() {
         let repo = TempDir::new().unwrap();
         let config = test_config(repo.path());
-        assert_eq!(record_incidents(&[], &config, "staged"), 0);
+        assert_eq!(record_incidents_in(&[], &config, "staged", repo.path()), 0);
     }
 
     #[test]
     fn record_incidents_fail_open_on_store_error() {
         let repo = TempDir::new().unwrap();
-        let _guard = EnvGuard::new(repo.path());
         let config = test_config(repo.path());
 
         let global_path = repo.path().join("global-stats.jsonl");
@@ -479,6 +456,8 @@ mod tests {
             "staged",
             &global_path,
             &project_path,
+            repo.path(),
+            None,
         );
         assert_eq!(written, 0);
     }

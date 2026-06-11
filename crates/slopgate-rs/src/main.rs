@@ -3,17 +3,17 @@ use slopgate_core::config::resolve_config;
 use slopgate_core::gate::{run_gate, snapshot_violations, Mode, Tier};
 use slopgate_core::init::run::{engine_root, run_init_io};
 use slopgate_core::install::agent_hooks::{
-    install_agent_hooks, remove_agent_hooks, status_agent_hooks, status_symbol, AGENTS,
+    home_dir, install_agent_hooks, remove_agent_hooks, status_agent_hooks, status_symbol, AGENTS,
 };
 use slopgate_core::install::hooks::{install_pre_commit_hook, HookInstallAction};
-use slopgate_core::install::skills::{default_skills_dest, install_skills, SkillInstallAction};
+use slopgate_core::install::skills::{default_skills_dest_in, install_skills, SkillInstallAction};
 use slopgate_core::ratchet::{
     fingerprint_violation, load_baseline, write_baseline, write_baseline_raw, BaselineEntry,
 };
 use slopgate_core::selftest::run_self_test;
 use slopgate_core::stats::query::{aggregate, format_stats, Row};
 use slopgate_core::stats::record::record_incidents;
-use slopgate_core::stats::store::{global_stats_path, project_stats_path, read_rows};
+use slopgate_core::stats::store::{global_stats_path_in, project_stats_path, read_rows};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::io::Write;
@@ -178,7 +178,17 @@ pub fn run(args: &[String]) -> i32 {
 }
 
 fn run_with_io(args: &[String], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
-    match dispatch(args, stdout, stderr) {
+    let home = home_dir();
+    run_with_io_and_home(args, stdout, stderr, &home)
+}
+
+fn run_with_io_and_home(
+    args: &[String],
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+    home: &Path,
+) -> i32 {
+    match dispatch(args, stdout, stderr, home) {
         Ok(code) => code,
         Err(e) => {
             write_top_level_err(stderr, &e);
@@ -187,7 +197,12 @@ fn run_with_io(args: &[String], stdout: &mut dyn Write, stderr: &mut dyn Write) 
     }
 }
 
-fn dispatch(args: &[String], stdout: &mut dyn Write, stderr: &mut dyn Write) -> Result<i32, String> {
+fn dispatch(
+    args: &[String],
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+    home: &Path,
+) -> Result<i32, String> {
     if args.get(1).is_some_and(|a| a == "--version") {
         writeln_stdout(stdout, &format!("slopgate-rs {}", env!("CARGO_PKG_VERSION")));
         return Ok(0);
@@ -218,7 +233,7 @@ fn dispatch(args: &[String], stdout: &mut dyn Write, stderr: &mut dyn Write) -> 
             let config = resolve_config(config_path)?;
             parse_rows(&read_rows(&project_stats_path(&config)))
         } else {
-            parse_rows(&read_rows(&global_stats_path()))
+            parse_rows(&read_rows(&global_stats_path_in(home)))
         };
         let aggregated = aggregate(&rows, Some(by), since)?;
         writeln_stdout(stdout, &format_stats(&aggregated, json));
@@ -292,7 +307,7 @@ fn dispatch(args: &[String], stdout: &mut dyn Write, stderr: &mut dyn Write) -> 
         let agent_ids_ref = agent_ids.as_deref();
 
         if sub.is_none() || sub == Some("status") || !valid_subs.contains(&sub.unwrap()) {
-            let rows = status_agent_hooks(&engine);
+            let rows = status_agent_hooks(&home, &engine);
             for r in rows {
                 let sym = status_symbol(&r.status);
                 let det = if r.detected {
@@ -319,7 +334,7 @@ fn dispatch(args: &[String], stdout: &mut dyn Write, stderr: &mut dyn Write) -> 
 
         if sub == Some("install") || sub == Some("reinstall") {
             if sub == Some("reinstall") {
-                let rem = remove_agent_hooks(&engine, agent_ids_ref);
+                let rem = remove_agent_hooks(&home, &engine, agent_ids_ref);
                 for r in rem {
                     if r.action == "removed" {
                         writeln_stdout(
@@ -332,7 +347,7 @@ fn dispatch(args: &[String], stdout: &mut dyn Write, stderr: &mut dyn Write) -> 
                     }
                 }
             }
-            let results = install_agent_hooks(&engine, agent_ids_ref);
+            let results = install_agent_hooks(&home, &engine, agent_ids_ref);
             if results.is_empty() {
                 writeln_stdout(
                     stdout,
@@ -365,7 +380,7 @@ fn dispatch(args: &[String], stdout: &mut dyn Write, stderr: &mut dyn Write) -> 
         }
 
         if sub == Some("remove") {
-            let results = remove_agent_hooks(&engine, agent_ids_ref);
+            let results = remove_agent_hooks(&home, &engine, agent_ids_ref);
             for r in results {
                 writeln_stdout(
                     stdout,
@@ -391,7 +406,7 @@ fn dispatch(args: &[String], stdout: &mut dyn Write, stderr: &mut dyn Write) -> 
         let force = has(args, "--force");
         let engine = engine_root();
         let skills_src = engine.join("skills");
-        let results = install_skills(&skills_src, &default_skills_dest(), force)
+        let results = install_skills(&skills_src, &default_skills_dest_in(home), force)
             .map_err(|e| e.to_string())?;
         let empty = results.is_empty();
         for r in results {
@@ -614,36 +629,7 @@ mod tests {
     use std::fs;
     use std::io::Cursor;
     use std::process::Command;
-    use std::sync::{Mutex, MutexGuard};
     use tempfile::TempDir;
-
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
-
-    struct EnvGuard {
-        _lock: MutexGuard<'static, ()>,
-        home: Option<std::ffi::OsString>,
-    }
-
-    impl EnvGuard {
-        fn with_home(home: &std::path::Path) -> Self {
-            let lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-            let home_prev = std::env::var_os("HOME");
-            std::env::set_var("HOME", home);
-            Self {
-                _lock: lock,
-                home: home_prev,
-            }
-        }
-    }
-
-    impl Drop for EnvGuard {
-        fn drop(&mut self) {
-            match &self.home {
-                Some(v) => std::env::set_var("HOME", v),
-                None => std::env::remove_var("HOME"),
-            }
-        }
-    }
 
     fn fixture_toml() -> String {
         fs::read_to_string(format!(
@@ -668,9 +654,13 @@ mod tests {
     }
 
     fn run_capture(args: Vec<String>) -> (i32, String, String) {
+        run_capture_with_home(args, &home_dir())
+    }
+
+    fn run_capture_with_home(args: Vec<String>, home: &std::path::Path) -> (i32, String, String) {
         let mut stdout = Cursor::new(Vec::new());
         let mut stderr = Cursor::new(Vec::new());
-        let code = run_with_io(&args, &mut stdout, &mut stderr);
+        let code = run_with_io_and_home(&args, &mut stdout, &mut stderr, home);
         let out = String::from_utf8(stdout.into_inner()).unwrap();
         let err = String::from_utf8(stderr.into_inner()).unwrap();
         (code, out, err)
@@ -759,9 +749,9 @@ mod tests {
     #[test]
     fn stats_empty_returns_zero_incidents() {
         let home = TempDir::new().unwrap();
-        let _guard = EnvGuard::with_home(home.path());
 
-        let (code, out, _) = run_capture(vec!["slopgate-rs".into(), "stats".into()]);
+        let (code, out, _) =
+            run_capture_with_home(vec!["slopgate-rs".into(), "stats".into()], home.path());
         assert_eq!(code, 0);
         assert!(out.contains("0 incident(s) stopped"));
     }
@@ -816,9 +806,11 @@ mod tests {
     #[test]
     fn install_skills_exits_zero() {
         let home = TempDir::new().unwrap();
-        let _guard = EnvGuard::with_home(home.path());
 
-        let (code, out, _) = run_capture(vec!["slopgate-rs".into(), "install-skills".into()]);
+        let (code, out, _) = run_capture_with_home(
+            vec!["slopgate-rs".into(), "install-skills".into()],
+            home.path(),
+        );
         assert_eq!(code, 0);
         assert!(
             out.contains("slopgate: skill") || out.contains("slopgate: no skills to install")

@@ -8,9 +8,9 @@ use crate::init::scaffold::{
     convention_sources_json, format_config_toml, format_suppressions_json, merge_settings_json,
     DetectedConfig, DEPCRUISE_STARTER,
 };
-use crate::install::agent_hooks::install_agent_hooks as install_detected_agent_hooks;
+use crate::install::agent_hooks::{home_dir, install_agent_hooks as install_detected_agent_hooks};
 use crate::install::hooks::{install_pre_commit_hook, HookInstallAction};
-use crate::install::skills::{default_skills_dest, install_skills};
+use crate::install::skills::{default_skills_dest_in, install_skills};
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -52,8 +52,8 @@ fn hook_action_label(action: HookInstallAction) -> &'static str {
     }
 }
 
-fn install_agent_hooks(engine_root: &Path) -> Vec<AgentHookResult> {
-    install_detected_agent_hooks(engine_root, None)
+fn install_agent_hooks(home: &Path, engine_root: &Path) -> Vec<AgentHookResult> {
+    install_detected_agent_hooks(home, engine_root, None)
         .into_iter()
         .map(|r| AgentHookResult {
             label: r.label,
@@ -82,7 +82,19 @@ pub fn run_init_io(
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
 ) -> i32 {
-    match run_init_inner(dir, quiet, stdout, stderr) {
+    let home = home_dir();
+    run_init_io_with_home(dir, quiet, stdout, stderr, &home)
+}
+
+/// Like [`run_init_io`] but uses an explicit `home` for agent hooks and skills install paths.
+pub fn run_init_io_with_home(
+    dir: &str,
+    quiet: bool,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+    home: &Path,
+) -> i32 {
+    match run_init_inner(dir, quiet, stdout, stderr, home) {
         Ok(code) => code,
         Err(e) => {
             let _ = writeln!(stderr, "slopgate: init failed: {e}");
@@ -96,6 +108,7 @@ fn run_init_inner(
     quiet: bool,
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
+    home: &Path,
 ) -> Result<i32, SlopError> {
     let target_dir = Path::new(dir);
     let base = target_dir.join(".slopgate");
@@ -147,9 +160,9 @@ fn run_init_inner(
     };
 
     let skills_src = engine.join("skills");
-    let _ = install_skills(&skills_src, &default_skills_dest(), false);
+    let _ = install_skills(&skills_src, &default_skills_dest_in(home), false);
 
-    let agent_results = install_agent_hooks(&engine);
+    let agent_results = install_agent_hooks(home, &engine);
 
     let sources = build_convention_sources(target_dir);
     fs::write(

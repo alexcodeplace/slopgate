@@ -3,6 +3,7 @@
 //! Phase 1 takes `skills_src` explicitly (JS derives it from `import.meta.url`).
 
 use crate::error::SlopError;
+use crate::install::agent_hooks::home_dir;
 use std::fs;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
@@ -22,12 +23,14 @@ pub struct SkillInstallResult {
     pub action: SkillInstallAction,
 }
 
+/// Default destination under `home` (`~/.claude/skills` when `home` is `$HOME`).
+pub fn default_skills_dest_in(home: &Path) -> PathBuf {
+    home.join(".claude").join("skills")
+}
+
 /// Default destination (`~/.claude/skills`), matching the JS default.
 pub fn default_skills_dest() -> PathBuf {
-    let home = std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("/"));
-    home.join(".claude").join("skills")
+    default_skills_dest_in(&home_dir())
 }
 
 fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), SlopError> {
@@ -128,8 +131,9 @@ mod tests {
 
     #[test]
     fn default_skills_dest_under_home_claude_skills() {
-        let path = default_skills_dest();
-        assert!(path.ends_with(".claude/skills"));
+        let home = TempDir::new().unwrap();
+        let path = default_skills_dest_in(home.path());
+        assert_eq!(path, home.path().join(".claude/skills"));
     }
 
     #[test]

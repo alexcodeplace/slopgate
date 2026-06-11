@@ -88,14 +88,16 @@ pub struct StatusRow {
     pub path: PathBuf,
 }
 
-fn home_dir() -> PathBuf {
+/// Resolve the user's home directory from `$HOME` (production callers read once at the call site).
+pub fn home_dir() -> PathBuf {
     std::env::var_os("HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("/"))
 }
 
-fn agent_file_path(agent: &AgentDef) -> PathBuf {
-    home_dir().join(agent.rel_path)
+/// Path to an agent's hooks settings file under `home`.
+pub fn agent_file_path(home: &Path, agent: &AgentDef) -> PathBuf {
+    home.join(agent.rel_path)
 }
 
 /// Whether `cmd` is on PATH (mirrors JS `which`).
@@ -416,6 +418,7 @@ pub fn status_symbol(status: &str) -> &'static str {
 
 /// Install slopgate hooks for all detected (or specified) agents.
 pub fn install_agent_hooks(
+    home: &Path,
     engine_root: &Path,
     agent_ids: Option<&[String]>,
 ) -> Vec<InstallRow> {
@@ -430,7 +433,7 @@ pub fn install_agent_hooks(
     targets
         .into_iter()
         .filter_map(|a| {
-            let file_path = agent_file_path(a);
+            let file_path = agent_file_path(home, a);
             match merge_hooks(&file_path, engine_root) {
                 Ok(r) => Some(InstallRow {
                     id: a.id.to_string(),
@@ -446,6 +449,7 @@ pub fn install_agent_hooks(
 
 /// Remove slopgate hooks for all (or specified) agents.
 pub fn remove_agent_hooks(
+    home: &Path,
     engine_root: &Path,
     agent_ids: Option<&[String]>,
 ) -> Vec<RemoveRow> {
@@ -460,7 +464,7 @@ pub fn remove_agent_hooks(
     targets
         .into_iter()
         .filter_map(|a| {
-            let file_path = agent_file_path(a);
+            let file_path = agent_file_path(home, a);
             match remove_hooks(&file_path, engine_root) {
                 Ok(r) => Some(RemoveRow {
                     id: a.id.to_string(),
@@ -475,11 +479,11 @@ pub fn remove_agent_hooks(
 }
 
 /// Return status for all agents (detected or not).
-pub fn status_agent_hooks(engine_root: &Path) -> Vec<StatusRow> {
+pub fn status_agent_hooks(home: &Path, engine_root: &Path) -> Vec<StatusRow> {
     AGENTS
         .iter()
         .map(|a| {
-            let path = agent_file_path(a);
+            let path = agent_file_path(home, a);
             StatusRow {
                 id: a.id.to_string(),
                 label: a.label.to_string(),
@@ -673,7 +677,8 @@ mod tests {
     #[test]
     fn status_agent_hooks_rows_and_symbols() {
         let engine = setup_engine();
-        let rows = status_agent_hooks(engine.path());
+        let home = tempfile::tempdir().unwrap();
+        let rows = status_agent_hooks(home.path(), engine.path());
         assert_eq!(rows.len(), AGENTS.len());
         for row in &rows {
             assert!(!row.id.is_empty());
@@ -689,51 +694,30 @@ mod tests {
     fn install_agent_hooks_with_explicit_agent_id() {
         let engine = setup_engine();
         let home = tempfile::tempdir().unwrap();
-        let rel = AGENTS[0].rel_path;
-        let settings_path = home.path().join(rel);
+        let settings_path = home.path().join(AGENTS[0].rel_path);
         fs::create_dir_all(settings_path.parent().unwrap()).unwrap();
 
-        // Redirect HOME for this test via env — use a subpath under temp
-        let prev_home = std::env::var_os("HOME");
-        std::env::set_var("HOME", home.path());
-
         let ids = vec!["claude".to_string()];
-        let rows = install_agent_hooks(engine.path(), Some(&ids));
+        let rows = install_agent_hooks(home.path(), engine.path(), Some(&ids));
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].action, "created");
         assert_eq!(rows[0].id, "claude");
-
-        if let Some(h) = prev_home {
-            std::env::set_var("HOME", h);
-        } else {
-            std::env::remove_var("HOME");
-        }
+        assert!(settings_path.is_file());
     }
 
     #[test]
     fn remove_agent_hooks_with_explicit_agent_id() {
         let engine = setup_engine();
         let home = tempfile::tempdir().unwrap();
-        let rel = AGENTS[0].rel_path;
-        let settings_path = home.path().join(rel);
+        let settings_path = home.path().join(AGENTS[0].rel_path);
         fs::create_dir_all(settings_path.parent().unwrap()).unwrap();
 
-        let prev_home = std::env::var_os("HOME");
-        std::env::set_var("HOME", home.path());
-
         let ids = vec!["claude".to_string()];
-        install_agent_hooks(engine.path(), Some(&ids));
-        let rows = remove_agent_hooks(engine.path(), Some(&ids));
+        install_agent_hooks(home.path(), engine.path(), Some(&ids));
+        let rows = remove_agent_hooks(home.path(), engine.path(), Some(&ids));
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].action, "removed");
-
-        if let Some(h) = prev_home {
-            std::env::set_var("HOME", h);
-        } else {
-            std::env::remove_var("HOME");
-        }
-
-        let _ = settings_path;
+        assert!(settings_path.is_file());
     }
 
     #[test]
