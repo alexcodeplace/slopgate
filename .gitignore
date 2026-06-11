@@ -32,3 +32,6 @@
 rules/baseline/fixtures/
 rules/baseline/selftest.config.mjs
 .worktrees/
+
+# scratch / demo workspaces
+tmp/
