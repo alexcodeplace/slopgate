@@ -47,6 +47,15 @@ export const BASELINE_PACKS = {
     resolution: 'Use a CSS custom property / design token.',
     excludeGlobs: ['**/tokens.css', '**/tokens/**'],
     canary: 'color: #ff0044;',
+  }, {
+    id: 'raw-px-spacing', title: 'Magic px spacing instead of a design token',
+    category: 'convention', severity: 'high',
+    pattern: ':\\s*\\d{2,}px\\b',
+    description: 'Hardcoded multi-digit px value in a style declaration — bypasses the spacing scale (ANTI-SLOP UX §15).',
+    resolution: 'Use a spacing token / utility scale (var(--space-md), Tailwind p-4) instead of a raw px literal.',
+    excludeGlobs: ['**/tokens.css', '**/tokens/**', '**/*.stories.*'],
+    canary: 'margin-top: 17px;',
+    negativeCanary: ['border: 1px solid;', 'padding: var(--space-4);', 'gap: 8px;'],
   }],
   'kv-ban': [{
     id: 'kv-binding-usage', title: 'Cloudflare KV usage',

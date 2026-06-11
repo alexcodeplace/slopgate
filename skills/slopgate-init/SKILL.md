@@ -107,6 +107,29 @@ an implementing/audit agent **reports** candidates; the orchestrator (+ user for
 one-line reason (never let them silently vanish). Enable baseline packs (`raw-hex`, `kv-ban`, …) only
 when the candidate review shows the project actually wants them.
 
+## Step 4b — Offer the UX module (greenfield only)
+
+The UX module (`ux:{}` in config) is **optional and off by default** — UX taste varies, so it is
+never auto-enabled. The scaffold writes it as a commented template. Decide whether to offer it:
+
+- **Existing project with substantial UI already written** → do NOT push it. Mention one line
+  ("UX module available — uncomment `ux:` in config to enable") and move on. Turning it on now would
+  flag a pile of pre-existing markup; ratchet absorbs gating violations, but the advisory noise annoys.
+- **Greenfield / "just vibing a new project"** → offer it. These are good-enough defaults for someone
+  with no strong UI opinion. Ask the user which sub-modules to enable (don't assume):
+
+  Sub-modules (`ux:` keys, value = severity; `'advisory'` reports but never blocks, `'high'` gates):
+  | key | catches | default |
+  |-----|---------|---------|
+  | `a11y` | `<div onClick>`→`<button>`, non-semantic interactive els (§11) | `high` |
+  | `cls` | `<img>` without width/height → layout shift (§13) | `high` |
+  | `taste` | emoji-as-icon, "Trusted by", Lorem ipsum, robotic microcopy, heavy drop-shadow, linear easing (§0/§6/§26) | `advisory` |
+
+  Use AskUserQuestion (multi-select sub-modules + a severity choice). On consent, uncomment/author the
+  `ux:` block in `.slopgate/config.mjs`. Opt-out UX is symmetric: deleting a key disables one sub-module,
+  deleting the block disables the module. Pair with the `/slopgate-ux` skill (prompt-time design
+  directives) for the semantic UX rules a static scanner can't enforce.
+
 ## Step 5 — Author the approved rules
 
 - **Baseline/stack rules** (generic enough): add to `slopgate/rules/baseline/index.mjs` or `slopgate/rules/stack/index.mjs`. Add fixture canary. Run slopgate self-test.

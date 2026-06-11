@@ -29,6 +29,14 @@ export async function collectViolations(mode, config, tier, { fileTarget } = {})
   else for (const e of ast.errors) notices.push(`ast-grep: ${e}`);
   for (const v of ast.violations) {
     if (config.astDisable.has(v.id)) continue;
+    // UX ast rules are opt-in per sub-module: drop any ux ast rule whose
+    // sub-module isn't enabled; for enabled ones, apply the configured severity.
+    if (config.uxAstAll?.has(v.id)) {
+      const sev = config.uxAstSeverity?.get(v.id);
+      if (!sev) continue;
+      violations.push({ ...v, severity: sev, lineHash: lineHash(v.fullLine) });
+      continue;
+    }
     violations.push({ ...v, lineHash: lineHash(v.fullLine) });
   }
 

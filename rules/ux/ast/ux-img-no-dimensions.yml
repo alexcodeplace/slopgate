@@ -1,0 +1,15 @@
+id: ux-img-no-dimensions
+language: tsx
+severity: error
+message: <img> without width/height — causes layout shift (CLS) as it loads
+note: '{"severity":"high","category":"convention","resolution":"Reserve the footprint: add width and height attributes, or a CSS aspect-ratio / min-height (ANTI-SLOP UX §13). Use a framework <Image> that sets dimensions."}'
+rule:
+  any:
+    - all:
+        - kind: jsx_self_closing_element
+        - has: { field: name, regex: '^img$' }
+        - not: { has: { kind: jsx_attribute, regex: '^width=' } }
+    - all:
+        - kind: jsx_opening_element
+        - has: { field: name, regex: '^img$' }
+        - not: { has: { kind: jsx_attribute, regex: '^width=' } }

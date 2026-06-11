@@ -276,6 +276,60 @@ Fingerprints do NOT include the line number, so they survive unrelated edits shi
 
 ---
 
+## UX Module (optional)
+
+The UX module provides opinionated static analysis rules for common UX anti-patterns. It is **off by default** since UX preferences vary across teams and projects. Enable selectively via the `ux:{}` config namespace.
+
+**Why optional?** Many teams have different UX preferences, and enabling UX rules on existing projects would flag pre-existing markup. These are good-enough defaults for NEW projects where you want opinionated UX guidance but have no specific opinion yourself.
+
+### Configuration
+
+```javascript
+// .slopgate/config.mjs
+export default {
+  // ... other config
+  
+  // UX module (optional) — off by default, opt-in per sub-module
+  ux: {
+    a11y: 'high',        // Accessibility violations (gate commits)
+    cls: 'high',         // Cumulative Layout Shift violations (gate commits)  
+    taste: 'advisory',   // Design taste violations (report only, don't gate)
+    // taste: 'medium',  // equivalent to 'advisory'
+    // taste: true,      // use sub-module default severity
+    // omit key = that sub-module OFF
+    // delete whole ux:{} block = entire module OFF
+  },
+};
+```
+
+### Sub-modules
+
+| Key | Catches | Default Severity | Framework § |
+|-----|---------|------------------|-------------|
+| `a11y` | onClick on `<div>`/`<span>` without role | `high` | §11 |
+| `cls` | `<img>` without width/height | `high` | §13 |
+| `taste` | emoji in UI, "trusted by" clichés, Lorem ipsum, robotic microcopy, heavy drop shadows, linear easing | `medium` | §0/§6/§26 |
+
+### Severity Levels
+
+- **`'critical'`/`'high'`**: Gates commits (blocks by default, since default gate is `['critical','high']`)
+- **`'medium'`/`'advisory'`**: Reports but doesn't block commits (useful for gradual adoption)
+- **`true`**: Use the sub-module's default severity
+- **Omit key**: That sub-module is OFF
+- **Delete `ux:{}` block**: Entire UX module is OFF
+
+### Opt-out
+
+Symmetric and trivial:
+- Delete a key to disable one sub-module: `ux: { a11y: 'high' }` (cls and taste OFF)
+- Delete the whole `ux:{}` block to disable the entire module
+
+### Companion Skill
+
+Pair the static UX module with the `/slopgate-ux` skill for semantic UX directives that static analysis can't enforce (four-states, button hierarchy, focus-trap, optimistic UI, etc.).
+
+---
+
 ## Config Reference (`.slopgate/config.mjs`)
 
 ```javascript
@@ -300,6 +354,13 @@ export default {
     typeCoverage:  true,
     diffShape:     { maxDirs: 5 },         // max root dirs per commit (optional)
     // false or absent = disabled
+  },
+
+  // UX module (optional) — off by default, opt-in per sub-module
+  ux: {
+    a11y: 'high',        // accessibility violations 
+    cls: 'high',         // cumulative layout shift
+    taste: 'advisory',   // design taste (reports, doesn't gate)
   },
 
   // Severity filtering (which violations show in reports)
@@ -334,7 +395,7 @@ All are opt-in via the `baseline` array in config.
 | `no-stubs` | placeholder, TODO markers, "not implemented" | Forbids stub/deferred-work comments |
 | `ts-suppress` | @ts-ignore, @ts-expect-error | TypeScript suppression directives |
 | `as-any` | `as any` casts | Unsafe type escapes |
-| `raw-hex` | hardcoded #RGB hex colors | Use design tokens instead |
+| `raw-hex` | hardcoded #RGB hex colors, raw px spacing | Use design tokens instead |
 | `kv-ban` | Cloudflare KV usage | KV is eventually-consistent; use Durable Objects |
 
 **Planned (v2+):**

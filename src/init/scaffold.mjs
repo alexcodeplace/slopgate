@@ -35,6 +35,17 @@ export default {
   // baseline packs this project OPTS INTO (nothing fires until listed)
   baseline: ['no-stubs', 'ts-suppress', 'as-any'],
 
+  // UX module — OPTIONAL, opt-in per sub-module. Opinionated UI-hygiene rules
+  // from the ANTI-SLOP UX framework. Off by default (UX taste varies); these are
+  // good-enough defaults for a new project with no strong opinion. Uncomment a
+  // line to enable it; value = severity ('advisory' reports but never blocks a
+  // commit, 'high' gates). Delete the whole block to opt out entirely.
+  // ux: {
+  //   a11y: 'high',      // §11 <div onClick>→<button>, semantic HTML (gates)
+  //   cls:  'high',      // §13 <img> without width/height → layout shift (gates)
+  //   taste: 'advisory', // §0/§6/§26 emoji-icon, "Trusted by", Lorem, linear easing (reports only)
+  // },
+
   // project-owned rule packs (pinned, in this repo)
   rules: [],                      // e.g. ['./rules/my-rule.mjs']
   astRules: './rules/ast',        // dir of *.yml (optional)
