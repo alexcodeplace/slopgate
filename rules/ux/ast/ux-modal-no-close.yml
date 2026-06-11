@@ -1,0 +1,15 @@
+id: ux-modal-no-close
+language: tsx
+severity: warning
+message: <Dialog>/<Modal> without an onClose/onDismiss handler — possible dead end
+note: '{"severity":"medium","category":"convention","resolution":"Give every modal an explicit escape: onClose / onOpenChange / onDismiss plus a visible Close control. No dead ends (ANTI-SLOP UX §10)."}'
+rule:
+  any:
+    - all:
+        - kind: jsx_opening_element
+        - has: { field: name, regex: '^(Dialog|Modal)$' }
+        - not: { has: { kind: jsx_attribute, regex: '^(onClose|onDismiss|onOpenChange)' } }
+    - all:
+        - kind: jsx_self_closing_element
+        - has: { field: name, regex: '^(Dialog|Modal)$' }
+        - not: { has: { kind: jsx_attribute, regex: '^(onClose|onDismiss|onOpenChange)' } }

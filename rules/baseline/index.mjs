@@ -56,6 +56,15 @@ export const BASELINE_PACKS = {
     excludeGlobs: ['**/tokens.css', '**/tokens/**', '**/*.stories.*'],
     canary: 'margin-top: 17px;',
     negativeCanary: ['border: 1px solid;', 'padding: var(--space-4);', 'gap: 8px;'],
+  }, {
+    id: 'raw-rgb-color', title: 'Hardcoded rgb()/hsl() color',
+    category: 'convention', severity: 'high',
+    pattern: '\\b(?:rgba?|hsla?)\\((?![^)]*var\\()',
+    description: 'Raw rgb()/hsl() color literal instead of a design token (ANTI-SLOP UX §15).',
+    resolution: 'Use a CSS custom property / token; a token may itself wrap rgb(var(--…)).',
+    excludeGlobs: ['**/tokens.css', '**/tokens/**', '**/*.stories.*'],
+    canary: 'color: rgb(255, 0, 0);',
+    negativeCanary: ['background: hsl(var(--hue), 50%, 50%);', 'const c = var(--ink);'],
   }],
   'kv-ban': [{
     id: 'kv-binding-usage', title: 'Cloudflare KV usage',
