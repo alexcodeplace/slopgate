@@ -36,6 +36,7 @@ async function main() {
   }
 
   if (has('stats')) {
+    const byPresent = has('--by');
     const byFlag = valOf('--by');
     const since = valOf('--since') ?? undefined;
     const json = has('--json');
@@ -43,7 +44,7 @@ async function main() {
     const rows = configPath
       ? readRows(projectStatsPath(await resolveConfig(configPath)))
       : readRows(globalStatsPath());
-    if (byFlag == null) {
+    if (!byPresent) {
       process.stdout.write(formatDashboard(aggregateDashboard(rows, { since }), { json }) + '\n');
       process.exit(0);
     }
