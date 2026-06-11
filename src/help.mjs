@@ -11,18 +11,18 @@ USAGE
   init, stats, install-skills, agent-hooks and --help do not.
 
 COMMANDS
-  --staged [--tier fast|commit]            gate staged files (the pre-commit path)
-  --file <path> [--tier fast|commit]       gate a single file
-  --self-test                              run the rule engine self-test
+  --staged --config <path> [--tier fast|commit]   gate staged files (the pre-commit path)
+  --file <path> --config <path> [--tier fast|commit]   gate a single file
+  --self-test --config <path>                    run the rule engine self-test
   stats [--by D] [--since <iso>] [--json] [--config <path>]
                                            show blocked-incident stats; default
                                            prints a rule+model+project dashboard.
                                            --by rule|model|project|severity|engine|category
                                            narrows to one dimension.
-  baseline [--update|--prune]              manage the ratchet baseline.json
-  audit [--since-days N] [--json]          audit suppressions/baseline drift
+  baseline --config <path> [--update|--prune]   manage the ratchet baseline.json
+  audit --config <path> [--since-days N] [--json]   audit suppressions/baseline drift
   init [dir]                               scaffold a slopgate config (default: cwd)
-  install-hooks                            install the git pre-commit hook
+  install-hooks --config <path>                    install the git pre-commit hook
   install-skills [--force]                 install bundled agent skills
   agent-hooks [status|install|reinstall|remove] [--agent <id>]
                                            manage per-agent edit/commit hooks
