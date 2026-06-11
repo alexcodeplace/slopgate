@@ -12,3 +12,5 @@ sha2 = { workspace = true }
 regex = { workspace = true }
 walkdir = { workspace = true }
 tempfile = { workspace = true }
+toml = "1.1.2"
+indexmap = "2"
