@@ -8,7 +8,7 @@ use crate::init::scaffold::{
     convention_sources_json, format_config_toml, format_suppressions_json, merge_settings_json,
     DetectedConfig, DEPCRUISE_STARTER,
 };
-use crate::install::agent_hooks::install_agent_hooks as install_detected_agent_hooks;
+use crate::install::agent_hooks::{home_dir, install_agent_hooks as install_detected_agent_hooks};
 use crate::install::hooks::{install_pre_commit_hook, HookInstallAction};
 use crate::install::skills::{default_skills_dest, install_skills};
 use std::fs;
@@ -52,8 +52,8 @@ fn hook_action_label(action: HookInstallAction) -> &'static str {
     }
 }
 
-fn install_agent_hooks(engine_root: &Path) -> Vec<AgentHookResult> {
-    install_detected_agent_hooks(engine_root, None)
+fn install_agent_hooks(home: &Path, engine_root: &Path) -> Vec<AgentHookResult> {
+    install_detected_agent_hooks(home, engine_root, None)
         .into_iter()
         .map(|r| AgentHookResult {
             label: r.label,
@@ -149,7 +149,8 @@ fn run_init_inner(
     let skills_src = engine.join("skills");
     let _ = install_skills(&skills_src, &default_skills_dest(), false);
 
-    let agent_results = install_agent_hooks(&engine);
+    let home = home_dir();
+    let agent_results = install_agent_hooks(&home, &engine);
 
     let sources = build_convention_sources(target_dir);
     fs::write(

@@ -3,7 +3,7 @@ use slopgate_core::config::resolve_config;
 use slopgate_core::gate::{run_gate, snapshot_violations, Mode, Tier};
 use slopgate_core::init::run::{engine_root, run_init_io};
 use slopgate_core::install::agent_hooks::{
-    install_agent_hooks, remove_agent_hooks, status_agent_hooks, status_symbol, AGENTS,
+    home_dir, install_agent_hooks, remove_agent_hooks, status_agent_hooks, status_symbol, AGENTS,
 };
 use slopgate_core::install::hooks::{install_pre_commit_hook, HookInstallAction};
 use slopgate_core::install::skills::{default_skills_dest, install_skills, SkillInstallAction};
@@ -289,10 +289,11 @@ fn dispatch(args: &[String], stdout: &mut dyn Write, stderr: &mut dyn Write) -> 
         }
 
         let engine = engine_root();
+        let home = home_dir();
         let agent_ids_ref = agent_ids.as_deref();
 
         if sub.is_none() || sub == Some("status") || !valid_subs.contains(&sub.unwrap()) {
-            let rows = status_agent_hooks(&engine);
+            let rows = status_agent_hooks(&home, &engine);
             for r in rows {
                 let sym = status_symbol(&r.status);
                 let det = if r.detected {
@@ -319,7 +320,7 @@ fn dispatch(args: &[String], stdout: &mut dyn Write, stderr: &mut dyn Write) -> 
 
         if sub == Some("install") || sub == Some("reinstall") {
             if sub == Some("reinstall") {
-                let rem = remove_agent_hooks(&engine, agent_ids_ref);
+                let rem = remove_agent_hooks(&home, &engine, agent_ids_ref);
                 for r in rem {
                     if r.action == "removed" {
                         writeln_stdout(
@@ -332,7 +333,7 @@ fn dispatch(args: &[String], stdout: &mut dyn Write, stderr: &mut dyn Write) -> 
                     }
                 }
             }
-            let results = install_agent_hooks(&engine, agent_ids_ref);
+            let results = install_agent_hooks(&home, &engine, agent_ids_ref);
             if results.is_empty() {
                 writeln_stdout(
                     stdout,
@@ -365,7 +366,7 @@ fn dispatch(args: &[String], stdout: &mut dyn Write, stderr: &mut dyn Write) -> 
         }
 
         if sub == Some("remove") {
-            let results = remove_agent_hooks(&engine, agent_ids_ref);
+            let results = remove_agent_hooks(&home, &engine, agent_ids_ref);
             for r in results {
                 writeln_stdout(
                     stdout,
