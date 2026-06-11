@@ -10,6 +10,7 @@ serde_json = { workspace = true }
 sha1 = { workspace = true }
 sha2 = { workspace = true }
 regex = { workspace = true }
+fancy-regex = "0.18"
 walkdir = { workspace = true }
 tempfile = { workspace = true }
 toml = "1.1.2"

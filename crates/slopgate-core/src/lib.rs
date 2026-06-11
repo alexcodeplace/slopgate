@@ -7,6 +7,7 @@ pub mod suppressions;
 pub mod config;
 pub mod ratchet;
 pub mod ast_engine;
+pub mod regex_engine;
 pub mod enumerate;
 pub mod temp;
 pub mod audit;

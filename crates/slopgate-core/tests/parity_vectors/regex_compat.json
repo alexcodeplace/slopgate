@@ -1,0 +1,463 @@
+[
+  {
+    "id": "no-stubs-placeholder",
+    "pattern": "(?:for now|in a real app|placeholder\\s+(?:for now|implementation|impl|until)\\b|TODO: ?implement|not implemented)",
+    "flags": "i",
+    "cases": [
+      {
+        "line": "// placeholder for now",
+        "match": true
+      },
+      {
+        "line": "placeholder={t('x')}",
+        "match": false
+      },
+      {
+        "line": "placeholder:text-ink",
+        "match": false
+      },
+      {
+        "line": "admin.incidents.titlePlaceholder",
+        "match": false
+      }
+    ]
+  },
+  {
+    "id": "ts-suppress-added",
+    "pattern": "(?:\\/\\/\\s*|\\/\\*\\s*)?@ts-(?:ignore|expect-error|nocheck)\\b",
+    "flags": "",
+    "cases": [
+      {
+        "line": "// @ts-expect-error",
+        "match": true
+      },
+      {
+        "line": "/* eslint-disable zync/no-raw-html-in-pages */",
+        "match": false
+      }
+    ]
+  },
+  {
+    "id": "as-any-cast",
+    "pattern": "as any\\b",
+    "flags": "",
+    "cases": [
+      {
+        "line": "const x = foo as any;",
+        "match": true
+      },
+      {
+        "line": "const __slopgate_compat_negative__ = 0;",
+        "match": false
+      }
+    ]
+  },
+  {
+    "id": "raw-hex-color",
+    "pattern": "#[0-9a-fA-F]{3,8}\\b",
+    "flags": "",
+    "cases": [
+      {
+        "line": "color: #ff0044;",
+        "match": true
+      },
+      {
+        "line": "const __slopgate_compat_negative__ = 0;",
+        "match": false
+      }
+    ]
+  },
+  {
+    "id": "raw-px-spacing",
+    "pattern": "[:\\s'\"]\\d{2,}px\\b",
+    "flags": "",
+    "cases": [
+      {
+        "line": "style={{ padding: '24px' }}",
+        "match": true
+      },
+      {
+        "line": "border: 1px solid;",
+        "match": false
+      },
+      {
+        "line": "padding: var(--space-4);",
+        "match": false
+      },
+      {
+        "line": "gap: 8px;",
+        "match": false
+      }
+    ]
+  },
+  {
+    "id": "raw-rgb-color",
+    "pattern": "\\b(?:rgba?|hsla?)\\((?![^)]*var\\()",
+    "flags": "",
+    "cases": [
+      {
+        "line": "color: rgb(255, 0, 0);",
+        "match": true
+      },
+      {
+        "line": "background: hsl(var(--hue), 50%, 50%);",
+        "match": false
+      },
+      {
+        "line": "const c = var(--ink);",
+        "match": false
+      }
+    ]
+  },
+  {
+    "id": "kv-binding-usage",
+    "pattern": "\\bKVNamespace\\b|env\\.[A-Z_]*KV\\b|env\\.KV\\b|KV_NAMESPACE",
+    "flags": "",
+    "cases": [
+      {
+        "line": "const store: KVNamespace = env.KV_STORE;",
+        "match": true
+      },
+      {
+        "line": "const __slopgate_compat_negative__ = 0;",
+        "match": false
+      }
+    ]
+  },
+  {
+    "id": "live-secret-literal",
+    "pattern": "sk_live_[0-9a-zA-Z]{8,}|pk_live_[0-9a-zA-Z]{8,}|whsec_[0-9a-zA-Z]{8,}|AIza[0-9A-Za-z_-]{30,}",
+    "flags": "",
+    "cases": [
+      {
+        "line": "const key = \"sk_live_aaaaaaaaaaaa\";",
+        "match": true
+      },
+      {
+        "line": "const __slopgate_compat_negative__ = 0;",
+        "match": false
+      }
+    ]
+  },
+  {
+    "id": "eval-dynamic-code",
+    "pattern": "\\beval\\(|\\bnew Function\\(",
+    "flags": "",
+    "cases": [
+      {
+        "line": "eval(userCode);",
+        "match": true
+      },
+      {
+        "line": "const __slopgate_compat_negative__ = 0;",
+        "match": false
+      }
+    ]
+  },
+  {
+    "id": "pii-in-logs",
+    "pattern": "console\\.log\\([^)]*\\.(phone|email|password|token|secret)",
+    "flags": "",
+    "cases": [
+      {
+        "line": "console.log(user.phone, user.email);",
+        "match": true
+      },
+      {
+        "line": "const __slopgate_compat_negative__ = 0;",
+        "match": false
+      }
+    ]
+  },
+  {
+    "id": "weak-hash-algorithm",
+    "pattern": "createHash\\('md5'\\)|createHash\\('sha1'\\)|createHash\\(\"md5\"\\)|createHash\\(\"sha1\"\\)",
+    "flags": "",
+    "cases": [
+      {
+        "line": "createHash('md5').update(data).digest('hex')",
+        "match": true
+      },
+      {
+        "line": "const __slopgate_compat_negative__ = 0;",
+        "match": false
+      }
+    ]
+  },
+  {
+    "id": "sql-for-update-aggregate",
+    "pattern": "\\b(SUM|COUNT|AVG|MAX|MIN)\\s*\\([^)]*\\).*\\bFOR\\s+UPDATE\\b|\\bFOR\\s+UPDATE\\b.*\\b(SUM|COUNT|AVG|MAX|MIN)\\s*\\(",
+    "flags": "i",
+    "cases": [
+      {
+        "line": "const q = `SELECT SUM(amount) FROM ledger WHERE user_id = $1 FOR UPDATE`;",
+        "match": true
+      },
+      {
+        "line": "const q = `SELECT id FROM users WHERE id = $1 FOR UPDATE`;",
+        "match": false
+      },
+      {
+        "line": "const q = `SELECT SUM(amount) FROM ledger GROUP by user_id`;",
+        "match": false
+      }
+    ]
+  },
+  {
+    "id": "cf-env-spread-secrets",
+    "pattern": "\\{\\s*\\.\\.\\.env[,}\\s]",
+    "flags": "",
+    "cases": [
+      {
+        "line": "const e = {...env, strict: true};",
+        "match": true
+      },
+      {
+        "line": "const __slopgate_compat_negative__ = 0;",
+        "match": false
+      }
+    ]
+  },
+  {
+    "id": "waituntil-bare-method-ref",
+    "pattern": "(?<!\\?)\\.waitUntil(?!\\s*[(.?\\[]|\\s*===|\\s*!==|\\s*\\))",
+    "flags": "",
+    "cases": [
+      {
+        "line": "const wu = cfCtx.waitUntil;",
+        "match": true
+      },
+      {
+        "line": "const __slopgate_compat_negative__ = 0;",
+        "match": false
+      }
+    ]
+  },
+  {
+    "id": "process-env-access",
+    "pattern": "process\\.env\\.",
+    "flags": "",
+    "cases": [
+      {
+        "line": "const url = process.env.DATABASE_URL;",
+        "match": true
+      },
+      {
+        "line": "const __slopgate_compat_negative__ = 0;",
+        "match": false
+      }
+    ]
+  },
+  {
+    "id": "cf-getCloudflareContext-banned",
+    "pattern": "\\bgetCloudflareContext\\s*\\(",
+    "flags": "",
+    "cases": [
+      {
+        "line": "const ctx = await getCloudflareContext();",
+        "match": true
+      },
+      {
+        "line": "const __slopgate_compat_negative__ = 0;",
+        "match": false
+      }
+    ]
+  },
+  {
+    "id": "hono-env-direct-access",
+    "pattern": "\\bc\\.env\\.(?!\\?)|\\(c\\.env[^)]*\\)\\.[a-zA-Z_$]",
+    "flags": "",
+    "cases": [
+      {
+        "line": "(c.env as { MY_KEY: string }).MY_KEY",
+        "match": true
+      },
+      {
+        "line": "const k = c.env?.MY_KEY;",
+        "match": false
+      },
+      {
+        "line": "(c.env as { K: string } | undefined)?.K",
+        "match": false
+      }
+    ]
+  },
+  {
+    "id": "ux-positive-tabindex",
+    "pattern": "tabIndex=\\{[1-9]",
+    "flags": "",
+    "cases": [
+      {
+        "line": "<div tabIndex={1}>",
+        "match": true
+      },
+      {
+        "line": "<div tabIndex={0}>",
+        "match": false
+      },
+      {
+        "line": "<div tabIndex={-1}>",
+        "match": false
+      }
+    ]
+  },
+  {
+    "id": "ux-emoji-in-ui",
+    "pattern": "[\\u{1F300}-\\u{1FAFF}]|[\\u{2600}-\\u{26FF}]|[\\u{2700}-\\u{27BF}]",
+    "flags": "u",
+    "cases": [
+      {
+        "line": "const label = \"🚀 Launch\";",
+        "match": true
+      },
+      {
+        "line": "const arrow = \"->\";",
+        "match": false
+      },
+      {
+        "line": "const x = 1;",
+        "match": false
+      }
+    ]
+  },
+  {
+    "id": "ux-trusted-by-cliche",
+    "pattern": "Trusted by",
+    "flags": "i",
+    "cases": [
+      {
+        "line": "<p>Trusted by 10,000 teams</p>",
+        "match": true
+      },
+      {
+        "line": "const trustedByPolicy = true;",
+        "match": false
+      }
+    ]
+  },
+  {
+    "id": "ux-lorem-ipsum",
+    "pattern": "lorem ipsum",
+    "flags": "i",
+    "cases": [
+      {
+        "line": "<p>Lorem ipsum dolor sit amet</p>",
+        "match": true
+      },
+      {
+        "line": "const __slopgate_compat_negative__ = 0;",
+        "match": false
+      }
+    ]
+  },
+  {
+    "id": "ux-robotic-microcopy",
+    "pattern": "\\b(?:Submit Data|Click [Hh]ere)\\b",
+    "flags": "",
+    "cases": [
+      {
+        "line": "<button>Submit Data</button>",
+        "match": true
+      },
+      {
+        "line": "submitData();",
+        "match": false
+      },
+      {
+        "line": "const clickHandler = 1;",
+        "match": false
+      }
+    ]
+  },
+  {
+    "id": "ux-heavy-drop-shadow",
+    "pattern": "\\bshadow-2xl\\b",
+    "flags": "",
+    "cases": [
+      {
+        "line": "<div className=\"card shadow-2xl\">",
+        "match": true
+      },
+      {
+        "line": "<div className=\"shadow-sm\">",
+        "match": false
+      }
+    ]
+  },
+  {
+    "id": "ux-linear-easing",
+    "pattern": "\\bease-linear\\b|timing-function:\\s*linear\\b|easing:\\s*['\"]linear['\"]",
+    "flags": "",
+    "cases": [
+      {
+        "line": "<div className=\"transition ease-linear\">",
+        "match": true
+      },
+      {
+        "line": "className=\"transition ease-in-out\"",
+        "match": false
+      },
+      {
+        "line": "transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1)",
+        "match": false
+      }
+    ]
+  },
+  {
+    "id": "ux-long-motion",
+    "pattern": "\\bduration-(?:[5-9]\\d{2}|1000)\\b",
+    "flags": "",
+    "cases": [
+      {
+        "line": "<div className=\"transition duration-700\">",
+        "match": true
+      },
+      {
+        "line": "<div className=\"transition duration-200\">",
+        "match": false
+      },
+      {
+        "line": "duration-300",
+        "match": false
+      }
+    ]
+  },
+  {
+    "id": "ux-list-index-key",
+    "pattern": "key=\\{\\s*(?:i|idx|index)\\s*\\}",
+    "flags": "",
+    "cases": [
+      {
+        "line": "{items.map((x, i) => <li key={i}>{x}</li>)}",
+        "match": true
+      },
+      {
+        "line": "<li key={item.id}>",
+        "match": false
+      },
+      {
+        "line": "<li key={`row-${item.id}`}>",
+        "match": false
+      }
+    ]
+  },
+  {
+    "id": "ux-url-state-not-synced",
+    "pattern": "const \\[\\s*(?:activeTab|currentTab|tab|page|pageIndex|filters?|sort(?:By)?)\\b[^\\]]*\\]\\s*=\\s*useState",
+    "flags": "",
+    "cases": [
+      {
+        "line": "const [activeTab, setActiveTab] = useState('billing');",
+        "match": true
+      },
+      {
+        "line": "const [open, setOpen] = useState(false);",
+        "match": false
+      },
+      {
+        "line": "const [isLoading, setLoading] = useState(true);",
+        "match": false
+      }
+    ]
+  }
+]
