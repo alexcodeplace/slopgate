@@ -143,20 +143,27 @@ pub fn prune_stale(repo_root: &Path, path: &Path, dry_run: bool) -> PruneResult 
         }
     }
 
+    let mut error = None;
     if !pruned.is_empty() && !dry_run {
         let out = SuppressionsFile {
             version: 1,
             entries: kept.clone(),
         };
-        let mut s = serde_json::to_string_pretty(&out).expect("serialize suppressions");
-        s.push('\n');
-        fs::write(path, s).expect("write suppressions");
+        match serde_json::to_string_pretty(&out) {
+            Ok(mut s) => {
+                s.push('\n');
+                if let Err(err) = fs::write(path, s) {
+                    error = Some(err.to_string());
+                }
+            }
+            Err(err) => error = Some(err.to_string()),
+        }
     }
 
     PruneResult {
         pruned,
         kept,
-        error: None,
+        error,
     }
 }
 
@@ -301,6 +308,41 @@ mod tests {
         assert_eq!(result.error, None);
         assert_eq!(result.pruned.len(), 1);
         assert!(result.kept.is_empty());
+    }
+
+    #[test]
+    fn prune_stale_write_failure_does_not_panic() {
+        let repo = TempDir::new().unwrap();
+        let repo_root = repo.path();
+
+        let deleted_rel = "src/gone.ts";
+        let sup_path = repo_root.join("suppressions.json");
+        let json = serde_json::json!({
+            "version": 1,
+            "entries": [
+                {"id": "r2", "file": deleted_rel, "lineHash": line_hash("anything")},
+            ]
+        });
+        fs::write(&sup_path, serde_json::to_string_pretty(&json).unwrap() + "\n").unwrap();
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = fs::metadata(&sup_path).unwrap().permissions();
+            perms.set_mode(0o444);
+            fs::set_permissions(&sup_path, perms).unwrap();
+        }
+        #[cfg(not(unix))]
+        {
+            let mut perms = fs::metadata(&sup_path).unwrap().permissions();
+            perms.set_readonly(true);
+            fs::set_permissions(&sup_path, perms).unwrap();
+        }
+
+        let result = prune_stale(repo_root, &sup_path, false);
+        assert_eq!(result.pruned.len(), 1);
+        assert!(result.kept.is_empty());
+        assert!(result.error.is_some());
     }
 
     #[test]
