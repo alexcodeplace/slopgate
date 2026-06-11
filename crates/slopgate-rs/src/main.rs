@@ -1,7 +1,27 @@
+use slopgate_core::audit::run::run_audit;
 use slopgate_core::config::resolve_config;
-use slopgate_core::gate::{run_gate, Mode, Tier};
+use slopgate_core::gate::{run_gate, snapshot_violations, Mode, Tier};
+use slopgate_core::init::run::{engine_root, run_init_io};
+use slopgate_core::install::agent_hooks::{
+    install_agent_hooks, remove_agent_hooks, status_agent_hooks, status_symbol, AGENTS,
+};
+use slopgate_core::install::hooks::{install_pre_commit_hook, HookInstallAction};
+use slopgate_core::install::skills::{default_skills_dest, install_skills, SkillInstallAction};
+use slopgate_core::ratchet::{
+    fingerprint_violation, load_baseline, write_baseline, write_baseline_raw, BaselineEntry,
+};
+use slopgate_core::selftest::run_self_test;
+use slopgate_core::stats::query::{aggregate, format_stats, Row};
+use slopgate_core::stats::record::record_incidents;
+use slopgate_core::stats::store::{global_stats_path, project_stats_path, read_rows};
+use serde_json::Value;
+use std::collections::{HashMap, HashSet};
 use std::io::Write;
+use std::path::Path;
+use std::process::Command;
+use std::time::{SystemTime, UNIX_EPOCH};
 
+const DIMENSIONS: &[&str] = &["rule", "model", "project", "severity", "engine", "category"];
 const USAGE: &str = "slopgate: no mode (use --staged | --file <p> | --self-test | init [dir] | baseline [--update|--prune] | install-hooks | install-skills [--force] | agent-hooks [status|install|reinstall|remove] [--agent <id>] | audit [--since-days N] [--json] | stats [--by rule|model|project|severity|engine|category] [--since <iso>] [--json] [--config <p>])";
 
 fn has(args: &[String], flag: &str) -> bool {
@@ -25,14 +45,140 @@ fn write_top_level_err(stderr: &mut dyn Write, err: &str) {
     }
 }
 
-/// CLI entry point — testable without spawning the binary.
-pub fn run(args: &[String]) -> i32 {
-    let mut stderr = std::io::stderr();
-    run_with_stderr(args, &mut stderr)
+fn writeln_stdout(stdout: &mut dyn Write, line: &str) {
+    let _ = writeln!(stdout, "{line}");
 }
 
-fn run_with_stderr(args: &[String], stderr: &mut dyn Write) -> i32 {
-    match dispatch(args, stderr) {
+fn pad_end(s: &str, width: usize) -> String {
+    let len = s.chars().count();
+    if len >= width {
+        s.to_string()
+    } else {
+        format!("{s}{}", " ".repeat(width - len))
+    }
+}
+
+fn hook_action_str(action: HookInstallAction) -> &'static str {
+    match action {
+        HookInstallAction::Created => "created",
+        HookInstallAction::Updated => "updated",
+        HookInstallAction::Appended => "appended",
+        HookInstallAction::Unchanged => "unchanged",
+    }
+}
+
+fn skill_action_str(action: SkillInstallAction) -> &'static str {
+    match action {
+        SkillInstallAction::Skipped => "skipped",
+        SkillInstallAction::Installed => "installed",
+        SkillInstallAction::Updated => "updated",
+    }
+}
+
+fn cwd_string() -> String {
+    std::env::current_dir()
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_else(|_| ".".to_string())
+}
+
+fn resolve_node_path() -> String {
+    Command::new("which")
+        .arg("node")
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "node".to_string())
+}
+
+fn iso_timestamp_now() -> String {
+    let duration = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
+    let secs = duration.as_secs() as i64;
+    let millis = duration.subsec_millis();
+    format_timestamp_utc(secs, millis)
+}
+
+fn format_timestamp_utc(secs: i64, millis: u32) -> String {
+    let days = secs.div_euclid(86_400);
+    let rem = secs.rem_euclid(86_400);
+    let h = (rem / 3600) as u32;
+    let mi = ((rem % 3600) / 60) as u32;
+    let s = (rem % 60) as u32;
+
+    let mut y = 1970i32;
+    let mut day = days;
+
+    loop {
+        let leap = y % 4 == 0 && (y % 100 != 0 || y % 400 == 0);
+        let year_days = if leap { 366 } else { 365 };
+        if day < year_days {
+            break;
+        }
+        day -= year_days;
+        y += 1;
+    }
+
+    let leap = y % 4 == 0 && (y % 100 != 0 || y % 400 == 0);
+    let month_days: [u32; 12] = if leap {
+        [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    } else {
+        [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    };
+
+    let mut mo = 1u32;
+    for &md in &month_days {
+        if day < i64::from(md) {
+            break;
+        }
+        day -= i64::from(md);
+        mo += 1;
+    }
+
+    format!(
+        "{y:04}-{mo:02}-{:02}T{h:02}:{mi:02}:{s:02}.{millis:03}Z",
+        day + 1
+    )
+}
+
+fn parse_rows(values: &[Value]) -> Vec<Row> {
+    values
+        .iter()
+        .filter_map(|v| serde_json::from_value(v.clone()).ok())
+        .collect()
+}
+
+enum ConfigResult {
+    Ok(slopgate_core::config::ResolvedConfig),
+    Exit(i32),
+}
+
+fn require_config(args: &[String], stderr: &mut dyn Write) -> ConfigResult {
+    let Some(config_path) = val_of(args, "--config") else {
+        write_slopgate_err(stderr, "slopgate: --config <path> required");
+        return ConfigResult::Exit(2);
+    };
+    match resolve_config(config_path) {
+        Ok(config) => ConfigResult::Ok(config),
+        Err(e) => {
+            write_top_level_err(stderr, &e);
+            return ConfigResult::Exit(1);
+        }
+    }
+}
+
+/// CLI entry point — testable without spawning the binary.
+pub fn run(args: &[String]) -> i32 {
+    let mut stdout = std::io::stdout();
+    let mut stderr = std::io::stderr();
+    run_with_io(args, &mut stdout, &mut stderr)
+}
+
+fn run_with_io(args: &[String], stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
+    match dispatch(args, stdout, stderr) {
         Ok(code) => code,
         Err(e) => {
             write_top_level_err(stderr, &e);
@@ -41,25 +187,378 @@ fn run_with_stderr(args: &[String], stderr: &mut dyn Write) -> i32 {
     }
 }
 
-fn dispatch(args: &[String], stderr: &mut dyn Write) -> Result<i32, String> {
+fn dispatch(args: &[String], stdout: &mut dyn Write, stderr: &mut dyn Write) -> Result<i32, String> {
     if args.get(1).is_some_and(|a| a == "--version") {
-        println!("slopgate-rs {}", env!("CARGO_PKG_VERSION"));
+        writeln_stdout(stdout, &format!("slopgate-rs {}", env!("CARGO_PKG_VERSION")));
         return Ok(0);
     }
 
-    let config_path = match val_of(args, "--config") {
-        Some(p) => p,
-        None => {
-            write_slopgate_err(stderr, "slopgate: --config <path> required");
+    if has(args, "init") {
+        let dir = val_of(args, "init")
+            .map(str::to_string)
+            .unwrap_or_else(cwd_string);
+        return Ok(run_init_io(&dir, false, stdout, stderr));
+    }
+
+    if has(args, "stats") {
+        let by = val_of(args, "--by").unwrap_or("rule");
+        if !DIMENSIONS.contains(&by) {
+            write_slopgate_err(
+                stderr,
+                &format!(
+                    "slopgate: --by must be {}",
+                    DIMENSIONS.join("|")
+                ),
+            );
             return Ok(2);
         }
+        let since = val_of(args, "--since");
+        let json = has(args, "--json");
+        let rows = if let Some(config_path) = val_of(args, "--config") {
+            let config = resolve_config(config_path)?;
+            parse_rows(&read_rows(&project_stats_path(&config)))
+        } else {
+            parse_rows(&read_rows(&global_stats_path()))
+        };
+        let aggregated = aggregate(&rows, Some(by), since)?;
+        writeln_stdout(stdout, &format_stats(&aggregated, json));
+        return Ok(0);
+    }
+
+    if has(args, "install-hooks") {
+        let config = match require_config(args, stderr) {
+            ConfigResult::Ok(c) => c,
+            ConfigResult::Exit(code) => return Ok(code),
+        };
+        let engine = engine_root();
+        let engine_invocation = engine.join("bin/slopgate").to_string_lossy().into_owned();
+        let node_path = resolve_node_path();
+        let result = install_pre_commit_hook(
+            Path::new(&config.repo_root),
+            &engine_invocation,
+            &node_path,
+        )
+        .map_err(|e| e.to_string())?;
+        writeln_stdout(
+            stdout,
+            &format!(
+                "slopgate: pre-commit hook {} ({})",
+                hook_action_str(result.action),
+                result.path.display()
+            ),
+        );
+        return Ok(0);
+    }
+
+    if has(args, "agent-hooks") {
+        let sub = args
+            .iter()
+            .position(|a| a == "agent-hooks")
+            .and_then(|i| args.get(i + 1))
+            .map(String::as_str);
+        let valid_subs = ["install", "reinstall", "remove", "status"];
+        let agent_ids: Option<Vec<String>> = val_of(args, "--agent").map(|raw| {
+            raw.split(',')
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string)
+                .collect()
+        });
+
+        if let Some(ref ids) = agent_ids {
+            let unknown: Vec<&str> = ids
+                .iter()
+                .filter(|id| !AGENTS.iter().any(|a| a.id == id.as_str()))
+                .map(String::as_str)
+                .collect();
+            if !unknown.is_empty() {
+                let valid = AGENTS
+                    .iter()
+                    .map(|a| a.id)
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                write_slopgate_err(
+                    stderr,
+                    &format!(
+                        "slopgate: unknown agent(s): {} — valid: {valid}",
+                        unknown.join(", ")
+                    ),
+                );
+                return Ok(2);
+            }
+        }
+
+        let engine = engine_root();
+        let agent_ids_ref = agent_ids.as_deref();
+
+        if sub.is_none() || sub == Some("status") || !valid_subs.contains(&sub.unwrap()) {
+            let rows = status_agent_hooks(&engine);
+            for r in rows {
+                let sym = status_symbol(&r.status);
+                let det = if r.detected {
+                    "detected"
+                } else {
+                    "not detected"
+                };
+                writeln_stdout(
+                    stdout,
+                    &format!(
+                        "  {sym}  {}  {}  ({det})  {}",
+                        pad_end(&r.label, 28),
+                        pad_end(&r.status, 13),
+                        r.path.display()
+                    ),
+                );
+            }
+            return Ok(if sub.is_none() || sub == Some("status") {
+                0
+            } else {
+                2
+            });
+        }
+
+        if sub == Some("install") || sub == Some("reinstall") {
+            if sub == Some("reinstall") {
+                let rem = remove_agent_hooks(&engine, agent_ids_ref);
+                for r in rem {
+                    if r.action == "removed" {
+                        writeln_stdout(
+                            stdout,
+                            &format!(
+                                "slopgate: agent-hooks {} — removed (reinstalling)",
+                                r.label
+                            ),
+                        );
+                    }
+                }
+            }
+            let results = install_agent_hooks(&engine, agent_ids_ref);
+            if results.is_empty() {
+                writeln_stdout(
+                    stdout,
+                    "slopgate: no agent CLIs detected — pass --agent <id> to install for a specific agent",
+                );
+            }
+            for r in results {
+                if r.action == "invalid-json" {
+                    write_slopgate_err(
+                        stderr,
+                        &format!(
+                            "slopgate: agent-hooks {} — {} is not valid JSON, left untouched",
+                            r.label,
+                            r.path.display()
+                        ),
+                    );
+                } else {
+                    writeln_stdout(
+                        stdout,
+                        &format!(
+                            "slopgate: agent-hooks {} — {} ({})",
+                            r.label,
+                            r.action,
+                            r.path.display()
+                        ),
+                    );
+                }
+            }
+            return Ok(0);
+        }
+
+        if sub == Some("remove") {
+            let results = remove_agent_hooks(&engine, agent_ids_ref);
+            for r in results {
+                writeln_stdout(
+                    stdout,
+                    &format!(
+                        "slopgate: agent-hooks {} — {} ({})",
+                        r.label,
+                        r.action,
+                        r.path.display()
+                    ),
+                );
+            }
+            return Ok(0);
+        }
+
+        write_slopgate_err(
+            stderr,
+            "slopgate: agent-hooks usage: agent-hooks [status|install|reinstall|remove] [--agent id1,id2]",
+        );
+        return Ok(2);
+    }
+
+    if has(args, "install-skills") {
+        let force = has(args, "--force");
+        let engine = engine_root();
+        let skills_src = engine.join("skills");
+        let results = install_skills(&skills_src, &default_skills_dest(), force)
+            .map_err(|e| e.to_string())?;
+        let empty = results.is_empty();
+        for r in results {
+            writeln_stdout(
+                stdout,
+                &format!(
+                    "slopgate: skill {} — {}",
+                    r.name,
+                    skill_action_str(r.action)
+                ),
+            );
+        }
+        if empty {
+            writeln_stdout(stdout, "slopgate: no skills to install");
+        }
+        return Ok(0);
+    }
+
+    if has(args, "audit") {
+        let config = match require_config(args, stderr) {
+            ConfigResult::Ok(c) => c,
+            ConfigResult::Exit(code) => return Ok(code),
+        };
+        let since_days_raw = val_of(args, "--since-days").unwrap_or("90");
+        let since_days = match since_days_raw.parse::<f64>() {
+            Ok(n) if n.is_finite() && n > 0.0 => n as u32,
+            _ => {
+                write_slopgate_err(stderr, "slopgate: --since-days must be a positive number");
+                return Ok(2);
+            }
+        };
+        writeln_stdout(
+            stdout,
+            &run_audit(&config, since_days, has(args, "--json")),
+        );
+        return Ok(0);
+    }
+
+    if has(args, "baseline") {
+        let config = match require_config(args, stderr) {
+            ConfigResult::Ok(c) => c,
+            ConfigResult::Exit(code) => return Ok(code),
+        };
+        let baseline_path = Path::new(&config.baseline_path);
+        let exists = baseline_path.exists();
+
+        if has(args, "--prune") && !has(args, "--update") {
+            let bl = load_baseline(baseline_path);
+            if bl.error.is_some() || bl.missing {
+                write_slopgate_err(stderr, "slopgate: no valid baseline to prune");
+                return Ok(2);
+            }
+            let snap = snapshot_violations(&config);
+            let current: HashSet<String> = snap
+                .iter()
+                .map(|v| fingerprint_violation(v, None))
+                .collect();
+            let old_count = bl.entries.len();
+            let kept: HashMap<String, BaselineEntry> = bl
+                .entries
+                .into_iter()
+                .filter(|(fp, _)| current.contains(fp))
+                .collect();
+            let dropped = old_count - kept.len();
+            let kept_count = kept.len();
+            write_baseline_raw(baseline_path, &kept, &iso_timestamp_now())?;
+            let entry_word = if dropped == 1 { "y" } else { "ies" };
+            writeln_stdout(
+                stdout,
+                &format!(
+                    "slopgate: baseline pruned — {dropped} resolved entr{entry_word} removed, {kept_count} kept"
+                ),
+            );
+            return Ok(0);
+        }
+
+        if exists && !has(args, "--update") {
+            write_slopgate_err(
+                stderr,
+                "slopgate: baseline.json exists — use `baseline --update` to re-snapshot (this re-absorbs ALL current violations) or `baseline --prune` to drop resolved entries",
+            );
+            return Ok(2);
+        }
+
+        let old = if exists {
+            load_baseline(baseline_path)
+        } else {
+            slopgate_core::ratchet::LoadedBaseline {
+                entries: HashMap::new(),
+                missing: true,
+                error: None,
+            }
+        };
+        let snap = snapshot_violations(&config);
+        let n = write_baseline(baseline_path, &snap, &iso_timestamp_now())?;
+        if exists {
+            let fps: HashSet<String> = snap
+                .iter()
+                .map(|v| fingerprint_violation(v, None))
+                .collect();
+            let mut seen = HashSet::new();
+            let added: Vec<_> = snap
+                .iter()
+                .filter(|v| {
+                    let fp = fingerprint_violation(v, None);
+                    if old.entries.contains_key(&fp) || seen.contains(&fp) {
+                        return false;
+                    }
+                    seen.insert(fp);
+                    true
+                })
+                .collect();
+            let removed = old
+                .entries
+                .keys()
+                .filter(|fp| !fps.contains(*fp))
+                .count();
+            let mut by_rule: HashMap<String, u32> = HashMap::new();
+            for v in &added {
+                *by_rule.entry(v.id.clone()).or_insert(0) += 1;
+            }
+            let mut rule_entries: Vec<_> = by_rule.into_iter().collect();
+            rule_entries.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+            let top: String = rule_entries
+                .into_iter()
+                .take(5)
+                .map(|(id, c)| format!("{id}×{c}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let top_suffix = if top.is_empty() {
+                String::new()
+            } else {
+                format!(" — absorbed: {top}")
+            };
+            writeln_stdout(
+                stdout,
+                &format!(
+                    "slopgate: baseline updated — {n} entries (+{} newly absorbed, −{removed} resolved){top_suffix}",
+                    added.len()
+                ),
+            );
+            if !added.is_empty() {
+                writeln_stdout(
+                    stdout,
+                    "slopgate: ⚠ newly absorbed entries are violations being LEGITIMIZED — review before committing baseline.json",
+                );
+            }
+        } else {
+            let entry_word = if n == 1 { "y" } else { "ies" };
+            writeln_stdout(
+                stdout,
+                &format!(
+                    "slopgate: baseline written — {n} entr{entry_word} → {}",
+                    config.baseline_path
+                ),
+            );
+        }
+        return Ok(0);
+    }
+
+    let config = match require_config(args, stderr) {
+        ConfigResult::Ok(c) => c,
+        ConfigResult::Exit(code) => return Ok(code),
     };
 
-    let config = resolve_config(config_path)?;
-
     if has(args, "--self-test") {
-        write_slopgate_err(stderr, "slopgate: --self-test not yet implemented in rust");
-        return Ok(2);
+        return Ok(run_self_test(&config));
     }
 
     let tier = match val_of(args, "--tier") {
@@ -75,7 +574,22 @@ fn dispatch(args: &[String], stderr: &mut dyn Write) -> Result<i32, String> {
     if has(args, "--staged") {
         let result = run_gate(Mode::Staged, &config, tier, None);
         if result.code == 1 {
-            // PHASE-3: recordIncidents stats side-effect
+            let record_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                record_incidents(&result.violations, &config, "staged");
+            }));
+            if let Err(payload) = record_result {
+                let msg = if let Some(s) = payload.downcast_ref::<&str>() {
+                    (*s).to_string()
+                } else if let Some(s) = payload.downcast_ref::<String>() {
+                    s.clone()
+                } else {
+                    "unknown error".to_string()
+                };
+                write_slopgate_err(
+                    stderr,
+                    &format!("⚠ SLOPGATE: stats record failed ({msg}) — ignored"),
+                );
+            }
         }
         return Ok(result.code);
     }
@@ -100,7 +614,36 @@ mod tests {
     use std::fs;
     use std::io::Cursor;
     use std::process::Command;
+    use std::sync::{Mutex, MutexGuard};
     use tempfile::TempDir;
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    struct EnvGuard {
+        _lock: MutexGuard<'static, ()>,
+        home: Option<std::ffi::OsString>,
+    }
+
+    impl EnvGuard {
+        fn with_home(home: &std::path::Path) -> Self {
+            let lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+            let home_prev = std::env::var_os("HOME");
+            std::env::set_var("HOME", home);
+            Self {
+                _lock: lock,
+                home: home_prev,
+            }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            match &self.home {
+                Some(v) => std::env::set_var("HOME", v),
+                None => std::env::remove_var("HOME"),
+            }
+        }
+    }
 
     fn fixture_toml() -> String {
         fs::read_to_string(format!(
@@ -124,11 +667,13 @@ mod tests {
         dir
     }
 
-    fn run_capture(args: Vec<String>) -> (i32, String) {
+    fn run_capture(args: Vec<String>) -> (i32, String, String) {
+        let mut stdout = Cursor::new(Vec::new());
         let mut stderr = Cursor::new(Vec::new());
-        let code = run_with_stderr(&args, &mut stderr);
+        let code = run_with_io(&args, &mut stdout, &mut stderr);
+        let out = String::from_utf8(stdout.into_inner()).unwrap();
         let err = String::from_utf8(stderr.into_inner()).unwrap();
-        (code, err)
+        (code, out, err)
     }
 
     fn base_args(root: &std::path::Path) -> Vec<String> {
@@ -149,7 +694,7 @@ mod tests {
 
         let mut args = base_args(root);
         args.extend(["--file".into(), "src/clean.ts".into()]);
-        let (code, _) = run_capture(args);
+        let (code, _, _) = run_capture(args);
         assert_eq!(code, 0);
     }
 
@@ -161,13 +706,13 @@ mod tests {
 
         let mut args = base_args(root);
         args.extend(["--file".into(), "src/bad.ts".into()]);
-        let (code, _) = run_capture(args);
+        let (code, _, _) = run_capture(args);
         assert_eq!(code, 1);
     }
 
     #[test]
     fn missing_config_returns_two() {
-        let (code, err) = run_capture(vec!["slopgate-rs".into(), "--file".into(), "x.ts".into()]);
+        let (code, _, err) = run_capture(vec!["slopgate-rs".into(), "--file".into(), "x.ts".into()]);
         assert_eq!(code, 2);
         assert_eq!(err, "slopgate: --config <path> required\n");
     }
@@ -185,7 +730,7 @@ mod tests {
             "--file".into(),
             "src/clean.ts".into(),
         ]);
-        let (code, err) = run_capture(args);
+        let (code, _, err) = run_capture(args);
         assert_eq!(code, 2);
         assert_eq!(err, "slopgate: --tier must be fast|commit\n");
     }
@@ -194,8 +739,123 @@ mod tests {
     fn no_mode_returns_two_with_usage() {
         let dir = setup_tmp_repo();
         let args = base_args(dir.path());
-        let (code, err) = run_capture(args);
+        let (code, _, err) = run_capture(args);
         assert_eq!(code, 2);
         assert_eq!(err, format!("{USAGE}\n"));
+    }
+
+    #[test]
+    fn init_exits_zero_with_scaffold_message() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+        fs::create_dir_all(root.join("src")).unwrap();
+        fs::write(root.join("src/index.ts"), "export const x = 1;\n").unwrap();
+
+        let (code, out, _) = run_capture(vec!["slopgate-rs".into(), "init".into(), root.to_string_lossy().into_owned()]);
+        assert_eq!(code, 0);
+        assert!(out.contains("slopgate: scaffolded"));
+    }
+
+    #[test]
+    fn stats_empty_returns_zero_incidents() {
+        let home = TempDir::new().unwrap();
+        let _guard = EnvGuard::with_home(home.path());
+
+        let (code, out, _) = run_capture(vec!["slopgate-rs".into(), "stats".into()]);
+        assert_eq!(code, 0);
+        assert!(out.contains("0 incident(s) stopped"));
+    }
+
+    #[test]
+    fn stats_bad_by_returns_two() {
+        let (code, _, err) = run_capture(vec![
+            "slopgate-rs".into(),
+            "stats".into(),
+            "--by".into(),
+            "bogus".into(),
+        ]);
+        assert_eq!(code, 2);
+        assert_eq!(
+            err,
+            "slopgate: --by must be rule|model|project|severity|engine|category\n"
+        );
+    }
+
+    #[test]
+    fn baseline_create_then_guard_returns_two() {
+        let dir = setup_tmp_repo();
+        let root = dir.path();
+        fs::write(root.join("src/clean.ts"), "export const x = 1;\n").unwrap();
+
+        let mut create_args = base_args(root);
+        create_args.push("baseline".into());
+        let (code1, out1, _) = run_capture(create_args);
+        assert_eq!(code1, 0);
+        assert!(out1.contains("slopgate: baseline written"));
+
+        let mut guard_args = base_args(root);
+        guard_args.push("baseline".into());
+        let (code2, _, err2) = run_capture(guard_args);
+        assert_eq!(code2, 2);
+        assert!(err2.contains("baseline.json exists"));
+    }
+
+    #[test]
+    fn audit_exits_zero_with_header() {
+        let dir = setup_tmp_repo();
+        let root = dir.path();
+        fs::write(root.join("src/clean.ts"), "export const x = 1;\n").unwrap();
+
+        let mut args = base_args(root);
+        args.push("audit".into());
+        let (code, out, _) = run_capture(args);
+        assert_eq!(code, 0);
+        assert!(out.contains("SLOPGATE AUDIT —"));
+    }
+
+    #[test]
+    fn install_skills_exits_zero() {
+        let home = TempDir::new().unwrap();
+        let _guard = EnvGuard::with_home(home.path());
+
+        let (code, out, _) = run_capture(vec!["slopgate-rs".into(), "install-skills".into()]);
+        assert_eq!(code, 0);
+        assert!(
+            out.contains("slopgate: skill") || out.contains("slopgate: no skills to install")
+        );
+    }
+
+    #[test]
+    fn self_test_exits_zero_on_real_config() {
+        let config_path = engine_root().join(".slopgate/config.toml");
+        if !config_path.is_file() {
+            return;
+        }
+        let Ok(config) = resolve_config(&config_path.to_string_lossy()) else {
+            return;
+        };
+        if config
+            .fixtures_dirs
+            .iter()
+            .any(|d| !Path::new(d).is_dir())
+        {
+            return;
+        }
+        if Command::new("ast-grep")
+            .arg("--version")
+            .output()
+            .map(|o| !o.status.success())
+            .unwrap_or(true)
+        {
+            return;
+        }
+
+        let (code, _, _) = run_capture(vec![
+            "slopgate-rs".into(),
+            "--config".into(),
+            config_path.to_string_lossy().into_owned(),
+            "--self-test".into(),
+        ]);
+        assert_eq!(code, 0);
     }
 }
