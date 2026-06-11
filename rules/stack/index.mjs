@@ -47,7 +47,7 @@ export const STACK_PACKS = {
       title: 'Hono c.env access without optional chain (crashes in Hono tests)',
       category: 'convention',
       severity: 'high',
-      pattern: '\\bc\\.env\\.(?!\\?)(?:[a-zA-Z_$]|\\(c\\.env[^)]*\\)\\.[a-zA-Z_$]',
+      pattern: '\\bc\\.env\\.(?!\\?)|\\(c\\.env[^)]*\\)\\.[a-zA-Z_$]',
       description: 'In Hono test apps created with `new Hono()`, c.env is undefined — c.env.X or (c.env as T).X throws at runtime.',
       resolution: 'Use optional chaining: c.env?.MY_KEY or (c.env as T | undefined)?.MY_KEY.',
       includeGlobs: ['**/*.test.ts', '**/*.spec.ts', '**/*.test.tsx', '**/*.spec.tsx'],

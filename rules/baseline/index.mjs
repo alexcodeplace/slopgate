@@ -90,4 +90,19 @@ export const BASELINE_PACKS = {
     resolution: 'Use SHA-256+ for integrity; bcrypt/argon2/scrypt for passwords.',
     canary: "createHash('md5').update(data).digest('hex')",
   }],
+  'sql-safety': [{
+    id: 'sql-for-update-aggregate',
+    title: 'FOR UPDATE on aggregate query (SQL runtime error)',
+    category: 'convention',
+    severity: 'critical',
+    flags: 'i',
+    pattern: '\\b(SUM|COUNT|AVG|MAX|MIN)\\s*\\([^)]*\\).*\\bFOR\\s+UPDATE\\b|\\bFOR\\s+UPDATE\\b.*\\b(SUM|COUNT|AVG|MAX|MIN)\\s*\\(',
+    description: 'SQL FOR UPDATE with an aggregate function (SUM/COUNTRY/etc.) — Postgres (and SQL standard) rejects this at runtime: "FOR UPDATE is not allowed with aggregate functions".',
+    resolution: 'Remove FOR UPDATE from aggregate queries. Only use FOR UPDATE on plain row-locking SELECTs: SELECT ... FROM t WHERE id = $1 FOR UPDATE.',
+    canary: 'const q = `SELECT SUM(amount) FROM ledger WHERE user_id = $1 FOR UPDATE`;',
+    negativeCanary: [
+      'const q = `SELECT id FROM users WHERE id = $1 FOR UPDATE`;',
+      'const q = `SELECT SUM(amount) FROM ledger GROUP by user_id`;',
+    ],
+  }],
 };
