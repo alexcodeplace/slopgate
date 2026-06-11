@@ -1,0 +1,13 @@
+[package]
+name = "slopgate-rs"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[[bin]]
+name = "slopgate-rs"
+path = "src/main.rs"
+
+[dependencies]
+slopgate-core = { path = "../slopgate-core" }
+serde_json = { workspace = true }

@@ -28,6 +28,9 @@
 # Native Rust scanner crate — source of a runtime binary. Build artifacts
 # (target/) are re-ignored by tools/leakscan/.gitignore. Whole-crate tracking.
 !/tools/**
+# Native Rust engine crates — source of the runtime binary. Build artifacts
+# (target/) re-ignored by each crate's .gitignore. Whole-crate tracking.
+!/crates/**
 
 # 5. Re-ignore the non-distributed bits inside those trees
 #    (mirrors the "!…" negations in package.json "files").
