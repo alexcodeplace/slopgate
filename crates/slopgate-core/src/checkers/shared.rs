@@ -230,7 +230,8 @@ pub fn run_checker_json(
     }
 }
 
-fn truncate_chars(s: &str, max: usize) -> String {
+/// Truncate to `max` chars (ASCII fixtures match JS `.slice(0, 90)`).
+pub fn truncate_chars(s: &str, max: usize) -> String {
     if s.chars().count() <= max {
         s.to_string()
     } else {
@@ -238,7 +239,48 @@ fn truncate_chars(s: &str, max: usize) -> String {
     }
 }
 
-// PHASE-2: bounded-concurrency `map_limit` (mirrors `shared.mjs` `mapLimit`).
+/// Bounded-concurrency map; preserves input order in the result vector.
+/// Mirrors `shared.mjs` `mapLimit` — `std::thread::scope` worker pool when `limit > 1`.
+pub fn map_limit<T, R, F>(items: &[T], limit: usize, f: F) -> Vec<R>
+where
+    T: Sync,
+    R: Send,
+    F: Fn(&T) -> R + Sync,
+{
+    if items.is_empty() {
+        return vec![];
+    }
+    let workers = limit.max(1).min(items.len());
+    if workers == 1 {
+        return items.iter().map(f).collect();
+    }
+
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Mutex;
+    let next = AtomicUsize::new(0);
+    let slots: Mutex<Vec<Option<R>>> = Mutex::new((0..items.len()).map(|_| None).collect());
+
+    std::thread::scope(|scope| {
+        for _ in 0..workers {
+            scope.spawn(|| {
+                loop {
+                    let i = next.fetch_add(1, Ordering::Relaxed);
+                    if i >= items.len() {
+                        break;
+                    }
+                    slots.lock().unwrap()[i] = Some(f(&items[i]));
+                }
+            });
+        }
+    });
+
+    slots
+        .into_inner()
+        .unwrap()
+        .into_iter()
+        .map(|s| s.expect("map_limit worker slot"))
+        .collect()
+}
 
 #[cfg(test)]
 mod tests {
@@ -367,6 +409,48 @@ mod tests {
         );
         assert!(got.violations.is_empty());
         assert_eq!(got.errors, vec!["no leakscan binary"]);
+    }
+
+    #[test]
+    fn map_limit_preserves_input_order() {
+        let items: Vec<i32> = (0..10).collect();
+        let got: Vec<i32> = map_limit(&items, 3, |&x| x * 2);
+        assert_eq!(got, (0..10).map(|x| x * 2).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn map_limit_respects_concurrency_cap() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+        use std::time::Duration;
+
+        let active = Arc::new(AtomicUsize::new(0));
+        let peak = Arc::new(AtomicUsize::new(0));
+        let items: Vec<u32> = (0..12).collect();
+        let active_c = Arc::clone(&active);
+        let peak_c = Arc::clone(&peak);
+        let _ = map_limit(&items, 3, move |_| {
+            let now = active_c.fetch_add(1, Ordering::SeqCst) + 1;
+            peak_c.fetch_max(now, Ordering::SeqCst);
+            std::thread::sleep(Duration::from_millis(5));
+            active_c.fetch_sub(1, Ordering::SeqCst);
+            0
+        });
+        assert!(peak.load(Ordering::SeqCst) <= 3, "peak concurrency was {}", peak.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn map_limit_panic_in_task_propagates_from_worker() {
+        let items = [1, 2, 3];
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            map_limit(&items, 2, |&x| {
+                if x == 2 {
+                    panic!("boom");
+                }
+                x
+            })
+        }));
+        assert!(result.is_err());
     }
 
     #[test]
