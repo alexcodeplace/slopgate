@@ -237,20 +237,25 @@ export async function runAudit(config, { sinceDays = 90, json = false } = {}) {
       }
     } catch (e) { notices.push(`hotspots skipped (${e})`); }
 
-    // Module shape (depcruise)
+    // Module shape (file metrics always; graph metrics when depcruise available)
     try {
       const depCfg = config.checkers?.depcruise;
+      let modules = null;
       if (!depCfg) {
-        notices.push('module shape skipped (no depcruise)');
+        notices.push('module graph metrics skipped (no depcruise config)');
       } else {
         const { data, errors } = await runDepcruiseJson(config, depCfg);
         if (data?.modules) {
-          sections.push({ title: 'Module shape', lines: moduleShapeLines(sources, data.modules) });
+          modules = data.modules;
         } else {
-          notices.push(`module shape skipped (${errors[0] ?? 'no depcruise output'})`);
+          notices.push(`module graph metrics skipped (${errors[0] ?? 'no depcruise output'})`);
         }
       }
-    } catch (e) { notices.push(`module shape skipped (${e})`); }
+      sections.push({ title: 'Module shape', lines: moduleShapeLines(sources, modules) });
+    } catch (e) {
+      notices.push(`module graph metrics skipped (${e})`);
+      sections.push({ title: 'Module shape', lines: moduleShapeLines(sources, null) });
+    }
 
     // Co-change coupling (git)
     try {
