@@ -119,7 +119,7 @@ function fmtAccel(v) {
 
 function hotspotLines(hs) {
   return hs.rows.map((r, i) => {
-    const extra = [r.untested ? 'untested' : null, r.locDelta != null && r.locDelta > 0 ? `+${r.locDelta} loc` : null]
+    const extra = [r.untested ? 'UNTESTED' : null, r.locDelta != null && r.locDelta > 0 ? `+${r.locDelta} loc` : null]
       .filter(Boolean).join('  ');
     const tail = extra ? `  ${extra}` : '';
     return `${i + 1}. ${r.file}  churn=${r.churn} loc=${r.loc} score=${Math.round(r.score)} accel=${fmtAccel(r.accel)}${tail}`;
@@ -242,18 +242,18 @@ export async function runAudit(config, { sinceDays = 90, json = false } = {}) {
       const depCfg = config.checkers?.depcruise;
       let modules = null;
       if (!depCfg) {
-        notices.push('module graph metrics skipped (no depcruise config)');
+        notices.push('module graph skipped (no depcruise config)');
       } else {
         const { data, errors } = await runDepcruiseJson(config, depCfg);
         if (data?.modules) {
           modules = data.modules;
         } else {
-          notices.push(`module graph metrics skipped (${errors[0] ?? 'no depcruise output'})`);
+          notices.push(`module graph skipped (${errors[0] ?? 'no depcruise output'})`);
         }
       }
       sections.push({ title: 'Module shape', lines: moduleShapeLines(sources, modules) });
     } catch (e) {
-      notices.push(`module graph metrics skipped (${e})`);
+      notices.push(`module graph skipped (${e})`);
       sections.push({ title: 'Module shape', lines: moduleShapeLines(sources, null) });
     }
 
@@ -287,8 +287,8 @@ export async function runAudit(config, { sinceDays = 90, json = false } = {}) {
     // Ratchet progress + burn-down
     try {
       const bl = loadBaseline(config.baselinePath);
-      if (bl.missing) notices.push('ratchet skipped (no baseline.json)');
-      else if (bl.error) notices.push(`ratchet skipped (baseline malformed: ${bl.error})`);
+      if (bl.missing) notices.push('ratchet progress skipped (no valid baseline.json)');
+      else if (bl.error) notices.push(`ratchet progress skipped (baseline malformed: ${bl.error})`);
       else {
         const relBaseline = relative(config.repoRoot, config.baselinePath);
         const hist = jsonEntryHistory(config.repoRoot, relBaseline);
@@ -300,7 +300,7 @@ export async function runAudit(config, { sinceDays = 90, json = false } = {}) {
         } catch (e) { notices.push(`ratchet current count skipped (${e})`); }
         sections.push({ title: 'Ratchet progress + burn-down', lines: ratchetLines(bl, currentCount, burndown) });
       }
-    } catch (e) { notices.push(`ratchet skipped (${e})`); }
+    } catch (e) { notices.push(`ratchet progress skipped (${e})`); }
 
     // Exemptions & checker health
     try {
