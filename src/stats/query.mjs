@@ -43,20 +43,52 @@ export function aggregate(rows, { by = 'rule', since } = {}) {
   return { total: filtered.length, by, lastSeen, firstSeen, groups: sorted };
 }
 
-/** @param {{ json?: boolean }} [opts] */
-export function formatStats(result, { json = false } = {}) {
-  if (json) return JSON.stringify(result, null, 2);
-  const lines = [];
-  const range = result.total ? ` (last ${result.lastSeen ?? '—'})` : '';
-  lines.push(`${result.total} incident(s) stopped${range}`);
-  if (result.total === 0) return lines.join('\n');
-
+/** Render the table body (column header + group rows) for one aggregate result.
+ *  Shared by formatStats (single dimension) and formatDashboard (per section). */
+function renderTable(result) {
   const keyHeader = result.by.toUpperCase();
   const keyW = Math.max(keyHeader.length, ...result.groups.map((g) => String(g.key).length));
   const countW = Math.max(5, ...result.groups.map((g) => String(g.count).length));
-  lines.push(`${keyHeader.padEnd(keyW)}  ${'COUNT'.padStart(countW)}  LAST SEEN`);
+  const lines = [`${keyHeader.padEnd(keyW)}  ${'COUNT'.padStart(countW)}  LAST SEEN`];
   for (const g of result.groups) {
     lines.push(`${String(g.key).padEnd(keyW)}  ${String(g.count).padStart(countW)}  ${g.lastSeen ?? '—'}`);
+  }
+  return lines;
+}
+
+/** @param {{ json?: boolean }} [opts] */
+export function formatStats(result, { json = false } = {}) {
+  if (json) return JSON.stringify(result, null, 2);
+  const range = result.total ? ` (last ${result.lastSeen ?? '—'})` : '';
+  const lines = [`${result.total} incident(s) stopped${range}`];
+  if (result.total === 0) return lines.join('\n');
+  lines.push(...renderTable(result));
+  return lines.join('\n');
+}
+
+/** Dimensions shown, in order, by the default `stats` dashboard. */
+export const DASHBOARD_DIMS = ['rule', 'model', 'project'];
+
+/**
+ * Aggregate the same rows across every DASHBOARD_DIMS dimension.
+ * total/lastSeen/firstSeen are identical across sections (same row set) — hoisted to the top.
+ * @param {object[]} rows
+ * @param {{ since?: string }} [opts]
+ */
+export function aggregateDashboard(rows, { since } = {}) {
+  const sections = DASHBOARD_DIMS.map((by) => aggregate(rows, { by, since }));
+  const base = sections[0];
+  return { total: base.total, lastSeen: base.lastSeen, firstSeen: base.firstSeen, sections };
+}
+
+/** @param {{ json?: boolean }} [opts] */
+export function formatDashboard(result, { json = false } = {}) {
+  if (json) return JSON.stringify(result, null, 2);
+  const range = result.total ? ` (last ${result.lastSeen ?? '—'})` : '';
+  const lines = [`${result.total} incident(s) stopped${range}`];
+  if (result.total === 0) return lines.join('\n');
+  for (const section of result.sections) {
+    lines.push('', `BY ${section.by.toUpperCase()}`, ...renderTable(section));
   }
   return lines.join('\n');
 }
