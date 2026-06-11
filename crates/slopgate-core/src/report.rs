@@ -3,6 +3,12 @@
 use serde::{Deserialize, Serialize};
 use std::io::{self, Write};
 
+const R: &str = "\x1b[31m";
+const Y: &str = "\x1b[33m";
+const B: &str = "\x1b[1m";
+const D: &str = "\x1b[2m";
+const Z: &str = "\x1b[0m";
+
 /// Canonical violation shape used across the engine (regex, ast, checkers, ratchet, suppressions).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -32,7 +38,7 @@ fn engine_key(v: &Violation) -> &str {
     }
 }
 
-/// Render the human-facing gate report (mirrors `src/report.mjs` structure; ANSI omitted).
+/// Render the human-facing gate report (byte-for-byte mirror of `src/report.mjs` including ANSI).
 pub fn render_gate_report(violations: &[Violation], mode: &str, baselined: u32) -> String {
     if violations.is_empty() {
         return String::new();
@@ -46,9 +52,23 @@ pub fn render_gate_report(violations: &[Violation], mode: &str, baselined: u32) 
 
     let mut out = String::new();
     out.push_str("\n");
-    out.push_str("╔═ SLOPGATE ═════════════════════════════════════════╗\n");
-    out.push_str(&format!("║ {title}║\n"));
-    out.push_str("╚═════════════════════════════════════════════════════╝\n\n");
+    out.push_str(B);
+    out.push_str(R);
+    out.push_str("╔═ SLOPGATE ═════════════════════════════════════════╗");
+    out.push_str(Z);
+    out.push('\n');
+    out.push_str(B);
+    out.push_str(R);
+    out.push_str("║ ");
+    out.push_str(title);
+    out.push_str("║");
+    out.push_str(Z);
+    out.push('\n');
+    out.push_str(B);
+    out.push_str(R);
+    out.push_str("╚═════════════════════════════════════════════════════╝");
+    out.push_str(Z);
+    out.push_str("\n\n");
 
     let mut sorted: Vec<&Violation> = violations.iter().collect();
     sorted.sort_by(|a, b| {
@@ -63,12 +83,46 @@ pub fn render_gate_report(violations: &[Violation], mode: &str, baselined: u32) 
         let group = engine_key(v);
         if current_group != Some(group) {
             current_group = Some(group);
-            out.push_str(&format!("── {group} ──\n"));
+            out.push_str(B);
+            out.push_str("── ");
+            out.push_str(group);
+            out.push_str(" ──");
+            out.push_str(Z);
+            out.push('\n');
         }
+        let c = if v.severity == "critical" { R } else { Y };
         let sev = v.severity.to_uppercase();
-        out.push_str(&format!("[{sev}] {} {}:{}\n", v.id, v.file, v.line));
-        out.push_str(&format!("  × {}\n", v.text));
-        out.push_str(&format!("  ✓ {}\n\n", v.resolution));
+        out.push_str(B);
+        out.push_str(c);
+        out.push('[');
+        out.push_str(&sev);
+        out.push(']');
+        out.push_str(Z);
+        out.push(' ');
+        out.push_str(B);
+        out.push_str(&v.id);
+        out.push_str(Z);
+        out.push(' ');
+        out.push_str(D);
+        out.push_str(&v.file);
+        out.push(':');
+        out.push_str(&v.line.to_string());
+        out.push_str(Z);
+        out.push('\n');
+        out.push_str("  ");
+        out.push_str(D);
+        out.push('×');
+        out.push_str(Z);
+        out.push(' ');
+        out.push_str(&v.text);
+        out.push('\n');
+        out.push_str("  ");
+        out.push_str(B);
+        out.push('✓');
+        out.push_str(Z);
+        out.push(' ');
+        out.push_str(&v.resolution);
+        out.push_str("\n\n");
     }
 
     let file_count = violations
@@ -81,14 +135,20 @@ pub fn render_gate_report(violations: &[Violation], mode: &str, baselined: u32) 
     } else {
         "Fix → retry commit."
     };
-    out.push_str(&format!(
-        "{} violation(s) in {file_count} file(s). {tail}\n",
-        violations.len()
-    ));
+    out.push_str(B);
+    out.push_str(&violations.len().to_string());
+    out.push_str(" violation(s) in ");
+    out.push_str(&file_count.to_string());
+    out.push_str(" file(s). ");
+    out.push_str(tail);
+    out.push_str(Z);
+    out.push('\n');
     if baselined > 0 {
-        out.push_str(&format!(
-            "{baselined} pre-existing (baselined) violation(s) ignored.\n"
-        ));
+        out.push_str(D);
+        out.push_str(&baselined.to_string());
+        out.push_str(" pre-existing (baselined) violation(s) ignored.");
+        out.push_str(Z);
+        out.push('\n');
     }
     out.push_str(
         "False positive? NEVER edit suppressions.json yourself — ask the user via AskUserQuestion.\n\n",
@@ -131,18 +191,41 @@ mod tests {
     }
 
     #[test]
-    fn renders_each_violation() {
+    fn renders_staged_report_with_ansi() {
         let s = render_gate_report(&[v("no-stubs", "src/a.ts", 12, "critical")], "staged", 0);
-        assert!(
-            s.contains("src/a.ts") && s.contains("12") && s.contains("CRITICAL"),
-            "report:\n{s}"
+        let expected = concat!(
+            "\n",
+            "\x1b[1m\x1b[31m╔═ SLOPGATE ═════════════════════════════════════════╗\x1b[0m\n",
+            "\x1b[1m\x1b[31m║ VIOLATIONS IN STAGED FILES — COMMIT BLOCKED         ║\x1b[0m\n",
+            "\x1b[1m\x1b[31m╚═════════════════════════════════════════════════════╝\x1b[0m\n\n",
+            "\x1b[1m── regex ──\x1b[0m\n",
+            "\x1b[1m\x1b[31m[CRITICAL]\x1b[0m \x1b[1mno-stubs\x1b[0m \x1b[2msrc/a.ts:12\x1b[0m\n",
+            "  \x1b[2m×\x1b[0m msg\n",
+            "  \x1b[1m✓\x1b[0m fix\n\n",
+            "\x1b[1m1 violation(s) in 1 file(s). Fix → retry commit.\x1b[0m\n",
+            "False positive? NEVER edit suppressions.json yourself — ask the user via AskUserQuestion.\n\n",
         );
+        assert_eq!(s, expected);
+    }
+
+    #[test]
+    fn renders_file_mode_header_with_ansi() {
+        let s = render_gate_report(&[v("x", "f.ts", 1, "high")], "file", 0);
+        assert!(s.starts_with(concat!(
+            "\n",
+            "\x1b[1m\x1b[31m╔═ SLOPGATE ═════════════════════════════════════════╗\x1b[0m\n",
+            "\x1b[1m\x1b[31m║ SLOPGATE — VIOLATIONS IN EDITED FILE               ║\x1b[0m\n",
+        )));
+        assert!(s.contains(concat!("\x1b[1m\x1b[33m[HIGH]\x1b[0m \x1b[1mx\x1b[0m")));
+        assert!(s.contains("Fix now while context is hot."));
     }
 
     #[test]
     fn baselined_footer_present_when_nonzero() {
         let s = render_gate_report(&[v("x", "f", 1, "high")], "staged", 3);
-        assert!(s.contains('3'));
+        assert!(s.contains(concat!(
+            "\x1b[2m3 pre-existing (baselined) violation(s) ignored.\x1b[0m\n"
+        )));
     }
 
     #[test]
