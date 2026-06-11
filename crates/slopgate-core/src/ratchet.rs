@@ -174,21 +174,25 @@ pub fn write_baseline_raw(
     path: &Path,
     entries: &HashMap<String, BaselineEntry>,
     generated: &str,
-) -> usize {
+) -> Result<usize, String> {
     let sorted: BTreeMap<_, _> = entries.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
     let out = BaselineFile {
         version: 1,
         generated: generated.to_string(),
         entries: sorted,
     };
-    let mut s = serde_json::to_string_pretty(&out).expect("serialize baseline");
+    let mut s = serde_json::to_string_pretty(&out).map_err(|e| e.to_string())?;
     s.push('\n');
-    fs::write(path, &s).expect("write baseline");
-    entries.len()
+    fs::write(path, &s).map_err(|e| e.to_string())?;
+    Ok(entries.len())
 }
 
 /// Build entries from violations and write baseline file.
-pub fn write_baseline(path: &Path, violations: &[Violation], generated: &str) -> usize {
+pub fn write_baseline(
+    path: &Path,
+    violations: &[Violation],
+    generated: &str,
+) -> Result<usize, String> {
     let mut entries = HashMap::new();
     for v in violations {
         entries.insert(
@@ -353,7 +357,7 @@ mod tests {
         );
 
         let generated = "2026-06-11T12:00:00.000Z";
-        let count = write_baseline_raw(&p, &entries, generated);
+        let count = write_baseline_raw(&p, &entries, generated).unwrap();
         assert_eq!(count, 2);
 
         let expected = concat!(
@@ -374,6 +378,18 @@ mod tests {
         );
         let got = fs::read_to_string(&p).unwrap();
         assert_eq!(got, expected);
+    }
+
+    #[test]
+    fn write_baseline_raw_unwritable_path_returns_err() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let blocker = dir.path().join("blocker");
+        fs::write(&blocker, "x").unwrap();
+        let p = blocker.join("baseline.json");
+
+        let entries = HashMap::new();
+        let result = write_baseline_raw(&p, &entries, "2026-01-01T00:00:00.000Z");
+        assert!(result.is_err());
     }
 
     #[test]
