@@ -57,39 +57,36 @@ pub fn render_hook_content(existing: &str, engine_invocation: &str, node_path: &
     }
 
     if existing.contains(MARKER_BEGIN) {
-        let start = existing
-            .find(MARKER_BEGIN)
-            .expect("MARKER_BEGIN present");
-        let end = existing
-            .find(MARKER_END)
-            .map(|i| i + MARKER_END.len())
-            .unwrap_or(existing.len());
-        return format!("{}{}{}", &existing[..start], block, &existing[end..]);
+        if let Some(start) = existing.find(MARKER_BEGIN) {
+            let end = existing
+                .find(MARKER_END)
+                .map(|i| i + MARKER_END.len())
+                .unwrap_or(existing.len());
+            return format!("{}{}{}", &existing[..start], block, &existing[end..]);
+        }
     }
 
     let lines: Vec<&str> = existing.split('\n').collect();
-    let exec_idx = lines
+    if let Some(exec_idx) = lines
         .iter()
-        .position(|line| line.trim_start().starts_with("exec "));
-
-    if exec_idx.is_none() {
-        let trimmed = existing.trim_end_matches('\n');
-        return format!("{trimmed}\n{block}\n");
+        .position(|line| line.trim_start().starts_with("exec "))
+    {
+        let mut out = String::new();
+        for (i, line) in lines.iter().enumerate() {
+            if i == exec_idx {
+                out.push_str(&block);
+                out.push('\n');
+            }
+            out.push_str(line);
+            if i + 1 < lines.len() {
+                out.push('\n');
+            }
+        }
+        return out;
     }
 
-    let exec_idx = exec_idx.expect("exec line index");
-    let mut out = String::new();
-    for (i, line) in lines.iter().enumerate() {
-        if i == exec_idx {
-            out.push_str(&block);
-            out.push('\n');
-        }
-        out.push_str(line);
-        if i + 1 < lines.len() {
-            out.push('\n');
-        }
-    }
-    out
+    let trimmed = existing.trim_end_matches('\n');
+    format!("{trimmed}\n{block}\n")
 }
 
 /// Resolve the git hooks directory for `repo_root`.
@@ -148,18 +145,14 @@ fn classify_action(existing: Option<&str>, rendered: &str) -> HookInstallAction 
 
 /// Install or refresh the native pre-commit hook under `repo_root`.
 ///
-/// `engine_invocation` is the absolute path to the slopgate engine binary
-/// (JS: `${ENGINE_ROOT}/bin/slopgate`). Node path is taken from the current
-/// process executable.
+/// `engine_invocation` is the absolute path to the slopgate engine entrypoint
+/// (JS: `${ENGINE_ROOT}/bin/slopgate`). `node_path` is the Node binary used to
+/// invoke it (JS: `process.execPath`).
 pub fn install_pre_commit_hook(
     repo_root: &Path,
     engine_invocation: &str,
+    node_path: &str,
 ) -> Result<HookInstallResult, SlopError> {
-    let node_path = std::env::current_exe()
-        .map_err(|e| SlopError::Io(format!("current_exe: {e}")))?
-        .display()
-        .to_string();
-
     let hooks_dir = resolve_hooks_dir(repo_root)?;
     fs::create_dir_all(&hooks_dir)
         .map_err(|e| SlopError::Io(format!("create hooks dir {}: {e}", hooks_dir.display())))?;
@@ -177,7 +170,7 @@ pub fn install_pre_commit_hook(
     let rendered = render_hook_content(
         existing.as_deref().unwrap_or(""),
         engine_invocation,
-        &node_path,
+        node_path,
     );
     let action = classify_action(existing.as_deref(), &rendered);
 
@@ -294,6 +287,20 @@ mod tests {
         assert!(!rendered.contains("orphan"));
     }
 
+    #[test]
+    fn render_corrupt_hook_typo_marker_splices_without_panic() {
+        // Truncated marker (typo) — not our block; must splice before exec, not panic.
+        let corrupt = "#!/bin/bash\n# slopgate-hook v1 BEGAN\necho setup\nexec \"$@\"\n";
+        let rendered = render_hook_content(corrupt, ENGINE, NODE);
+        assert_eq!(marker_count(&rendered, MARKER_BEGIN), 1);
+        assert_eq!(marker_count(&rendered, MARKER_END), 1);
+        assert!(rendered.contains("echo setup"));
+        assert!(rendered.contains(ENGINE));
+        assert!(rendered.contains(NODE));
+        let again = render_hook_content(&rendered, ENGINE, NODE);
+        assert_eq!(rendered, again, "second pass must not duplicate markers");
+    }
+
     fn init_git_repo(dir: &Path) {
         let run = |args: &[&str]| {
             let status = Command::new("git")
@@ -347,12 +354,14 @@ mod tests {
     fn install_pre_commit_hook_creates_executable_hook() {
         let dir = tempfile::tempdir().unwrap();
         init_git_repo(dir.path());
-        let result = install_pre_commit_hook(dir.path(), ENGINE).unwrap();
+        let result = install_pre_commit_hook(dir.path(), ENGINE, NODE).unwrap();
         assert_eq!(result.action, HookInstallAction::Created);
         assert!(result.path.is_file());
         let content = fs::read_to_string(&result.path).unwrap();
         assert_eq!(marker_count(&content, MARKER_BEGIN), 1);
         assert_eq!(marker_count(&content, MARKER_END), 1);
+        assert!(content.contains(ENGINE));
+        assert!(content.contains(NODE));
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -365,9 +374,9 @@ mod tests {
     fn install_pre_commit_hook_unchanged_on_second_run() {
         let dir = tempfile::tempdir().unwrap();
         init_git_repo(dir.path());
-        let first = install_pre_commit_hook(dir.path(), ENGINE).unwrap();
+        let first = install_pre_commit_hook(dir.path(), ENGINE, NODE).unwrap();
         assert_eq!(first.action, HookInstallAction::Created);
-        let second = install_pre_commit_hook(dir.path(), ENGINE).unwrap();
+        let second = install_pre_commit_hook(dir.path(), ENGINE, NODE).unwrap();
         assert_eq!(second.action, HookInstallAction::Unchanged);
         assert_eq!(first.path, second.path);
     }
@@ -375,7 +384,7 @@ mod tests {
     #[test]
     fn install_pre_commit_hook_unhappy_non_git_repo() {
         let dir = tempfile::tempdir().unwrap();
-        let err = install_pre_commit_hook(dir.path(), ENGINE).unwrap_err();
+        let err = install_pre_commit_hook(dir.path(), ENGINE, NODE).unwrap_err();
         assert!(matches!(err, SlopError::Tool(_)));
     }
 }
