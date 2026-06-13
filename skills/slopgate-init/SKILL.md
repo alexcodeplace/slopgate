@@ -204,3 +204,15 @@ allow-list rejects `.slopgate/`, STOP and ask the user.
 - An implementing agent self-approving which conventions become rules → that's the orchestrator's call.
 - Enabling a baseline pack the candidate review didn't justify (e.g. `kv-ban` in a non-CF repo).
 - Authoring a project rule that belongs in baseline/stack — check existing packs first.
+
+---
+
+## Learned Rules
+
+### install-hooks-from-worktree | fired:1 | 2026-06-14
+Running `install-hooks` / agent-hooks install from a temp or verification worktree (`/tmp/*`, `.worktrees/*`) → wrong: writes that worktree's CWD absolute path into global `~/.claude/settings.json` without dedup; deleting the worktree dangles the path → "not found" on every Edit/commit/session, and repeats stack duplicate hook fires (broke unstoppable production sessions, 2026-06-14).
+Prevent: install hooks ONLY from the canonical repo checkout. Verify wiring via direct hook stdin test (Step 7), never a global install from a throwaway tree. After any stray install, `grep ~/.claude/settings.json` for the worktree/tmp path and delete the stale entry across ALL hook groups (PostToolUse/PreToolUse/SessionStart — rot triplicates).
+
+### ast-rule-shape | fired:1 | 2026-06-14
+Authoring `.slopgate/rules/ast/*.yml` with a top-level `pattern: |` holding `kind:`/`children:` → wrong: invalid ast-grep, matches nothing. Real shape = top-level `rule:` holding `pattern: '<code-snippet>'` OR structural `kind/has/inside/all/any/not`; slopgate severity/category/resolution live in the JSON `note` field, separate from ast-grep's own `severity:`.
+Prevent: before writing an ast rule, read a shipped one (e.g. `rules/baseline/ast/empty-catch-block-tsx.yml`) and copy its shape. Fixtures = source canaries in `.slopgate/fixtures/src/*.tsx` (Step 5), never `.case`/`.output` JSON. When delegating doc/rule rewrites to a subagent, read the substantive output — diffstat + residual-grep does not catch a fabricated format.
