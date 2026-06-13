@@ -66,7 +66,7 @@ if (WRITE) mkdirSync(GOLDEN_DIR, { recursive: true });
 
 // ── self-test: SET-identical (order cosmetic), both exit 0 ────────────────────
 {
-  const js = run('node', ['bin/slopgate', '--self-test', '--config', MJS]);
+  const js = run('node', ['src/cli.mjs', '--self-test', '--config', MJS]);
   const rs = run(RS_BIN, ['--self-test', '--config', TOML]);
   const sortLines = (s) => normalize(s).split('\n').filter(Boolean).sort().join('\n');
   if (js.code !== 0) fail(`self-test JS exit ${js.code} (expected 0)`);
@@ -78,7 +78,7 @@ if (WRITE) mkdirSync(GOLDEN_DIR, { recursive: true });
 
 // ── gate items: byte-identical normalized output, both exit 1, ≥1 violation ───
 for (const { name, file } of GATE) {
-  const js = run('node', ['bin/slopgate', '--file', file, '--config', MJS]);
+  const js = run('node', ['src/cli.mjs', '--file', file, '--config', MJS]);
   const rs = run(RS_BIN, ['--file', file, '--config', TOML]);
   const jn = normalize(js.out);
   const rn = normalize(rs.out);

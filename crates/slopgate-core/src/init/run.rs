@@ -239,7 +239,7 @@ fn run_init_inner(
         );
         let _ = writeln!(
             stdout,
-            "  5. Run: slopgate baseline --config .slopgate/config.mjs (absorb pre-existing violations)"
+            "  5. Run: slopgate baseline --config .slopgate/config.toml (absorb pre-existing violations)"
         );
     }
 

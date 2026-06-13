@@ -1,5 +1,35 @@
 #!/usr/bin/env node
-import('../src/cli.mjs').catch((e) => {
-  process.stderr.write(`slopgate: ${e?.stack || e}\n`);
+// Launcher: locate the native slopgate engine binary and exec it, passing argv
+// through and propagating the exit code. The engine is Rust (crates/slopgate-rs);
+// this thin node shim is the npm `bin` entry (cross-platform, esbuild/biome model).
+//
+// Resolution order:
+//   1. $SLOPGATE_BIN                       (explicit override)
+//   2. <pkg>/target/release/slopgate-rs    (cargo build --release; dev + this round)
+// Per-platform packaged binaries (deferred distribution work) slot in ahead of (2).
+import { spawnSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+
+const pkgRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
+const candidates = [
+  process.env.SLOPGATE_BIN,
+  join(pkgRoot, 'target', 'release', 'slopgate-rs'),
+].filter(Boolean);
+
+const bin = candidates.find((p) => existsSync(p));
+if (!bin) {
+  process.stderr.write(
+    `slopgate: native engine binary not found — build with \`cargo build --release\`\n` +
+    `  looked in: ${candidates.join(', ')}\n`,
+  );
   process.exit(1);
-});
+}
+
+const r = spawnSync(bin, process.argv.slice(2), { stdio: 'inherit' });
+if (r.error) {
+  process.stderr.write(`slopgate: failed to exec engine (${bin}): ${r.error.message}\n`);
+  process.exit(1);
+}
+process.exit(r.status ?? 1);

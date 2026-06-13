@@ -12,11 +12,12 @@
   "files": [
     "bin", "src", "hooks", "rules", "skills",
     "!**/*.test.mjs",
-    "!rules/baseline/fixtures"
+    "!rules/baseline/fixtures",
+    "!bin/slopgate-rs"
   ],
   "engines": { "node": ">=18" },
   "scripts": {
-    "self-test": "node bin/slopgate --self-test --config rules/baseline/selftest.config.mjs",
+    "self-test": "node bin/slopgate --self-test --config rules/baseline/selftest.config.toml",
     "test": "node --test \"src/**/*.test.mjs\""
   }
 }

@@ -37,6 +37,10 @@
 *.test.mjs
 rules/baseline/fixtures/
 rules/baseline/selftest.config.mjs
+# Native engine binary is a BUILD ARTIFACT (cargo build --release → target/),
+# resolved at runtime by bin/slopgate. Never track it; per-platform packaging
+# of this binary is the deferred npm-distribution work.
+bin/slopgate-rs
 .worktrees/
 
 # scratch / demo workspaces
