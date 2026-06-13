@@ -1,0 +1,5 @@
+[
+  { "rule": "no-circular", "severity": "error", "from": "src/a.ts", "to": "src/b.ts" },
+  { "rule": "no-orphans", "severity": "warn", "from": "src/orphan.ts", "to": "src/orphan.ts" },
+  { "rule": "fyi-only", "severity": "info", "from": "src/ui/page.ts", "to": "src/db/client.ts" }
+]

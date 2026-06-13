@@ -1,9 +1,12 @@
 # ─────────────────────────────────────────────────────────────────────────
 # STRICT WHITELIST .gitignore
-# Track ONLY the public-facing code distributed to users (the npm package).
-# Everything else — specs, plans, reports, dev-tooling, .github, tests,
-# .claude, node_modules — is ignored. The allow-list below mirrors the
-# package.json "files" field (the authoritative distribution whitelist).
+# Track the public-facing code PLUS the dev/test material needed to build and
+# verify it (fixtures, parity vectors, golden files). Everything else — specs,
+# plans, reports, .github, .claude, node_modules — is ignored.
+# NOTE: git tracking is intentionally BROADER than the npm tarball. The published
+# package is narrowed further by package.json "files" (e.g. fixtures are tracked
+# here so the self-test/golden suite runs on a clean checkout, but excluded from
+# the tarball). git tracking ⊇ npm "files"; they are two separate whitelists.
 # ─────────────────────────────────────────────────────────────────────────
 
 # 1. Ignore everything by default…
@@ -31,9 +34,9 @@
 # (target/) re-ignored by each crate's .gitignore. Whole-crate tracking.
 !/crates/**
 
-# 5. Re-ignore the non-distributed bits inside those trees
-#    (mirrors the "!…" negations in package.json "files").
-rules/baseline/fixtures/
+# 5. Re-ignore genuine BUILD ARTIFACTS inside those trees (not test fixtures —
+#    those are source-of-truth for the self-test/golden suite and ARE tracked,
+#    even though package.json "files" excludes them from the npm tarball).
 # Native engine binary is a BUILD ARTIFACT (cargo build --release → target/),
 # resolved at runtime by bin/slopgate. Never track it; per-platform packaging
 # of this binary is the deferred npm-distribution work.
