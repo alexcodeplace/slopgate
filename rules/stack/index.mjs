@@ -57,5 +57,15 @@ export const STACK_PACKS = {
         '(c.env as { K: string } | undefined)?.K',
       ],
     },
+    {
+      id: 'cf-queue-batch-retryall',
+      title: 'Queue batch.retryAll() — review per-message ack (re-bills + re-runs side effects)',
+      category: 'convention', severity: 'low',
+      pattern: '\\.retryAll\\s*\\(',
+      description: 'retryAll() redelivers EVERY message in the batch on the next poll — each redelivery is a billed read op per message (Queues free tier = 10k ops/day) and re-runs side effects for messages that already succeeded. Correct ONLY when the whole batch genuinely shares fate (e.g. a coarse single-sweep handler). Advisory: a per-message handler should ack() successes and retry() only the failed messages.',
+      resolution: 'In per-message consumers, msg.ack() each success and msg.retry() only failures. Keep retryAll() only for whole-batch fate-sharing (single-sweep handlers); baseline those.',
+      canary: 'batch.retryAll();',
+      negativeCanary: ['batch.ackAll();', 'await message.retry();', 'msg.ack();'],
+    },
   ],
 };
