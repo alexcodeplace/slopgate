@@ -122,9 +122,9 @@ For each new regex rule:
 # Canary must match (approximation — the engine matches via fancy-regex for JS-RegExp parity)
 node -e "console.log(new RegExp('<pattern>').test('<canary>'))"
 # Run self-test
-node /home/user/Projects/slopgate/bin/slopgate --self-test --config <repo>/.slopgate/config.toml
+slopgate --self-test --config <repo>/.slopgate/config.toml
 # Dry-run on repo (count hits; review for FPs)
-node /home/user/Projects/slopgate/bin/slopgate --config <repo>/.slopgate/config.toml 2>&1 | grep '<id>'
+slopgate --config <repo>/.slopgate/config.toml 2>&1 | grep '<id>'
 ```
 
 If FP count > 5% of hits → add excludeGlobs or demote to medium/low. If still noisy → demote to bucket C.

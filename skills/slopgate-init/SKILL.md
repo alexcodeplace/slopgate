@@ -5,7 +5,7 @@ description: Onboard any repo to the global slopgate engine. Detect stack, mine 
 
 # slopgate-init — Project Initialization
 
-Bootstraps a repo onto the global slopgate engine (`/home/user/Projects/slopgate`). The engine
+Bootstraps a repo onto the globally-installed slopgate engine (the `slopgate` CLI on PATH — `npm i -g slopgate`). The engine
 carries zero project knowledge; everything project-specific lives in `<repo>/.slopgate/`. This skill
 produces that directory **from the project's own stated conventions**, not from a generic template.
 
@@ -49,7 +49,7 @@ If it exists → **stop, invoke `/slopgate-improve` instead.** This skill is for
 ## Step 1 — Scaffold (deterministic, the CLI does it)
 
 ```bash
-node /home/user/Projects/slopgate/bin/slopgate init <repo-abs-path>
+slopgate init <repo-abs-path>
 ```
 
 This auto-detects source roots (monorepo workspace-aware), exts, and skipDirs; writes a populated
@@ -155,7 +155,7 @@ never auto-enabled. The scaffold does not emit a `[ux]` table — you add one on
 ## Step 6 — Drive to zero (zero-tolerance before enabling)
 
 ```bash
-node /home/user/Projects/slopgate/bin/slopgate --self-test --config .slopgate/config.toml   # expect 0
+slopgate --self-test --config .slopgate/config.toml   # expect 0
 # full dry-run count per rule id → must reach {}
 ```
 
@@ -175,7 +175,7 @@ existing tree is clean — otherwise every later edit trips legacy debt.
 ```bash
 # self-test already green. Prove the PostToolUse wiring end-to-end:
 echo 'export const c = "#ff0044";' > <a-scanned-root>/__slopgate_probe.ts
-echo "{\"tool_input\":{\"file_path\":\"$PWD/<a-scanned-root>/__slopgate_probe.ts\"}}" | /home/user/Projects/slopgate/hooks/edit-hook.sh; echo "edit_hook=$?"
+echo "{\"tool_input\":{\"file_path\":\"$PWD/<a-scanned-root>/__slopgate_probe.ts\"}}" | "$(npm root -g)/slopgate/hooks/edit-hook.sh"; echo "edit_hook=$?"
 rm <a-scanned-root>/__slopgate_probe.ts
 ```
 

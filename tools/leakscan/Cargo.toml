@@ -4,15 +4,11 @@ version = "0.1.0"
 edition = "2021"
 description = "Leaky-abstraction detector: flags direct DB/external-API I/O inside presentation-layer files (Dependency Inversion gate)."
 license = "MIT"
+publish = false
 
 [[bin]]
 name = "leakscan"
 path = "src/main.rs"
-
-[profile.release]
-lto = true
-codegen-units = 1
-strip = true
 
 [dependencies]
 globset = "0.4.18"

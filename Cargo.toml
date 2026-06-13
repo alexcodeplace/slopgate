@@ -10,3 +10,12 @@ sha2 = "0.10"
 regex = "1"
 walkdir = "2"
 tempfile = "3"
+
+# Release profile applies to the whole workspace — notably the shipped slopgate-rs
+# binary. strip removes debug symbols + BuildID (smaller, no source-path leak); lto +
+# single codegen unit shrink and speed up. (Cargo only honors [profile.*] at the
+# workspace root — a per-crate copy is silently ignored.)
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
