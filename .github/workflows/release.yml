@@ -1,10 +1,10 @@
-# Release: build the native Rust engine on each supported host, publish one prebuilt
-# per-platform npm package (slopgate-<os>-<arch>), then publish the root `slopgate`
-# launcher pinned to them via optionalDependencies (esbuild/@biomejs model).
+# Release: build the native Rust engine on each supported host, then publish ONE
+# npm package `slopgate` bundling every platform's prebuilt binary under vendor/.
+# bin/slopgate picks the binary matching the host at install/run time.
 #
-# Trigger: push a semver tag, e.g. `git tag v1.2.3 && git push origin v1.2.3`.
+# Trigger: push a semver tag, e.g. `git tag v1.0.0 && git push origin v1.0.0`.
 # Requires repository secret NPM_TOKEN (an npm automation token with publish rights
-# to `slopgate` and the five `slopgate-*` packages).
+# to `slopgate`).
 name: release
 
 on:
@@ -16,36 +16,27 @@ permissions:
   contents: read
 
 # Force bash on every runner (Windows defaults to PowerShell, where `$VAR` env
-# refs in run: steps don't expand — the platform packaging step needs bash).
+# refs in run: steps don't expand — the staging step needs bash).
 defaults:
   run:
     shell: bash
 
 jobs:
-  # One leg per host. Each builds its own target natively (no cross-compilation),
-  # assembles npm/<pkg>/, and publishes that single platform package.
-  platform:
+  # One leg per host: build its target natively (no cross-compilation), stage the
+  # binary into vendor/<key>/, and upload that as an artifact for the publish job.
+  build:
     strategy:
       fail-fast: true
       matrix:
         include:
-          - { pkg: slopgate-linux-x64,    target: x86_64-unknown-linux-gnu,  runner: ubuntu-latest }
-          - { pkg: slopgate-linux-arm64,  target: aarch64-unknown-linux-gnu, runner: ubuntu-24.04-arm }
-          - { pkg: slopgate-darwin-x64,   target: x86_64-apple-darwin,       runner: macos-13 }
-          - { pkg: slopgate-darwin-arm64, target: aarch64-apple-darwin,      runner: macos-14 }
-          - { pkg: slopgate-win32-x64,    target: x86_64-pc-windows-msvc,    runner: windows-latest }
+          - { key: linux-x64,    target: x86_64-unknown-linux-gnu,  runner: ubuntu-latest }
+          - { key: linux-arm64,  target: aarch64-unknown-linux-gnu, runner: ubuntu-24.04-arm }
+          - { key: darwin-x64,   target: x86_64-apple-darwin,       runner: macos-13 }
+          - { key: darwin-arm64, target: aarch64-apple-darwin,      runner: macos-14 }
+          - { key: win32-x64,    target: x86_64-pc-windows-msvc,    runner: windows-latest }
     runs-on: ${{ matrix.runner }}
-    # id-token: write is required by `npm publish --provenance` (OIDC attestation).
-    permissions:
-      contents: read
-      id-token: write
     steps:
       - uses: actions/checkout@v4
-
-      - name: Derive version from tag
-        id: v
-        shell: bash
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -57,46 +48,45 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          registry-url: https://registry.npmjs.org
 
-      - name: Assemble platform package
-        env:
-          VERSION: ${{ steps.v.outputs.version }}
-          PKG: ${{ matrix.pkg }}
-        run: node scripts/build-npm-packages.mjs --only "$PKG" --version "$VERSION"
+      - name: Stage binary into vendor/
+        run: node scripts/build-npm-packages.mjs --stage "${{ matrix.key }}"
 
-      - name: Publish platform package
-        run: npm publish --provenance --access public
-        working-directory: npm/${{ matrix.pkg }}
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vendor-${{ matrix.key }}
+          path: vendor
+          if-no-files-found: error
 
-  # After all platform packages exist, publish the root launcher.
-  root:
-    needs: platform
+  # After all binaries exist, collect them into vendor/ and publish one package.
+  publish:
+    needs: build
     runs-on: ubuntu-latest
+    # id-token: write is required by `npm publish --provenance` (OIDC attestation).
     permissions:
       contents: read
       id-token: write
     steps:
       - uses: actions/checkout@v4
 
-      - name: Derive version from tag
-        id: v
-        shell: bash
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
-
       - uses: actions/setup-node@v4
         with:
           node-version: 20
           registry-url: https://registry.npmjs.org
 
-      - name: Pin version + optionalDependencies
-        env:
-          VERSION: ${{ steps.v.outputs.version }}
-        run: node scripts/build-npm-packages.mjs --sync-root --version "$VERSION"
+      - name: Collect platform binaries
+        uses: actions/download-artifact@v4
+        with:
+          pattern: vendor-*
+          merge-multiple: true
+          path: vendor
 
-      - name: Publish root package
+      - name: Set version from tag
+        env:
+          REF: ${{ github.ref_name }}
+        run: node scripts/build-npm-packages.mjs --set-version "${REF#v}"
+
+      - name: Publish slopgate
         run: npm publish --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

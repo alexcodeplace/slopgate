@@ -10,18 +10,11 @@
   "bugs": { "url": "https://github.com/alexcodeplace/slopgate/issues" },
   "bin": { "slopgate": "bin/slopgate" },
   "files": [
-    "bin", "hooks", "rules", "skills",
+    "bin", "hooks", "rules", "skills", "vendor",
     "!rules/baseline/fixtures",
     "!bin/slopgate-rs"
   ],
   "engines": { "node": ">=18" },
-  "optionalDependencies": {
-    "slopgate-linux-x64": "1.0.0",
-    "slopgate-linux-arm64": "1.0.0",
-    "slopgate-darwin-x64": "1.0.0",
-    "slopgate-darwin-arm64": "1.0.0",
-    "slopgate-win32-x64": "1.0.0"
-  },
   "scripts": {
     "self-test": "node bin/slopgate --self-test --config rules/baseline/selftest.config.toml",
     "test": "cargo test --workspace"
