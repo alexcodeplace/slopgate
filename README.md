@@ -403,11 +403,12 @@ Add custom rules as **AST rules** — `.yml` files in ast-grep syntax:
 
 ```yaml
 id: my-ast-rule
-pattern: |
-  kind: function_declaration
-  # ...
+language: tsx
+severity: error          # ast-grep level (error|warning|info)
 message: Rule violation
-severity: high
+note: '{"severity":"high","category":"convention","resolution":"…"}'  # slopgate metadata
+rule:
+  pattern: 'someBadCall($$$ARGS)'   # code-snippet matcher; or structural kind/has/inside/all/any/not
 ```
 
 Point `astRules` at the directory holding them:
@@ -449,29 +450,30 @@ Patterns are regex strings with flags (i, m, s, etc.). A pattern matches any lin
 
 Written in ast-grep YAML syntax; scoped to source roots + extensions from config.
 
-**Example:**
+**Example** (modeled on the shipped `rules/baseline/ast/empty-catch-block-tsx.yml`):
 ```yaml
 id: empty-catch
-pattern: |
-  kind: catch_clause
-  children:
-    - kind: block
-      children: []  # empty
-message: Empty catch discards errors
-severity: critical
+language: tsx
+severity: error          # ast-grep level (error|warning|info)
+message: Empty catch block swallows error silently
+note: '{"severity":"high","category":"convention","resolution":"Handle or rethrow; log with context."}'
+rule:
+  pattern: 'try { $A } catch ($E) {}'   # code-snippet matcher; or structural kind/has/inside/all/any/not
 ```
 
-**Fixtures:**
-```yaml
-id: empty-catch
-rules:
-  - id: empty-catch
-    message: Empty catch discards errors
-fixtures:
-  - 'try { x(); } catch (e) {}'  # should match
+The top-level `severity` is ast-grep's own level; slopgate's gating severity/category/resolution live in the
+JSON `note` field.
+
+**Fixtures:** add a source canary that *triggers* the rule to `.slopgate/fixtures/src/` (built-in rules use
+`rules/baseline/fixtures/src/`). A `.ts`/`.tsx` file containing the violating code is enough:
+
+```tsx
+// .slopgate/fixtures/src/empty-catch.tsx
+export function f() { try { risky(); } catch (e) {} }  // should fire empty-catch
 ```
 
-Place fixtures in `rules/baseline/fixtures/` with `.case` and `.output` JSON files.
+`slopgate --self-test --config .slopgate/config.toml` scans the fixtures and asserts every rule fires at
+least once.
 
 ---
 
