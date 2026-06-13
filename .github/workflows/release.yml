@@ -29,6 +29,10 @@ jobs:
           - { pkg: slopgate-darwin-arm64, target: aarch64-apple-darwin,      runner: macos-14 }
           - { pkg: slopgate-win32-x64,    target: x86_64-pc-windows-msvc,    runner: windows-latest }
     runs-on: ${{ matrix.runner }}
+    # id-token: write is required by `npm publish --provenance` (OIDC attestation).
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v4
 
@@ -65,6 +69,9 @@ jobs:
   root:
     needs: platform
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v4
 
