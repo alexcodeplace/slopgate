@@ -186,7 +186,8 @@ pub fn validate_pattern_str(pattern: &str, flags: Option<&str>) -> Result<(), St
                 's' => {
                     builder.dot_matches_new_line(true);
                 }
-                'u' | 'x' | 'U' | _ => {}
+                'u' | 'x' | 'U' => {}
+                _ => {}
             }
         }
     }
@@ -196,7 +197,11 @@ pub fn validate_pattern_str(pattern: &str, flags: Option<&str>) -> Result<(), St
         .map_err(|e| format!("slopgate: bad regex: {e}"))
 }
 
-fn resolve_inner(raw: RawConfig, config_dir: PathBuf, repo_root: PathBuf) -> Result<ResolvedConfig, String> {
+fn resolve_inner(
+    raw: RawConfig,
+    config_dir: PathBuf,
+    repo_root: PathBuf,
+) -> Result<ResolvedConfig, String> {
     let baseline_packs = packs::baseline_packs();
     let stack_packs = packs::stack_packs();
     let ux_packs = packs::ux_packs();
@@ -240,7 +245,7 @@ fn resolve_inner(raw: RawConfig, config_dir: PathBuf, repo_root: PathBuf) -> Res
     }
 
     // PHASE-2: project rule packs
-    for rel_path in &raw.rules {
+    if let Some(rel_path) = raw.rules.first() {
         return Err(format!(
             "slopgate: project rule pack \"{rel_path}\" cannot be loaded by the native TOML resolver (PHASE-2: project rule packs)"
         ));
@@ -384,10 +389,7 @@ pub fn resolve_config(path: &str) -> Result<ResolvedConfig, String> {
             abs_config.display()
         ));
     }
-    let config_dir = abs_config
-        .parent()
-        .unwrap_or(Path::new("."))
-        .to_path_buf();
+    let config_dir = abs_config.parent().unwrap_or(Path::new(".")).to_path_buf();
     let repo_root = git_root(&config_dir)
         .unwrap_or_else(|| config_dir.parent().unwrap_or(&config_dir).to_path_buf());
 
@@ -401,9 +403,8 @@ pub fn resolve_config(path: &str) -> Result<ResolvedConfig, String> {
 /// Resolve inline TOML (unit tests). Uses `.` as `config_dir` and git/cwd for `repo_root`.
 pub fn resolve_config_str(toml_src: &str) -> Result<ResolvedConfig, String> {
     let config_dir = PathBuf::from(".");
-    let repo_root = git_root(&config_dir).unwrap_or_else(|| {
-        std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
-    });
+    let repo_root = git_root(&config_dir)
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
     let raw: RawConfig =
         toml::from_str(toml_src).map_err(|e| format!("slopgate: parse config: {e}"))?;
     resolve_inner(raw, config_dir, repo_root)
@@ -415,10 +416,7 @@ mod tests {
     use serde_json::Value;
 
     fn cfg_path() -> String {
-        format!(
-            "{}/tests/fixtures/config.toml",
-            env!("CARGO_MANIFEST_DIR")
-        )
+        format!("{}/tests/fixtures/config.toml", env!("CARGO_MANIFEST_DIR"))
     }
 
     #[test]
@@ -462,7 +460,10 @@ mod tests {
             .map(|p| format!("{}:{}", p.id, p.severity))
             .collect();
         rust_ids.sort();
-        assert_eq!(rust_ids, js_ids, "pattern id:severity set must match JS resolver");
+        assert_eq!(
+            rust_ids, js_ids,
+            "pattern id:severity set must match JS resolver"
+        );
         assert_eq!(sorted_strs(&js["exts"]), sorted_set(&rust.exts));
         assert_eq!(
             sorted_strs(&js["gate"]["staged"]),

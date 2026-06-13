@@ -1,6 +1,8 @@
+use serde_json::Value;
 use slopgate_core::audit::run::run_audit;
 use slopgate_core::config::resolve_config;
 use slopgate_core::gate::{run_gate, snapshot_violations, Mode, Tier};
+use slopgate_core::help::HELP_TEXT;
 use slopgate_core::init::run::{engine_root, run_init_io};
 use slopgate_core::install::agent_hooks::{
     home_dir, install_agent_hooks, remove_agent_hooks, status_agent_hooks, status_symbol, AGENTS,
@@ -11,13 +13,11 @@ use slopgate_core::ratchet::{
     fingerprint_violation, load_baseline, write_baseline, write_baseline_raw, BaselineEntry,
 };
 use slopgate_core::selftest::run_self_test;
-use slopgate_core::help::HELP_TEXT;
 use slopgate_core::stats::query::{
     aggregate, aggregate_dashboard, format_dashboard, format_stats, Row, DIMENSIONS,
 };
 use slopgate_core::stats::record::record_incidents;
 use slopgate_core::stats::store::{global_stats_path_in, project_stats_path, read_rows};
-use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::io::Write;
 use std::path::Path;
@@ -152,7 +152,7 @@ fn parse_rows(values: &[Value]) -> Vec<Row> {
 }
 
 enum ConfigResult {
-    Ok(slopgate_core::config::ResolvedConfig),
+    Ok(Box<slopgate_core::config::ResolvedConfig>),
     Exit(i32),
 }
 
@@ -165,10 +165,10 @@ fn require_config(args: &[String], stderr: &mut dyn Write) -> ConfigResult {
         return ConfigResult::Exit(2);
     };
     match resolve_config(config_path) {
-        Ok(config) => ConfigResult::Ok(config),
+        Ok(config) => ConfigResult::Ok(Box::new(config)),
         Err(e) => {
             write_top_level_err(stderr, &e);
-            return ConfigResult::Exit(1);
+            ConfigResult::Exit(1)
         }
     }
 }
@@ -212,12 +212,15 @@ fn dispatch(
         || has(args, "-h")
         || user_args.first().is_some_and(|a| a == "help")
     {
-        write!(stdout, "{HELP_TEXT}\n").map_err(|e| e.to_string())?;
+        writeln!(stdout, "{HELP_TEXT}").map_err(|e| e.to_string())?;
         return Ok(0);
     }
 
     if args.get(1).is_some_and(|a| a == "--version") {
-        writeln_stdout(stdout, &format!("slopgate-rs {}", env!("CARGO_PKG_VERSION")));
+        writeln_stdout(
+            stdout,
+            &format!("slopgate-rs {}", env!("CARGO_PKG_VERSION")),
+        );
         return Ok(0);
     }
 
@@ -264,12 +267,9 @@ fn dispatch(
         let engine = engine_root();
         let engine_invocation = engine.join("bin/slopgate").to_string_lossy().into_owned();
         let node_path = resolve_node_path();
-        let result = install_pre_commit_hook(
-            Path::new(&config.repo_root),
-            &engine_invocation,
-            &node_path,
-        )
-        .map_err(|e| e.to_string())?;
+        let result =
+            install_pre_commit_hook(Path::new(&config.repo_root), &engine_invocation, &node_path)
+                .map_err(|e| e.to_string())?;
         writeln_stdout(
             stdout,
             &format!(
@@ -303,11 +303,7 @@ fn dispatch(
                 .map(String::as_str)
                 .collect();
             if !unknown.is_empty() {
-                let valid = AGENTS
-                    .iter()
-                    .map(|a| a.id)
-                    .collect::<Vec<_>>()
-                    .join(", ");
+                let valid = AGENTS.iter().map(|a| a.id).collect::<Vec<_>>().join(", ");
                 write_slopgate_err(
                     stderr,
                     &format!(
@@ -323,7 +319,7 @@ fn dispatch(
         let agent_ids_ref = agent_ids.as_deref();
 
         if sub.is_none() || sub == Some("status") || !valid_subs.contains(&sub.unwrap()) {
-            let rows = status_agent_hooks(&home, &engine);
+            let rows = status_agent_hooks(home, &engine);
             for r in rows {
                 let sym = status_symbol(&r.status);
                 let det = if r.detected {
@@ -350,20 +346,17 @@ fn dispatch(
 
         if sub == Some("install") || sub == Some("reinstall") {
             if sub == Some("reinstall") {
-                let rem = remove_agent_hooks(&home, &engine, agent_ids_ref);
+                let rem = remove_agent_hooks(home, &engine, agent_ids_ref);
                 for r in rem {
                     if r.action == "removed" {
                         writeln_stdout(
                             stdout,
-                            &format!(
-                                "slopgate: agent-hooks {} — removed (reinstalling)",
-                                r.label
-                            ),
+                            &format!("slopgate: agent-hooks {} — removed (reinstalling)", r.label),
                         );
                     }
                 }
             }
-            let results = install_agent_hooks(&home, &engine, agent_ids_ref);
+            let results = install_agent_hooks(home, &engine, agent_ids_ref);
             if results.is_empty() {
                 writeln_stdout(
                     stdout,
@@ -396,7 +389,7 @@ fn dispatch(
         }
 
         if sub == Some("remove") {
-            let results = remove_agent_hooks(&home, &engine, agent_ids_ref);
+            let results = remove_agent_hooks(home, &engine, agent_ids_ref);
             for r in results {
                 writeln_stdout(
                     stdout,
@@ -454,10 +447,7 @@ fn dispatch(
                 return Ok(2);
             }
         };
-        writeln_stdout(
-            stdout,
-            &run_audit(&config, since_days, has(args, "--json")),
-        );
+        writeln_stdout(stdout, &run_audit(&config, since_days, has(args, "--json")));
         return Ok(0);
     }
 
@@ -535,11 +525,7 @@ fn dispatch(
                     true
                 })
                 .collect();
-            let removed = old
-                .entries
-                .keys()
-                .filter(|fp| !fps.contains(*fp))
-                .count();
+            let removed = old.entries.keys().filter(|fp| !fps.contains(*fp)).count();
             let mut by_rule: HashMap<String, u32> = HashMap::new();
             for v in &added {
                 *by_rule.entry(v.id.clone()).or_insert(0) += 1;
@@ -630,10 +616,7 @@ fn dispatch(
         return Ok(result.code);
     }
 
-    write_slopgate_err(
-        stderr,
-        "slopgate: unknown command — run 'slopgate --help'",
-    );
+    write_slopgate_err(stderr, "slopgate: unknown command — run 'slopgate --help'");
     Ok(2)
 }
 
@@ -721,7 +704,8 @@ mod tests {
 
     #[test]
     fn missing_config_returns_two() {
-        let (code, _, err) = run_capture(vec!["slopgate-rs".into(), "--file".into(), "x.ts".into()]);
+        let (code, _, err) =
+            run_capture(vec!["slopgate-rs".into(), "--file".into(), "x.ts".into()]);
         assert_eq!(code, 2);
         assert_eq!(
             err,
@@ -753,10 +737,7 @@ mod tests {
         let args = base_args(dir.path());
         let (code, _, err) = run_capture(args);
         assert_eq!(code, 2);
-        assert_eq!(
-            err,
-            "slopgate: unknown command — run 'slopgate --help'\n"
-        );
+        assert_eq!(err, "slopgate: unknown command — run 'slopgate --help'\n");
     }
 
     #[test]
@@ -795,11 +776,7 @@ mod tests {
             file: None,
             line: None,
         };
-        append_row(
-            &stats_path,
-            &serde_json::to_value(&row).expect("row json"),
-        )
-        .unwrap();
+        append_row(&stats_path, &serde_json::to_value(&row).expect("row json")).unwrap();
 
         let (code, out, _) =
             run_capture_with_home(vec!["slopgate-rs".into(), "stats".into()], home.path());
@@ -827,11 +804,7 @@ mod tests {
             file: None,
             line: None,
         };
-        append_row(
-            &stats_path,
-            &serde_json::to_value(&row).expect("row json"),
-        )
-        .unwrap();
+        append_row(&stats_path, &serde_json::to_value(&row).expect("row json")).unwrap();
 
         let (code, out, _) = run_capture_with_home(
             vec![
@@ -866,10 +839,7 @@ mod tests {
         args.push("bogus".into());
         let (code, _, err) = run_capture(args);
         assert_eq!(code, 2);
-        assert_eq!(
-            err,
-            "slopgate: unknown command — run 'slopgate --help'\n"
-        );
+        assert_eq!(err, "slopgate: unknown command — run 'slopgate --help'\n");
     }
 
     #[test]
@@ -879,7 +849,11 @@ mod tests {
         fs::create_dir_all(root.join("src")).unwrap();
         fs::write(root.join("src/index.ts"), "export const x = 1;\n").unwrap();
 
-        let (code, out, _) = run_capture(vec!["slopgate-rs".into(), "init".into(), root.to_string_lossy().into_owned()]);
+        let (code, out, _) = run_capture(vec![
+            "slopgate-rs".into(),
+            "init".into(),
+            root.to_string_lossy().into_owned(),
+        ]);
         assert_eq!(code, 0);
         assert!(out.contains("slopgate: scaffolded"));
     }
@@ -950,9 +924,7 @@ mod tests {
             home.path(),
         );
         assert_eq!(code, 0);
-        assert!(
-            out.contains("slopgate: skill") || out.contains("slopgate: no skills to install")
-        );
+        assert!(out.contains("slopgate: skill") || out.contains("slopgate: no skills to install"));
     }
 
     #[test]
@@ -964,11 +936,7 @@ mod tests {
         let Ok(config) = resolve_config(&config_path.to_string_lossy()) else {
             return;
         };
-        if config
-            .fixtures_dirs
-            .iter()
-            .any(|d| !Path::new(d).is_dir())
-        {
+        if config.fixtures_dirs.iter().any(|d| !Path::new(d).is_dir()) {
             return;
         }
         if Command::new("ast-grep")

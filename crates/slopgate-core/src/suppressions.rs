@@ -271,7 +271,11 @@ mod tests {
                 {"id": "r2", "file": deleted_rel, "lineHash": line_hash("anything")},
             ]
         });
-        fs::write(&sup_path, serde_json::to_string_pretty(&json).unwrap() + "\n").unwrap();
+        fs::write(
+            &sup_path,
+            serde_json::to_string_pretty(&json).unwrap() + "\n",
+        )
+        .unwrap();
 
         let result = prune_stale(repo_root, &sup_path, false);
         assert_eq!(result.error, None);
@@ -302,7 +306,11 @@ mod tests {
                 {"id": "stale", "file": rel, "lineHash": line_hash("old line that is gone")},
             ]
         });
-        fs::write(&sup_path, serde_json::to_string_pretty(&json).unwrap() + "\n").unwrap();
+        fs::write(
+            &sup_path,
+            serde_json::to_string_pretty(&json).unwrap() + "\n",
+        )
+        .unwrap();
 
         let result = prune_stale(repo_root, &sup_path, true);
         assert_eq!(result.error, None);
@@ -323,7 +331,11 @@ mod tests {
                 {"id": "r2", "file": deleted_rel, "lineHash": line_hash("anything")},
             ]
         });
-        fs::write(&sup_path, serde_json::to_string_pretty(&json).unwrap() + "\n").unwrap();
+        fs::write(
+            &sup_path,
+            serde_json::to_string_pretty(&json).unwrap() + "\n",
+        )
+        .unwrap();
 
         #[cfg(unix)]
         {

@@ -40,7 +40,10 @@ mod tests {
             dir.to_path_buf()
         })
         .unwrap();
-        assert!(!captured.exists(), "temp dir should be removed after return");
+        assert!(
+            !captured.exists(),
+            "temp dir should be removed after return"
+        );
     }
 
     #[test]
@@ -62,6 +65,9 @@ mod tests {
         .unwrap();
         let (dir_path, result) = captured;
         assert!(result.is_err());
-        assert!(!dir_path.exists(), "temp dir should be removed even on error return");
+        assert!(
+            !dir_path.exists(),
+            "temp dir should be removed even on error return"
+        );
     }
 }

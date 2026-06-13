@@ -141,16 +141,16 @@ fn ensure_hook_entry(
     matcher: Option<&str>,
     command: &str,
 ) -> bool {
-    let hooks = settings
-        .as_object_mut()
-        .and_then(|o| o.entry("hooks".to_string()).or_insert_with(|| json!({})).as_object_mut());
+    let hooks = settings.as_object_mut().and_then(|o| {
+        o.entry("hooks".to_string())
+            .or_insert_with(|| json!({}))
+            .as_object_mut()
+    });
     let Some(hooks) = hooks else {
         return false;
     };
 
-    let event_arr = hooks
-        .entry(event.to_string())
-        .or_insert_with(|| json!([]));
+    let event_arr = hooks.entry(event.to_string()).or_insert_with(|| json!([]));
     let Some(entries) = event_arr.as_array_mut() else {
         return false;
     };
@@ -159,7 +159,10 @@ fn ensure_hook_entry(
         let present = entries.iter().any(|e| {
             e.get("hooks")
                 .and_then(|h| h.as_array())
-                .is_some_and(|arr| arr.iter().any(|h| h.get("command") == Some(&json!(command))))
+                .is_some_and(|arr| {
+                    arr.iter()
+                        .any(|h| h.get("command") == Some(&json!(command)))
+                })
         });
         if present {
             return false;
@@ -179,7 +182,7 @@ fn ensure_hook_entry(
         entries.last_mut().unwrap()
     };
 
-    if !entry.get("hooks").and_then(|h| h.as_array()).is_some() {
+    if entry.get("hooks").and_then(|h| h.as_array()).is_none() {
         entry["hooks"] = json!([]);
     }
     let hooks_arr = entry["hooks"].as_array_mut().unwrap();
@@ -199,8 +202,7 @@ fn write_json_pretty(path: &Path, root: &Value) -> Result<(), SlopError> {
         serde_json::to_string_pretty(root)
             .map_err(|e| SlopError::Parse(format!("serialize {}: {e}", path.display())))?
     );
-    fs::write(path, rendered)
-        .map_err(|e| SlopError::Io(format!("write {}: {e}", path.display())))
+    fs::write(path, rendered).map_err(|e| SlopError::Io(format!("write {}: {e}", path.display())))
 }
 
 /// Idempotently merge slopgate hooks into a claude-format hooks JSON file.
@@ -300,7 +302,9 @@ pub fn remove_hooks(file_path: &Path, engine_root: &Path) -> Result<RemoveResult
 
             let filtered: Vec<Value> = hooks_arr
                 .iter()
-                .filter(|h| !is_slopgate_cmd(h.get("command").and_then(|c| c.as_str()), engine_root))
+                .filter(|h| {
+                    !is_slopgate_cmd(h.get("command").and_then(|c| c.as_str()), engine_root)
+                })
                 .cloned()
                 .collect();
 
@@ -374,27 +378,36 @@ pub fn check_status(file_path: &Path, engine_root: &Path) -> &'static str {
 
     let (commit, edit, session) = hook_paths(engine_root);
 
-    let session_ok = h.get("SessionStart").and_then(|v| v.as_array()).is_some_and(|arr| {
-        arr.iter().any(|e| {
-            e.get("hooks")
-                .and_then(|hs| hs.as_array())
-                .is_some_and(|hs| hs.iter().any(|x| x.get("command") == Some(&json!(session))))
-        })
-    });
-    let pre_ok = h.get("PreToolUse").and_then(|v| v.as_array()).is_some_and(|arr| {
-        arr.iter().any(|e| {
-            e.get("hooks")
-                .and_then(|hs| hs.as_array())
-                .is_some_and(|hs| hs.iter().any(|x| x.get("command") == Some(&json!(commit))))
-        })
-    });
-    let post_ok = h.get("PostToolUse").and_then(|v| v.as_array()).is_some_and(|arr| {
-        arr.iter().any(|e| {
-            e.get("hooks")
-                .and_then(|hs| hs.as_array())
-                .is_some_and(|hs| hs.iter().any(|x| x.get("command") == Some(&json!(edit))))
-        })
-    });
+    let session_ok = h
+        .get("SessionStart")
+        .and_then(|v| v.as_array())
+        .is_some_and(|arr| {
+            arr.iter().any(|e| {
+                e.get("hooks")
+                    .and_then(|hs| hs.as_array())
+                    .is_some_and(|hs| hs.iter().any(|x| x.get("command") == Some(&json!(session))))
+            })
+        });
+    let pre_ok = h
+        .get("PreToolUse")
+        .and_then(|v| v.as_array())
+        .is_some_and(|arr| {
+            arr.iter().any(|e| {
+                e.get("hooks")
+                    .and_then(|hs| hs.as_array())
+                    .is_some_and(|hs| hs.iter().any(|x| x.get("command") == Some(&json!(commit))))
+            })
+        });
+    let post_ok = h
+        .get("PostToolUse")
+        .and_then(|v| v.as_array())
+        .is_some_and(|arr| {
+            arr.iter().any(|e| {
+                e.get("hooks")
+                    .and_then(|hs| hs.as_array())
+                    .is_some_and(|hs| hs.iter().any(|x| x.get("command") == Some(&json!(edit))))
+            })
+        });
 
     let n = [session_ok, pre_ok, post_ok].iter().filter(|&&b| b).count();
     match n {
@@ -569,8 +582,8 @@ mod tests {
 
         let result = merge_hooks(&file, engine.path()).unwrap();
         assert_eq!(result.action, "merged");
-        assert!(format!("{}.bak", file.display()).as_str().len() > 0);
         let bak = format!("{}.bak", file.display());
+        assert!(!bak.is_empty());
         assert!(Path::new(&bak).is_file());
     }
 
@@ -724,10 +737,7 @@ mod tests {
     fn is_slopgate_cmd_matches_engine_root_path() {
         let engine = setup_engine();
         let cmd = engine.path().join("hooks/commit-hook.sh");
-        assert!(is_slopgate_cmd(
-            Some(cmd.to_str().unwrap()),
-            engine.path()
-        ));
+        assert!(is_slopgate_cmd(Some(cmd.to_str().unwrap()), engine.path()));
         assert!(!is_slopgate_cmd(Some("/other/hook.sh"), engine.path()));
     }
 }

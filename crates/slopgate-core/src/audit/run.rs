@@ -14,8 +14,8 @@ use crate::audit::git_facts::{
     AuthorShare, JsonEntryPoint,
 };
 use crate::audit::measures::{
-    acceleration, co_change_pairs, complexity, export_ratio, fan_metrics, hotspot_score,
-    is_barrel, CoChangePair, DepCruiseDependency, DepCruiseModule, FanRow,
+    acceleration, co_change_pairs, complexity, export_ratio, fan_metrics, hotspot_score, is_barrel,
+    CoChangePair, DepCruiseDependency, DepCruiseModule, FanRow,
 };
 use crate::checkers::depcruise::run_depcruise_json;
 use crate::checkers::shared::ensure_cache_dir;
@@ -179,13 +179,15 @@ fn has_test_file(repo_root: &Path, file: &str) -> bool {
         .any(|ext| repo_root.join(format!("{base}{ext}")).exists())
 }
 
+type OldSourceFn<'a> = dyn Fn(&str) -> Option<String> + 'a;
+
 /// @returns top hotspot rows ranked by score.
 pub fn build_hotspots(
     sources: &HashMap<String, String>,
     churn90: &HashMap<String, u32>,
     churn30: &HashMap<String, u32>,
     since_days: u32,
-    old_source_of: Option<&dyn Fn(&str) -> Option<String>>,
+    old_source_of: Option<&OldSourceFn<'_>>,
     has_test: &dyn Fn(&str) -> bool,
 ) -> Hotspots {
     let mut rows = Vec::new();
@@ -267,11 +269,7 @@ pub fn build_burndown(history: &[JsonEntryPoint]) -> Burndown {
     let ms = iso_to_ms(&last.ts).unwrap_or(0.0) - iso_to_ms(&first.ts).unwrap_or(0.0);
     let days = ms / (1000.0 * 60.0 * 60.0 * 24.0);
     let delta = first.count as i64 - last.count as i64;
-    let per_day = if days > 0.0 {
-        delta as f64 / days
-    } else {
-        0.0
-    };
+    let per_day = if days > 0.0 { delta as f64 / days } else { 0.0 };
     let eta_days = if delta > 0 && per_day > 0.0 && last.count > 0 {
         Some(last.count as f64 / per_day)
     } else {
@@ -306,8 +304,10 @@ fn iso_to_ms(ts: &str) -> Option<f64> {
     let mi: u32 = tp.next()?.parse().ok()?;
     let s: u32 = tp.next()?.parse().ok()?;
     let days = civil_to_unix_days(y, mo, d)?;
-    Some((days as f64 * 86400.0 + f64::from(h) * 3600.0 + f64::from(mi) * 60.0 + f64::from(s))
-        * 1000.0)
+    Some(
+        (days as f64 * 86400.0 + f64::from(h) * 3600.0 + f64::from(mi) * 60.0 + f64::from(s))
+            * 1000.0,
+    )
 }
 
 fn civil_to_unix_days(y: i32, m: u32, d: u32) -> Option<i64> {
@@ -324,7 +324,7 @@ fn civil_to_unix_days(y: i32, m: u32, d: u32) -> Option<i64> {
     let yoe = y - era * 400;
     let doy = (153 * (m - 3) + 2) / 5 + d as i32 - 1;
     let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-  Some(era as i64 * 146097 + doe as i64 - 719468)
+    Some(era as i64 * 146097 + doe as i64 - 719468)
 }
 
 pub fn render_audit(header: &str, sections: &[AuditSection], notices: &[String]) -> String {
@@ -387,7 +387,10 @@ fn hotspot_lines(hs: &Hotspots) -> Vec<String> {
         .collect()
 }
 
-fn module_shape_lines(sources: &HashMap<String, String>, modules: Option<&[DepCruiseModule]>) -> Vec<String> {
+fn module_shape_lines(
+    sources: &HashMap<String, String>,
+    modules: Option<&[DepCruiseModule]>,
+) -> Vec<String> {
     let mut lines = Vec::new();
     let fans: Vec<FanRow> = modules.map(fan_metrics).unwrap_or_default();
 
@@ -619,7 +622,7 @@ fn run_audit_inner(config: &ResolvedConfig, since_days: u32, json: bool) -> Stri
     let header = format!("SLOPGATE AUDIT — {project} — window {since_days}d");
     let repo_root = Path::new(&config.repo_root);
 
-    let outer = (|| -> Result<(), String> {
+    let outer: Result<(), String> = {
         let ctx = enumerate_ctx(config);
         let files = list_source_files(&ctx, EnumerateMode::Walk);
         let mut sources: HashMap<String, String> = HashMap::new();
@@ -656,10 +659,8 @@ fn run_audit_inner(config: &ResolvedConfig, since_days: u32, json: bool) -> Stri
         {
             let dep_cfg = config.checkers.get("depcruise");
             let mut modules: Option<Vec<DepCruiseModule>> = None;
-            if dep_cfg.is_none() {
-                notices.push("module graph skipped (no depcruise config)".into());
-            } else {
-                let result = run_depcruise_json(config, dep_cfg.unwrap());
+            if let Some(dep_cfg) = dep_cfg {
+                let result = run_depcruise_json(config, dep_cfg);
                 if let Some(data) = result.data.as_ref().and_then(parse_depcruise_modules) {
                     modules = Some(data);
                 } else {
@@ -670,6 +671,8 @@ fn run_audit_inner(config: &ResolvedConfig, since_days: u32, json: bool) -> Stri
                         .unwrap_or("no depcruise output");
                     notices.push(format!("module graph skipped ({err})"));
                 }
+            } else {
+                notices.push("module graph skipped (no depcruise config)".into());
             }
             sections.push(AuditSection {
                 title: "Module shape".into(),
@@ -728,7 +731,9 @@ fn run_audit_inner(config: &ResolvedConfig, since_days: u32, json: bool) -> Stri
             if bl.missing {
                 notices.push("ratchet progress skipped (no valid baseline.json)".into());
             } else if let Some(err) = &bl.error {
-                notices.push(format!("ratchet progress skipped (baseline malformed: {err})"));
+                notices.push(format!(
+                    "ratchet progress skipped (baseline malformed: {err})"
+                ));
             } else {
                 let rel_baseline = path_relative(&config.repo_root, &config.baseline_path);
                 let hist = json_entry_history(repo_root, &rel_baseline, "entries");
@@ -774,15 +779,14 @@ fn run_audit_inner(config: &ResolvedConfig, since_days: u32, json: bool) -> Stri
                 notices.push("gate effectiveness skipped (no stats.jsonl)".into());
             } else {
                 let rows = rows_from_jsonl(&raw);
-                let stats = aggregate(&rows, None, None).unwrap_or(
-                    crate::stats::query::AggregateResult {
+                let stats =
+                    aggregate(&rows, None, None).unwrap_or(crate::stats::query::AggregateResult {
                         total: 0,
                         by: "rule".into(),
                         last_seen: None,
                         first_seen: None,
                         groups: vec![],
-                    },
-                );
+                    });
                 sections.push(AuditSection {
                     title: "Gate effectiveness".into(),
                     lines: gate_effectiveness_lines(&stats),
@@ -791,7 +795,7 @@ fn run_audit_inner(config: &ResolvedConfig, since_days: u32, json: bool) -> Stri
         }
 
         Ok(())
-    })();
+    };
 
     if let Err(e) = outer {
         notices.push(format!("audit error: {e}"));
@@ -890,16 +894,8 @@ mod tests {
             .join("suppressions.json")
             .to_string_lossy()
             .into_owned();
-        fs::write(
-            &config.suppressions_path,
-            r#"{"version":1,"entries":[]}"#,
-        )
-        .unwrap();
-        fs::write(
-            &config.baseline_path,
-            r#"{"version":1,"entries":{}}"#,
-        )
-        .unwrap();
+        fs::write(&config.suppressions_path, r#"{"version":1,"entries":[]}"#).unwrap();
+        fs::write(&config.baseline_path, r#"{"version":1,"entries":{}}"#).unwrap();
         config
     }
 

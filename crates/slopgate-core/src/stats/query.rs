@@ -91,11 +91,7 @@ fn row_ts(row: &Row) -> Option<&str> {
     row.ts.as_deref().filter(|ts| !ts.is_empty())
 }
 
-fn update_bounds(
-    ts: &str,
-    last: &mut Option<String>,
-    first: &mut Option<String>,
-) {
+fn update_bounds(ts: &str, last: &mut Option<String>, first: &mut Option<String>) {
     if last.as_deref().is_none_or(|l| ts > l) {
         *last = Some(ts.to_string());
     }
@@ -141,11 +137,7 @@ pub fn aggregate(
     }
 
     let mut sorted: Vec<Group> = groups.into_values().collect();
-    sorted.sort_by(|a, b| {
-        b.count
-            .cmp(&a.count)
-            .then_with(|| a.key.cmp(&b.key))
-    });
+    sorted.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.key.cmp(&b.key)));
 
     Ok(AggregateResult {
         total: filtered.len() as u32,
@@ -177,17 +169,14 @@ fn pad_start(s: &str, width: usize) -> String {
 /// Render the table body (column header + group rows) for one aggregate result.
 pub fn render_table(result: &AggregateResult) -> Vec<String> {
     let key_header = result.by.to_uppercase();
-    let key_w = key_header
-        .chars()
-        .count()
-        .max(
-            result
-                .groups
-                .iter()
-                .map(|g| g.key.chars().count())
-                .max()
-                .unwrap_or(0),
-        );
+    let key_w = key_header.chars().count().max(
+        result
+            .groups
+            .iter()
+            .map(|g| g.key.chars().count())
+            .max()
+            .unwrap_or(0),
+    );
     let count_w = 5_usize.max(
         result
             .groups
@@ -330,8 +319,14 @@ mod tests {
         let result = aggregate(&sample_rows(), Some("rule"), None).unwrap();
         assert_eq!(result.total, 4);
         assert_eq!(result.by, "rule");
-        assert_eq!(result.first_seen.as_deref(), Some("2026-01-01T10:00:00.000Z"));
-        assert_eq!(result.last_seen.as_deref(), Some("2026-01-03T10:00:00.000Z"));
+        assert_eq!(
+            result.first_seen.as_deref(),
+            Some("2026-01-01T10:00:00.000Z")
+        );
+        assert_eq!(
+            result.last_seen.as_deref(),
+            Some("2026-01-03T10:00:00.000Z")
+        );
         assert_eq!(result.groups.len(), 2);
         // Equal counts → localeCompare on key ("as-any" before "no-stubs").
         assert_eq!(result.groups[0].key, "as-any");
@@ -350,8 +345,12 @@ mod tests {
 
     #[test]
     fn since_filter_drops_older_rows() {
-        let result =
-            aggregate(&sample_rows(), Some("rule"), Some("2026-01-02T00:00:00.000Z")).unwrap();
+        let result = aggregate(
+            &sample_rows(),
+            Some("rule"),
+            Some("2026-01-02T00:00:00.000Z"),
+        )
+        .unwrap();
         assert_eq!(result.total, 2);
         assert_eq!(result.groups.len(), 2);
         for g in &result.groups {

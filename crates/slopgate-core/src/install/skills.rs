@@ -80,9 +80,8 @@ pub fn install_skills(
         .map_err(|e| SlopError::Io(format!("read_dir {}: {e}", skills_src.display())))?;
 
     for entry in entries {
-        let entry = entry.map_err(|e| {
-            SlopError::Io(format!("read_dir entry {}: {e}", skills_src.display()))
-        })?;
+        let entry = entry
+            .map_err(|e| SlopError::Io(format!("read_dir entry {}: {e}", skills_src.display())))?;
         let file_type = entry
             .file_type()
             .map_err(|e| SlopError::Io(format!("file_type {}: {e}", entry.path().display())))?;
@@ -145,7 +144,9 @@ mod tests {
 
         let results = install_skills(src_dir.path(), dest_dir.path(), false).unwrap();
         assert_eq!(results.len(), 2);
-        assert!(results.iter().all(|r| r.action == SkillInstallAction::Installed));
+        assert!(results
+            .iter()
+            .all(|r| r.action == SkillInstallAction::Installed));
 
         let init_md = dest_dir.path().join("slopgate-init/SKILL.md");
         let ux_md = dest_dir.path().join("slopgate-ux/SKILL.md");

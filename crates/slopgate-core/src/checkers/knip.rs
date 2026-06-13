@@ -1,7 +1,9 @@
 //! knip adapter — mirrors `src/checkers/knip.mjs`.
 
 use crate::checkers::index::{CheckerRunResult, DetectResult};
-use crate::checkers::shared::{local_bin, run_json_tool, source_line, truncate_chars, JsonToolResult};
+use crate::checkers::shared::{
+    local_bin, run_json_tool, source_line, truncate_chars, JsonToolResult,
+};
 use crate::config::ResolvedConfig;
 use crate::report::Violation;
 use serde_json::Value;
@@ -18,12 +20,21 @@ const ISSUE_TYPES: &[&str] = &[
 ];
 
 const RESOLUTIONS: &[(&str, &str)] = &[
-    ("files", "Delete the unused file (or wire it in if it was meant to be used)."),
-    ("exports", "Remove the unused export (or its consumer was deleted by mistake)."),
+    (
+        "files",
+        "Delete the unused file (or wire it in if it was meant to be used).",
+    ),
+    (
+        "exports",
+        "Remove the unused export (or its consumer was deleted by mistake).",
+    ),
     ("types", "Remove the unused exported type."),
     ("dependencies", "Uninstall the unused dependency."),
     ("devDependencies", "Uninstall the unused devDependency."),
-    ("unlisted", "Add the dependency to package.json (it is imported but unlisted)."),
+    (
+        "unlisted",
+        "Add the dependency to package.json (it is imported but unlisted).",
+    ),
     ("duplicates", "Deduplicate the export."),
 ];
 
@@ -88,7 +99,12 @@ fn resolution_for(t: &str) -> &'static str {
 }
 
 fn has_knip_config(repo_root: &Path) -> bool {
-    for f in ["knip.json", "knip.jsonc", "knip.config.ts", "knip.config.js"] {
+    for f in [
+        "knip.json",
+        "knip.jsonc",
+        "knip.config.ts",
+        "knip.config.js",
+    ] {
         if repo_root.join(f).exists() {
             return true;
         }
@@ -122,7 +138,11 @@ pub fn detect(config: &ResolvedConfig, _cfg: &Value) -> DetectResult {
     }
 }
 
-pub fn run(config: &ResolvedConfig, cfg: &Value, _opts: crate::checkers::index::CheckerRunOpts<'_>) -> CheckerRunResult {
+pub fn run(
+    config: &ResolvedConfig,
+    cfg: &Value,
+    _opts: crate::checkers::index::CheckerRunOpts<'_>,
+) -> CheckerRunResult {
     let repo = Path::new(&config.repo_root);
     let Some(bin) = local_bin(repo, "knip") else {
         return CheckerRunResult {
@@ -174,10 +194,7 @@ pub fn run(config: &ResolvedConfig, cfg: &Value, _opts: crate::checkers::index::
             }
         })
         .collect();
-    CheckerRunResult {
-        violations,
-        errors,
-    }
+    CheckerRunResult { violations, errors }
 }
 
 #[cfg(test)]

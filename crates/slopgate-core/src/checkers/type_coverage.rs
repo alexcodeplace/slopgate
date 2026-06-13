@@ -15,8 +15,7 @@ pub struct TypeCoverageEntry {
 }
 
 pub fn parse_type_coverage_output(stdout: &str, repo_root: Option<&str>) -> Vec<TypeCoverageEntry> {
-    let re =
-        regex::Regex::new(r"^(.+?\.(?:ts|tsx|mts|cts)):(\d+):(\d+):? (.*)$").unwrap();
+    let re = regex::Regex::new(r"^(.+?\.(?:ts|tsx|mts|cts)):(\d+):(\d+):? (.*)$").unwrap();
     let mut out = Vec::new();
     for raw in stdout.lines() {
         let trimmed = raw.trim();
@@ -58,7 +57,11 @@ pub fn detect(config: &ResolvedConfig, _cfg: &Value) -> DetectResult {
     }
 }
 
-pub fn run(config: &ResolvedConfig, cfg: &Value, _opts: crate::checkers::index::CheckerRunOpts<'_>) -> CheckerRunResult {
+pub fn run(
+    config: &ResolvedConfig,
+    cfg: &Value,
+    _opts: crate::checkers::index::CheckerRunOpts<'_>,
+) -> CheckerRunResult {
     let repo = Path::new(&config.repo_root);
     let Some(bin) = local_bin(repo, "type-coverage") else {
         return CheckerRunResult {

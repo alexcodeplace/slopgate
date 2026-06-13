@@ -45,7 +45,12 @@ pub struct Detector<'c> {
 
 impl<'c> Detector<'c> {
     pub fn new(cfg: &'c Config, bound: &'c HashSet<String>, line_index: &'c LineIndex<'c>) -> Self {
-        Detector { cfg, bound, line_index, findings: Vec::new() }
+        Detector {
+            cfg,
+            bound,
+            line_index,
+            findings: Vec::new(),
+        }
     }
 
     fn push(&mut self, span: Span, rule: &str, severity: &str, message: String) {

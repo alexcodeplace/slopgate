@@ -60,10 +60,7 @@ pub fn format_config_toml(detected: &DetectedConfig) -> String {
     let mut out = String::new();
     out.push_str(&format!("roots = {}\n", json_array(&detected.roots)));
     out.push_str(&format!("exts = {}\n", json_array(&detected.exts)));
-    out.push_str(&format!(
-        "skipDirs = {}\n",
-        json_array(&detected.skip_dirs)
-    ));
+    out.push_str(&format!("skipDirs = {}\n", json_array(&detected.skip_dirs)));
     out.push_str("baseline = [\"no-stubs\", \"ts-suppress\", \"as-any\"]\n");
     out.push_str("rules = []\n");
     out.push_str("astRules = \"./rules/ast\"\n");
@@ -116,16 +113,16 @@ fn ensure_hook_entry(
     matcher: Option<&str>,
     command: &str,
 ) -> bool {
-    let hooks = settings
-        .as_object_mut()
-        .and_then(|o| o.entry("hooks".to_string()).or_insert_with(|| json!({})).as_object_mut());
+    let hooks = settings.as_object_mut().and_then(|o| {
+        o.entry("hooks".to_string())
+            .or_insert_with(|| json!({}))
+            .as_object_mut()
+    });
     let Some(hooks) = hooks else {
         return false;
     };
 
-    let event_arr = hooks
-        .entry(event.to_string())
-        .or_insert_with(|| json!([]));
+    let event_arr = hooks.entry(event.to_string()).or_insert_with(|| json!([]));
     let Some(entries) = event_arr.as_array_mut() else {
         return false;
     };
@@ -159,7 +156,7 @@ fn ensure_hook_entry(
         entries.last_mut().unwrap()
     };
 
-    if !entry.get("hooks").and_then(|h| h.as_array()).is_some() {
+    if entry.get("hooks").and_then(|h| h.as_array()).is_none() {
         entry["hooks"] = json!([]);
     }
     let hooks_arr = entry["hooks"].as_array_mut().unwrap();
@@ -178,12 +175,8 @@ pub fn merge_agent_hooks_file(
     file_path: &Path,
     engine_root: &Path,
 ) -> Result<(String, PathBuf), SlopError> {
-    crate::install::agent_hooks::merge_hooks(file_path, engine_root).map(|r| {
-        (
-            r.action.to_string(),
-            r.path,
-        )
-    })
+    crate::install::agent_hooks::merge_hooks(file_path, engine_root)
+        .map(|r| (r.action.to_string(), r.path))
 }
 
 /// Merge slopgate agent hooks into `.claude/settings.json`.
@@ -273,7 +266,10 @@ pub fn merge_settings_json(
 }
 
 pub fn format_suppressions_json() -> String {
-    format!("{}\n", serde_json::to_string_pretty(&json!({ "version": 1, "entries": [] })).unwrap())
+    format!(
+        "{}\n",
+        serde_json::to_string_pretty(&json!({ "version": 1, "entries": [] })).unwrap()
+    )
 }
 
 pub fn convention_sources_json(sources: &crate::init::detect_stack::ConventionSources) -> String {

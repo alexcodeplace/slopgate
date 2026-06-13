@@ -48,13 +48,7 @@ pub fn fingerprint_violation(v: &Violation, file_override: Option<&str>) -> Stri
 /// Staged renames as `{ newPath: oldPath }`. Fail-open: any git error → empty map.
 pub fn staged_renames(repo_root: &Path) -> HashMap<String, String> {
     let output = Command::new("git")
-        .args([
-            "diff",
-            "--cached",
-            "-M",
-            "--name-status",
-            "--diff-filter=R",
-        ])
+        .args(["diff", "--cached", "-M", "--name-status", "--diff-filter=R"])
         .current_dir(repo_root)
         .output();
 
@@ -175,7 +169,10 @@ pub fn write_baseline_raw(
     entries: &HashMap<String, BaselineEntry>,
     generated: &str,
 ) -> Result<usize, String> {
-    let sorted: BTreeMap<_, _> = entries.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+    let sorted: BTreeMap<_, _> = entries
+        .iter()
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
     let out = BaselineFile {
         version: 1,
         generated: generated.to_string(),
@@ -221,14 +218,38 @@ mod tests {
     fn violation_from_json(v: &serde_json::Value) -> Violation {
         Violation {
             id: v["id"].as_str().unwrap().to_string(),
-            severity: v.get("severity").and_then(|s| s.as_str()).unwrap_or("warn").to_string(),
-            category: v.get("category").and_then(|s| s.as_str()).unwrap_or("").to_string(),
+            severity: v
+                .get("severity")
+                .and_then(|s| s.as_str())
+                .unwrap_or("warn")
+                .to_string(),
+            category: v
+                .get("category")
+                .and_then(|s| s.as_str())
+                .unwrap_or("")
+                .to_string(),
             file: v["file"].as_str().unwrap().to_string(),
             line: v.get("line").and_then(|l| l.as_u64()).unwrap_or(1) as u32,
-            full_line: v.get("fullLine").and_then(|s| s.as_str()).unwrap_or("").to_string(),
-            text: v.get("text").and_then(|s| s.as_str()).unwrap_or("").to_string(),
-            resolution: v.get("resolution").and_then(|s| s.as_str()).unwrap_or("").to_string(),
-            engine: v.get("engine").and_then(|s| s.as_str()).unwrap_or("").to_string(),
+            full_line: v
+                .get("fullLine")
+                .and_then(|s| s.as_str())
+                .unwrap_or("")
+                .to_string(),
+            text: v
+                .get("text")
+                .and_then(|s| s.as_str())
+                .unwrap_or("")
+                .to_string(),
+            resolution: v
+                .get("resolution")
+                .and_then(|s| s.as_str())
+                .unwrap_or("")
+                .to_string(),
+            engine: v
+                .get("engine")
+                .and_then(|s| s.as_str())
+                .unwrap_or("")
+                .to_string(),
         }
     }
 
@@ -275,7 +296,11 @@ mod tests {
             },
         );
 
-        let result = filter_new(&[v_known.clone(), v_novel.clone()], &entries, &HashMap::new());
+        let result = filter_new(
+            &[v_known.clone(), v_novel.clone()],
+            &entries,
+            &HashMap::new(),
+        );
         assert_eq!(result.baselined_count, 1);
         assert_eq!(result.fresh.len(), 1);
         assert_eq!(result.fresh[0].id, "other-rule");

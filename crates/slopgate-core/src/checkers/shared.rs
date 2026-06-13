@@ -150,7 +150,11 @@ pub fn parse_checker_json(value: &Value, cfg: &CheckerMapConfig<'_>) -> Vec<Viol
 
     let mut out = Vec::new();
     for v in items {
-        let Some(file) = v.get("file").and_then(|f| f.as_str()).filter(|f| !f.is_empty()) else {
+        let Some(file) = v
+            .get("file")
+            .and_then(|f| f.as_str())
+            .filter(|f| !f.is_empty())
+        else {
             continue;
         };
         let raw_sev = v
@@ -160,19 +164,10 @@ pub fn parse_checker_json(value: &Value, cfg: &CheckerMapConfig<'_>) -> Vec<Viol
         let Some(severity) = map_passthrough(raw_sev) else {
             continue;
         };
-        let rule = v
-            .get("rule")
-            .and_then(|r| r.as_str())
-            .unwrap_or("unknown");
+        let rule = v.get("rule").and_then(|r| r.as_str()).unwrap_or("unknown");
         let line = v.get("line").and_then(|l| l.as_u64()).unwrap_or(1) as u32;
-        let snippet = v
-            .get("snippet")
-            .and_then(|s| s.as_str())
-            .unwrap_or("");
-        let text_src = v
-            .get("message")
-            .and_then(|m| m.as_str())
-            .unwrap_or(rule);
+        let snippet = v.get("snippet").and_then(|s| s.as_str()).unwrap_or("");
+        let text_src = v.get("message").and_then(|m| m.as_str()).unwrap_or(rule);
         let text = truncate_chars(text_src, 90);
 
         out.push(Violation {
@@ -262,14 +257,12 @@ where
 
     std::thread::scope(|scope| {
         for _ in 0..workers {
-            scope.spawn(|| {
-                loop {
-                    let i = next.fetch_add(1, Ordering::Relaxed);
-                    if i >= items.len() {
-                        break;
-                    }
-                    slots.lock().unwrap()[i] = Some(f(&items[i]));
+            scope.spawn(|| loop {
+                let i = next.fetch_add(1, Ordering::Relaxed);
+                if i >= items.len() {
+                    break;
                 }
+                slots.lock().unwrap()[i] = Some(f(&items[i]));
             });
         }
     });
@@ -399,14 +392,7 @@ mod tests {
     fn run_checker_json_missing_binary_graceful_error() {
         let dir = TempDir::new().unwrap();
         let missing = dir.path().join("no-such-checker");
-        let got = run_checker_json(
-            "leakscan",
-            &missing,
-            &[],
-            dir.path(),
-            None,
-            &LEAKSCAN_MAP,
-        );
+        let got = run_checker_json("leakscan", &missing, &[], dir.path(), None, &LEAKSCAN_MAP);
         assert!(got.violations.is_empty());
         assert_eq!(got.errors, vec!["no leakscan binary"]);
     }
@@ -436,7 +422,11 @@ mod tests {
             active_c.fetch_sub(1, Ordering::SeqCst);
             0
         });
-        assert!(peak.load(Ordering::SeqCst) <= 3, "peak concurrency was {}", peak.load(Ordering::SeqCst));
+        assert!(
+            peak.load(Ordering::SeqCst) <= 3,
+            "peak concurrency was {}",
+            peak.load(Ordering::SeqCst)
+        );
     }
 
     #[test]

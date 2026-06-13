@@ -50,10 +50,11 @@ pub fn resolve_session_in(
     repo_root: &str,
     model_override: Option<&str>,
 ) -> ResolvedSession {
-    if let Some(model) = model_override
-        .map(str::to_string)
-        .or_else(|| std::env::var("SLOPGATE_MODEL").ok().filter(|m| !m.is_empty()))
-    {
+    if let Some(model) = model_override.map(str::to_string).or_else(|| {
+        std::env::var("SLOPGATE_MODEL")
+            .ok()
+            .filter(|m| !m.is_empty())
+    }) {
         return ResolvedSession {
             model,
             session_id: None,
@@ -342,7 +343,11 @@ mod tests {
     #[test]
     fn resolve_session_in_uses_model_override() {
         let dir = TempDir::new().unwrap();
-        let session = resolve_session_in(dir.path(), dir.path().to_str().unwrap(), Some("claude-opus"));
+        let session = resolve_session_in(
+            dir.path(),
+            dir.path().to_str().unwrap(),
+            Some("claude-opus"),
+        );
         assert_eq!(
             session,
             ResolvedSession {
@@ -418,7 +423,10 @@ mod tests {
 
         for (row, v) in project_rows.iter().zip(violations.iter()) {
             assert!(row.get("ts").and_then(Value::as_str).is_some());
-            assert_eq!(row["project"], repo.path().file_name().unwrap().to_str().unwrap());
+            assert_eq!(
+                row["project"],
+                repo.path().file_name().unwrap().to_str().unwrap()
+            );
             assert_eq!(row["projectPath"], config.repo_root);
             assert_eq!(row["model"], "test-model");
             assert!(row["sessionId"].is_null());

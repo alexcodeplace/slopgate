@@ -58,10 +58,7 @@ pub fn churn_by_file(repo_root: &Path, since_days: u32) -> HashMap<String, u32> 
 /// coupling stats.
 pub fn commit_file_sets(repo_root: &Path, since_days: u32, max_files: usize) -> Vec<Vec<String>> {
     let since = format!("--since={since_days} days ago");
-    let raw = git(
-        repo_root,
-        &["log", &since, "--name-only", "--format=%H"],
-    );
+    let raw = git(repo_root, &["log", &since, "--name-only", "--format=%H"]);
     let mut sets: Vec<Vec<String>> = Vec::new();
     let mut cur_idx: Option<usize> = None;
     for line in raw.lines() {
@@ -107,7 +104,7 @@ pub fn author_shares(repo_root: &Path, since_days: u32, dir: &str) -> Vec<Author
             commits,
         })
         .collect();
-    shares.sort_by(|a, b| b.commits.cmp(&a.commits));
+    shares.sort_by_key(|s| std::cmp::Reverse(s.commits));
     shares
 }
 
@@ -289,12 +286,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let root = dir.path();
         init_repo(root);
-        write_commit(
-            root,
-            "baseline.json",
-            r#"{"entries":{"a":1}}"#,
-            "one entry",
-        );
+        write_commit(root, "baseline.json", r#"{"entries":{"a":1}}"#, "one entry");
         write_commit(
             root,
             "baseline.json",

@@ -5,8 +5,7 @@ use regex::Regex;
 use std::collections::{HashMap, HashSet};
 use std::sync::LazyLock;
 
-static FN_COUNT_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\bfunction\b|=>").unwrap());
+static FN_COUNT_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\bfunction\b|=>").unwrap());
 static DECL_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^(export\s+)?(const|let|var|function|async function|class|type|interface|enum)\b")
         .unwrap()
@@ -85,10 +84,7 @@ pub fn is_barrel(source: &str) -> bool {
         .lines()
         .map(str::trim)
         .filter(|l| {
-            !l.is_empty()
-                && !l.starts_with("//")
-                && !l.starts_with("/*")
-                && !l.starts_with('*')
+            !l.is_empty() && !l.starts_with("//") && !l.starts_with("/*") && !l.starts_with('*')
         })
         .collect();
     !sig.is_empty() && sig.iter().all(|l| BARREL_LINE_RE.is_match(l))
@@ -165,7 +161,12 @@ where
     let mut file_count: HashMap<String, usize> = HashMap::new();
     let mut pair_count: HashMap<String, usize> = HashMap::new();
     for set in file_sets {
-        let mut uniq: Vec<String> = set.iter().cloned().collect::<HashSet<_>>().into_iter().collect();
+        let mut uniq: Vec<String> = set
+            .iter()
+            .cloned()
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect();
         uniq.sort();
         for f in &uniq {
             *file_count.entry(f.clone()).or_insert(0) += 1;
@@ -188,7 +189,11 @@ where
         }
         let a = parts[0].to_string();
         let b = parts[1].to_string();
-        let min_count = file_count.get(&a).copied().unwrap_or(0).min(file_count.get(&b).copied().unwrap_or(0));
+        let min_count = file_count
+            .get(&a)
+            .copied()
+            .unwrap_or(0)
+            .min(file_count.get(&b).copied().unwrap_or(0));
         if min_count == 0 {
             continue;
         }
@@ -281,7 +286,9 @@ mod tests {
 
     #[test]
     fn is_barrel_detects_reexport_only() {
-        assert!(is_barrel("export * from './a';\nexport { b } from './b';\n"));
+        assert!(is_barrel(
+            "export * from './a';\nexport { b } from './b';\n"
+        ));
         assert!(!is_barrel("export function f(){}\n"));
     }
 
@@ -323,13 +330,17 @@ mod tests {
 
     #[test]
     fn co_change_pairs_keeps_cross_group_high_ratio_pairs() {
-        let file_sets: Vec<Vec<String>> =
-            vec![vec!["a.ts".into(), "b.ts".into()]; 10];
-        let pairs = co_change_pairs(&file_sets, |f| match f {
-            "a.ts" => Some("group1".into()),
-            "b.ts" => Some("group2".into()),
-            _ => None,
-        }, 5, 0.7);
+        let file_sets: Vec<Vec<String>> = vec![vec!["a.ts".into(), "b.ts".into()]; 10];
+        let pairs = co_change_pairs(
+            &file_sets,
+            |f| match f {
+                "a.ts" => Some("group1".into()),
+                "b.ts" => Some("group2".into()),
+                _ => None,
+            },
+            5,
+            0.7,
+        );
         assert_eq!(pairs.len(), 1);
         assert_eq!(pairs[0].shared, 10);
         assert!((pairs[0].ratio - 1.0).abs() < f64::EPSILON);
@@ -340,11 +351,16 @@ mod tests {
         let file_sets = vec![vec!["a.ts".into(), "b.ts".into()]];
         let same_group = co_change_pairs(&file_sets, |_| Some("g".into()), 1, 0.5);
         assert!(same_group.is_empty());
-        let low_shared = co_change_pairs(&file_sets, |f| match f {
-            "a.ts" => Some("g1".into()),
-            "b.ts" => Some("g2".into()),
-            _ => None,
-        }, 5, 0.7);
+        let low_shared = co_change_pairs(
+            &file_sets,
+            |f| match f {
+                "a.ts" => Some("g1".into()),
+                "b.ts" => Some("g2".into()),
+                _ => None,
+            },
+            5,
+            0.7,
+        );
         assert!(low_shared.is_empty());
     }
 }

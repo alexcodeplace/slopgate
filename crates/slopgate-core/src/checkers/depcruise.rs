@@ -61,12 +61,10 @@ pub fn depcruise_violations(parsed: &[DepcruiseParsed]) -> Vec<Violation> {
             file: v.from.clone(),
             line: 1,
             full_line: String::new(),
-            text: truncate_chars(
-                &format!("{} → {} violates {}", v.from, v.to, v.rule),
-                90,
-            ),
-            resolution: "Respect the dependency rule — restructure the import, do not relax the rule."
-                .into(),
+            text: truncate_chars(&format!("{} → {} violates {}", v.from, v.to, v.rule), 90),
+            resolution:
+                "Respect the dependency rule — restructure the import, do not relax the rule."
+                    .into(),
             engine: "checker:depcruise".into(),
         });
     }
@@ -87,10 +85,7 @@ fn rules_file(config: &ResolvedConfig, cfg: &Value) -> Option<PathBuf> {
     candidates.into_iter().find(|p| p.exists())
 }
 
-pub fn run_depcruise_json(
-    config: &ResolvedConfig,
-    cfg: &Value,
-) -> JsonToolResult {
+pub fn run_depcruise_json(config: &ResolvedConfig, cfg: &Value) -> JsonToolResult {
     let repo = Path::new(&config.repo_root);
     let Some(bin) = local_bin(repo, "depcruise") else {
         return JsonToolResult {
@@ -140,7 +135,11 @@ pub fn detect(config: &ResolvedConfig, cfg: &Value) -> DetectResult {
     }
 }
 
-pub fn run(config: &ResolvedConfig, cfg: &Value, _opts: crate::checkers::index::CheckerRunOpts<'_>) -> CheckerRunResult {
+pub fn run(
+    config: &ResolvedConfig,
+    cfg: &Value,
+    _opts: crate::checkers::index::CheckerRunOpts<'_>,
+) -> CheckerRunResult {
     let JsonToolResult { data, errors } = run_depcruise_json(config, cfg);
     let Some(data) = data else {
         return CheckerRunResult {

@@ -3,6 +3,7 @@
 use crate::checkers::index::{CheckerRunResult, DetectResult};
 use crate::checkers::shared::{run_json_tool, truncate_chars, JsonToolResult};
 use crate::config::ResolvedConfig;
+use crate::init::run::engine_root;
 use crate::report::Violation;
 use crate::severity::map_passthrough;
 use serde_json::Value;
@@ -19,6 +20,7 @@ fn resolve_bin(config: &ResolvedConfig, cfg: &Value) -> Option<PathBuf> {
             candidates.push(PathBuf::from(env_bin));
         }
     }
+    candidates.push(engine_root().join("bin/leakscan"));
     candidates.push(repo.join("tools/leakscan/target/release/leakscan"));
     candidates.push(repo.join("tools/leakscan/target/debug/leakscan"));
     candidates.into_iter().find(|p| p.exists())
@@ -32,10 +34,7 @@ fn config_file_args(config: &ResolvedConfig, cfg: &Value) -> Vec<String> {
         config_dir.join("leakscan.json")
     };
     if p.exists() {
-        vec![
-            "--config".into(),
-            p.to_string_lossy().into_owned(),
-        ]
+        vec!["--config".into(), p.to_string_lossy().into_owned()]
     } else {
         vec![]
     }
@@ -54,22 +53,17 @@ pub fn leakscan_violations(report: &Value) -> Vec<Violation> {
         let Some(severity) = map_passthrough(raw_sev) else {
             continue;
         };
-        let Some(file) = v.get("file").and_then(|f| f.as_str()).filter(|f| !f.is_empty()) else {
+        let Some(file) = v
+            .get("file")
+            .and_then(|f| f.as_str())
+            .filter(|f| !f.is_empty())
+        else {
             continue;
         };
-        let rule = v
-            .get("rule")
-            .and_then(|r| r.as_str())
-            .unwrap_or("unknown");
+        let rule = v.get("rule").and_then(|r| r.as_str()).unwrap_or("unknown");
         let line = v.get("line").and_then(|l| l.as_u64()).unwrap_or(1) as u32;
-        let snippet = v
-            .get("snippet")
-            .and_then(|s| s.as_str())
-            .unwrap_or("");
-        let text_src = v
-            .get("message")
-            .and_then(|m| m.as_str())
-            .unwrap_or(rule);
+        let snippet = v.get("snippet").and_then(|s| s.as_str()).unwrap_or("");
+        let text_src = v.get("message").and_then(|m| m.as_str()).unwrap_or(rule);
         out.push(Violation {
             id: format!("leakscan-{rule}"),
             severity: severity.to_string(),
@@ -100,7 +94,11 @@ pub fn detect(config: &ResolvedConfig, cfg: &Value) -> DetectResult {
     }
 }
 
-pub fn run(config: &ResolvedConfig, cfg: &Value, _opts: crate::checkers::index::CheckerRunOpts<'_>) -> CheckerRunResult {
+pub fn run(
+    config: &ResolvedConfig,
+    cfg: &Value,
+    _opts: crate::checkers::index::CheckerRunOpts<'_>,
+) -> CheckerRunResult {
     let repo = Path::new(&config.repo_root);
     let Some(bin) = resolve_bin(config, cfg) else {
         return CheckerRunResult {

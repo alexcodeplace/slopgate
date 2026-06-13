@@ -76,10 +76,7 @@ pub fn parse_tsc_config_errors(stdout: &str) -> Vec<String> {
     let re = regex::Regex::new(r"^error (TS\d+): (.*)$").unwrap();
     stdout
         .lines()
-        .filter_map(|raw| {
-            re.captures(raw)
-                .map(|c| format!("{}: {}", &c[1], &c[2]))
-        })
+        .filter_map(|raw| re.captures(raw).map(|c| format!("{}: {}", &c[1], &c[2])))
         .collect()
 }
 
@@ -105,7 +102,11 @@ pub fn detect(config: &ResolvedConfig, cfg: &Value) -> DetectResult {
     }
 }
 
-pub fn run(config: &ResolvedConfig, cfg: &Value, _opts: crate::checkers::index::CheckerRunOpts<'_>) -> CheckerRunResult {
+pub fn run(
+    config: &ResolvedConfig,
+    cfg: &Value,
+    _opts: crate::checkers::index::CheckerRunOpts<'_>,
+) -> CheckerRunResult {
     let repo = Path::new(&config.repo_root);
     let Some(resolved) = resolve_tsc_bin(repo) else {
         return CheckerRunResult {
@@ -127,9 +128,13 @@ pub fn run(config: &ResolvedConfig, cfg: &Value, _opts: crate::checkers::index::
         .and_then(|v| v.as_u64())
         .unwrap_or(120)
         .saturating_mul(1000);
-    let incremental = cfg.get("incremental").and_then(|v| v.as_bool()).unwrap_or(true);
+    let incremental = cfg
+        .get("incremental")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
 
     let cache_dir = ensure_cache_dir(Path::new(&config.config_dir)).ok();
+    let slug_re = regex::Regex::new(r"[^\w.-]+").unwrap();
 
     for rel in tsconfig_list(cfg) {
         let mut all_args: Vec<String> = vec![
@@ -141,9 +146,7 @@ pub fn run(config: &ResolvedConfig, cfg: &Value, _opts: crate::checkers::index::
         ];
         if incremental {
             if let Some(ref cache) = cache_dir {
-                let slug = regex::Regex::new(r"[^\w.-]+")
-                    .unwrap()
-                    .replace_all(&rel, "_");
+                let slug = slug_re.replace_all(&rel, "_");
                 let tsbuildinfo = cache.join(format!("tsc-{slug}.tsbuildinfo"));
                 all_args.push("--incremental".into());
                 all_args.push("--tsBuildInfoFile".into());
@@ -177,10 +180,7 @@ pub fn run(config: &ResolvedConfig, cfg: &Value, _opts: crate::checkers::index::
         }
     }
 
-    CheckerRunResult {
-        violations,
-        errors,
-    }
+    CheckerRunResult { violations, errors }
 }
 
 #[cfg(test)]
@@ -210,7 +210,10 @@ mod tests {
     #[test]
     fn parse_tsc_config_errors_finds_fileless_errors() {
         let out = parse_tsc_config_errors("error TS5023: Unknown compiler option 'foo'.\n");
-        assert_eq!(out, vec!["TS5023: Unknown compiler option 'foo'.".to_string()]);
+        assert_eq!(
+            out,
+            vec!["TS5023: Unknown compiler option 'foo'.".to_string()]
+        );
     }
 
     #[test]
@@ -242,5 +245,4 @@ mod tests {
         assert!(!det.available);
         assert_eq!(det.reason.as_deref(), Some("no tsconfig.json"));
     }
-
 }

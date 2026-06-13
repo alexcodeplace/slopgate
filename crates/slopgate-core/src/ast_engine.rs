@@ -93,7 +93,7 @@ pub fn parse_ast_grep_json(matches: &Value) -> AstGrepParseResult {
             .to_string();
 
         let meta = match obj.get("note").and_then(|n| n.as_str()).unwrap_or("{}") {
-            note if note.is_empty() => Value::Object(serde_json::Map::new()),
+            "" => Value::Object(serde_json::Map::new()),
             note => match serde_json::from_str::<Value>(note) {
                 Ok(v) => v,
                 Err(_) => {
@@ -464,14 +464,20 @@ mod tests {
         let got = parse_ast_grep_json(&json);
         assert_eq!(got.violations.len(), 1);
         assert_eq!(got.violations[0].id, "bad-note");
-        assert!(got.errors.iter().any(|e| e.contains("bad-note") && e.contains("note")));
+        assert!(got
+            .errors
+            .iter()
+            .any(|e| e.contains("bad-note") && e.contains("note")));
     }
 
     #[test]
     fn parse_ast_grep_json_non_array_reports_error() {
         let got = parse_ast_grep_json(&json!({ "oops": true }));
         assert!(got.violations.is_empty());
-        assert_eq!(got.errors, vec!["ast-grep output was not an array".to_string()]);
+        assert_eq!(
+            got.errors,
+            vec!["ast-grep output was not an array".to_string()]
+        );
     }
 
     #[test]
@@ -485,7 +491,11 @@ mod tests {
             exts: Default::default(),
             skip_dirs: Default::default(),
             patterns: vec![],
-            ast_rule_dirs: vec![dir.path().join("missing-ast-rules").to_string_lossy().into_owned()],
+            ast_rule_dirs: vec![dir
+                .path()
+                .join("missing-ast-rules")
+                .to_string_lossy()
+                .into_owned()],
             checkers: Default::default(),
             ast_disable: Default::default(),
             baseline_path: String::new(),

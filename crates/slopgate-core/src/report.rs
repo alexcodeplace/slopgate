@@ -51,7 +51,7 @@ pub fn render_gate_report(violations: &[Violation], mode: &str, baselined: u32) 
     };
 
     let mut out = String::new();
-    out.push_str("\n");
+    out.push('\n');
     out.push_str(B);
     out.push_str(R);
     out.push_str("╔═ SLOPGATE ═════════════════════════════════════════╗");
@@ -61,7 +61,7 @@ pub fn render_gate_report(violations: &[Violation], mode: &str, baselined: u32) 
     out.push_str(R);
     out.push_str("║ ");
     out.push_str(title);
-    out.push_str("║");
+    out.push('║');
     out.push_str(Z);
     out.push('\n');
     out.push_str(B);
@@ -216,16 +216,14 @@ mod tests {
             "\x1b[1m\x1b[31m╔═ SLOPGATE ═════════════════════════════════════════╗\x1b[0m\n",
             "\x1b[1m\x1b[31m║ SLOPGATE — VIOLATIONS IN EDITED FILE               ║\x1b[0m\n",
         )));
-        assert!(s.contains(concat!("\x1b[1m\x1b[33m[HIGH]\x1b[0m \x1b[1mx\x1b[0m")));
+        assert!(s.contains("\x1b[1m\x1b[33m[HIGH]\x1b[0m \x1b[1mx\x1b[0m"));
         assert!(s.contains("Fix now while context is hot."));
     }
 
     #[test]
     fn baselined_footer_present_when_nonzero() {
         let s = render_gate_report(&[v("x", "f", 1, "high")], "staged", 3);
-        assert!(s.contains(concat!(
-            "\x1b[2m3 pre-existing (baselined) violation(s) ignored.\x1b[0m\n"
-        )));
+        assert!(s.contains("\x1b[2m3 pre-existing (baselined) violation(s) ignored.\x1b[0m\n"));
     }
 
     #[test]

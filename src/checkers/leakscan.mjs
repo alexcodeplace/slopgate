@@ -6,6 +6,7 @@
  *  pattern can't reach. Rules/severity live in the binary; this only marshals. */
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { runJsonTool } from './shared.mjs';
 
 const SEVERITY_MAP = { critical: 'critical', high: 'high', medium: 'medium' }; // pass-through; unknown → dropped
@@ -15,6 +16,7 @@ function resolveBin(config, cfg) {
   const candidates = [
     cfg.bin ? join(config.repoRoot, cfg.bin) : null,
     process.env.LEAKSCAN_BIN || null,
+    fileURLToPath(new URL('../../bin/leakscan', import.meta.url)),
     join(config.repoRoot, 'tools/leakscan/target/release/leakscan'),
     join(config.repoRoot, 'tools/leakscan/target/debug/leakscan'),
   ].filter(Boolean);

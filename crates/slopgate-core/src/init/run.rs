@@ -76,12 +76,7 @@ pub fn run_init(dir: &str) -> i32 {
 }
 
 /// Testable init entry with explicit writers (JS `options.quiet` supported).
-pub fn run_init_io(
-    dir: &str,
-    quiet: bool,
-    stdout: &mut dyn Write,
-    stderr: &mut dyn Write,
-) -> i32 {
+pub fn run_init_io(dir: &str, quiet: bool, stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
     let home = home_dir();
     run_init_io_with_home(dir, quiet, stdout, stderr, &home)
 }
@@ -127,8 +122,12 @@ fn run_init_inner(
     let checkers = detect_checkers(target_dir);
 
     if !config_exists {
-        fs::create_dir_all(base.join("fixtures/src"))
-            .map_err(|e| SlopError::Io(format!("mkdir {}: {e}", base.join("fixtures/src").display())))?;
+        fs::create_dir_all(base.join("fixtures/src")).map_err(|e| {
+            SlopError::Io(format!(
+                "mkdir {}: {e}",
+                base.join("fixtures/src").display()
+            ))
+        })?;
         let detected = DetectedConfig {
             roots: roots.clone(),
             exts: exts.clone(),
@@ -148,10 +147,7 @@ fn run_init_inner(
     }
 
     let engine = engine_root();
-    let engine_invocation = engine
-        .join("bin/slopgate")
-        .to_string_lossy()
-        .into_owned();
+    let engine_invocation = engine.join("bin/slopgate").to_string_lossy().into_owned();
     let node_path = resolve_node_path();
 
     let hook_action = match install_pre_commit_hook(target_dir, &engine_invocation, &node_path) {
@@ -190,8 +186,16 @@ fn run_init_inner(
             );
         }
         let _ = writeln!(stdout, "\n--- slopgate init summary ---");
-        let _ = writeln!(stdout, "roots:     {}", serde_json::to_string(&roots).unwrap());
-        let _ = writeln!(stdout, "exts:      {}", serde_json::to_string(&exts).unwrap());
+        let _ = writeln!(
+            stdout,
+            "roots:     {}",
+            serde_json::to_string(&roots).unwrap()
+        );
+        let _ = writeln!(
+            stdout,
+            "exts:      {}",
+            serde_json::to_string(&exts).unwrap()
+        );
         let _ = writeln!(
             stdout,
             "skipDirs:  {}",
@@ -258,12 +262,7 @@ mod tests {
     fn capture_init(dir: &Path) -> (i32, String, String) {
         let mut stdout = Cursor::new(Vec::new());
         let mut stderr = Cursor::new(Vec::new());
-        let code = run_init_io(
-            dir.to_str().unwrap(),
-            false,
-            &mut stdout,
-            &mut stderr,
-        );
+        let code = run_init_io(dir.to_str().unwrap(), false, &mut stdout, &mut stderr);
         (
             code,
             String::from_utf8(stdout.into_inner()).unwrap(),

@@ -66,11 +66,9 @@ fn asciiize_shorthands(pattern: &str) -> String {
                     start += 1;
                 }
                 class_literal_close = Some(start);
-            } else if ch == ']' && in_class {
-                if class_literal_close != Some(i) {
-                    in_class = false;
-                    class_literal_close = None;
-                }
+            } else if ch == ']' && in_class && class_literal_close != Some(i) {
+                in_class = false;
+                class_literal_close = None;
             }
         }
         out.push(ch);
@@ -146,10 +144,7 @@ fn translate_js_unicode_escapes(pattern: &str) -> String {
 
 /// Compile a rule regex for line-by-line scanning (never stateful). Never panics.
 pub fn compile_line_regex(pattern: &str, flags: &str) -> Result<Regex, String> {
-    let safe: String = flags
-        .chars()
-        .filter(|c| *c != 'g' && *c != 'y')
-        .collect();
+    let safe: String = flags.chars().filter(|c| *c != 'g' && *c != 'y').collect();
     let mut body = translate_js_unicode_escapes(pattern);
     let unicode = safe.contains('u');
     if !unicode {
@@ -287,10 +282,7 @@ mod tests {
     }
 
     fn cfg_path() -> String {
-        format!(
-            "{}/tests/fixtures/config.toml",
-            env!("CARGO_MANIFEST_DIR")
-        )
+        format!("{}/tests/fixtures/config.toml", env!("CARGO_MANIFEST_DIR"))
     }
 
     #[test]
@@ -352,16 +344,12 @@ mod tests {
             let pattern = entry["pattern"].as_str().unwrap();
             let flags = entry["flags"].as_str().unwrap_or("");
             let id = entry["id"].as_str().unwrap();
-            let re = compile_line_regex(pattern, flags)
-                .unwrap_or_else(|e| panic!("compile {id}: {e}"));
+            let re =
+                compile_line_regex(pattern, flags).unwrap_or_else(|e| panic!("compile {id}: {e}"));
             for case in entry["cases"].as_array().unwrap() {
                 let line = case["line"].as_str().unwrap();
                 let expect = case["match"].as_bool().unwrap();
-                assert_eq!(
-                    regex_matches(&re, line),
-                    expect,
-                    "id={id} line={line:?}"
-                );
+                assert_eq!(regex_matches(&re, line), expect, "id={id} line={line:?}");
             }
         }
     }
@@ -373,10 +361,7 @@ mod tests {
         fs::create_dir_all(root.join("src")).unwrap();
         fs::write(root.join("src/bad.ts"), "const x = foo as any;\n").unwrap();
 
-        let config = resolve_config_str_with_root(
-            root,
-            &fs::read_to_string(cfg_path()).unwrap(),
-        );
+        let config = resolve_config_str_with_root(root, &fs::read_to_string(cfg_path()).unwrap());
 
         let files = vec!["src/bad.ts".to_string()];
         let violations = scan_regex(&config, &files, false);
@@ -427,7 +412,10 @@ staged = ["critical"]
 
         let files = vec!["src/a.ts".to_string()];
         let violations = scan_regex(&config, &files, true);
-        assert!(violations.is_empty(), "min_files>1 must be skipped in file_mode");
+        assert!(
+            violations.is_empty(),
+            "min_files>1 must be skipped in file_mode"
+        );
     }
 
     #[test]
@@ -478,15 +466,9 @@ staged = ["high"]
         fs::create_dir_all(root.join("src")).unwrap();
         fs::write(root.join("src/ok.ts"), "const x = foo as any;\n").unwrap();
 
-        let config = resolve_config_str_with_root(
-            root,
-            &fs::read_to_string(cfg_path()).unwrap(),
-        );
+        let config = resolve_config_str_with_root(root, &fs::read_to_string(cfg_path()).unwrap());
 
-        let files = vec![
-            "src/missing.ts".to_string(),
-            "src/ok.ts".to_string(),
-        ];
+        let files = vec!["src/missing.ts".to_string(), "src/ok.ts".to_string()];
         let violations = scan_regex(&config, &files, false);
         assert_eq!(violations.len(), 1);
         assert_eq!(violations[0].file, "src/ok.ts");

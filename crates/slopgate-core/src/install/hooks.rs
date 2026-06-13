@@ -308,7 +308,12 @@ mod tests {
                 .current_dir(dir)
                 .status()
                 .expect("spawn git");
-            assert!(status.success(), "git {:?} failed in {}", args, dir.display());
+            assert!(
+                status.success(),
+                "git {:?} failed in {}",
+                args,
+                dir.display()
+            );
         };
         run(&["init", "-b", "main"]);
         run(&["config", "user.email", "hooks@test.local"]);
@@ -331,11 +336,7 @@ mod tests {
         let custom = dir.path().join("custom-hooks");
         fs::create_dir_all(&custom).unwrap();
         Command::new("git")
-            .args([
-                "config",
-                "core.hooksPath",
-                custom.to_str().unwrap(),
-            ])
+            .args(["config", "core.hooksPath", custom.to_str().unwrap()])
             .current_dir(dir.path())
             .status()
             .unwrap();

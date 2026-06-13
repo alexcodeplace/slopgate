@@ -36,7 +36,10 @@ mod tests {
 
     #[test]
     fn glob_matches_js_oracle() {
-        let p = format!("{}/tests/parity_vectors/glob.json", env!("CARGO_MANIFEST_DIR"));
+        let p = format!(
+            "{}/tests/parity_vectors/glob.json",
+            env!("CARGO_MANIFEST_DIR")
+        );
         let cases: Value = serde_json::from_str(&std::fs::read_to_string(p).unwrap()).unwrap();
         for c in cases.as_array().unwrap() {
             let g = c["glob"].as_str().unwrap();

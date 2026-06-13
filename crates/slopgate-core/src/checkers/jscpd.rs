@@ -93,22 +93,18 @@ pub fn clone_violations(
     staged_files: Option<&[String]>,
     repo_root: Option<&Path>,
 ) -> Vec<Violation> {
-    let staged: Option<HashSet<&str>> = staged_files.map(|fs| fs.iter().map(String::as_str).collect());
+    let staged: Option<HashSet<&str>> =
+        staged_files.map(|fs| fs.iter().map(String::as_str).collect());
     let mut out = Vec::new();
     for c in clones {
-        let (mine, other, line) = if staged.is_none() {
+        let staged_set = staged.as_ref();
+        let (mine, other, line) = if staged_set.is_none_or(|s| s.contains(c.first_file.as_str())) {
             (
                 c.first_file.as_str(),
                 format!("{}:{}-{}", c.second_file, c.second_start, c.second_end),
                 c.first_start,
             )
-        } else if staged.as_ref().unwrap().contains(c.first_file.as_str()) {
-            (
-                c.first_file.as_str(),
-                format!("{}:{}-{}", c.second_file, c.second_start, c.second_end),
-                c.first_start,
-            )
-        } else if staged.as_ref().unwrap().contains(c.second_file.as_str()) {
+        } else if staged_set.is_some_and(|s| s.contains(c.second_file.as_str())) {
             (
                 c.second_file.as_str(),
                 format!("{}:{}-{}", c.first_file, c.first_start, c.first_end),

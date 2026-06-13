@@ -1,5 +1,5 @@
 // src/cli.mjs
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolveConfig } from './config.mjs';
 import { runGate, snapshotViolations } from './gate.mjs';
 import { runSelfTest } from './selftest.mjs';
@@ -17,6 +17,18 @@ import { HELP_TEXT } from './help.mjs';
 const args = process.argv.slice(2);
 const has = (f) => args.includes(f);
 const valOf = (f) => { const i = args.indexOf(f); return i === -1 ? null : args[i + 1]; };
+const PACKAGE_VERSION = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
+const VALUE_FLAGS = new Set(['--config', '--file', '--tier', '--by', '--since', '--since-days', '--agent']);
+const command = () => {
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i];
+    if (VALUE_FLAGS.has(arg)) { i += 1; continue; }
+    if (arg.startsWith('-')) continue;
+    return arg;
+  }
+  return null;
+};
+const cmd = command();
 
 async function requireConfig() {
   const configPath = valOf('--config');
@@ -25,17 +37,22 @@ async function requireConfig() {
 }
 
 async function main() {
-  if (args.length === 0 || has('--help') || has('-h') || args[0] === 'help') {
+  if (args.length === 0 || has('--help') || has('-h') || cmd === 'help') {
     process.stdout.write(HELP_TEXT + '\n');
     process.exit(0);
   }
 
-  if (has('init')) {
+  if (has('--version')) {
+    process.stdout.write(`slopgate ${PACKAGE_VERSION}\n`);
+    process.exit(0);
+  }
+
+  if (cmd === 'init') {
     const dir = valOf('init') || process.cwd();
     process.exit(runInit(dir));
   }
 
-  if (has('stats')) {
+  if (cmd === 'stats') {
     const byPresent = has('--by');
     const byFlag = valOf('--by');
     const since = valOf('--since') ?? undefined;
@@ -56,14 +73,14 @@ async function main() {
     process.exit(0);
   }
 
-  if (has('install-hooks')) {
+  if (cmd === 'install-hooks') {
     const config = await requireConfig();
     const { action, path } = installPreCommitHook(config.repoRoot);
     process.stdout.write(`slopgate: pre-commit hook ${action} (${path})\n`);
     process.exit(0);
   }
 
-  if (has('agent-hooks')) {
+  if (cmd === 'agent-hooks') {
     const sub = args[args.indexOf('agent-hooks') + 1];
     const validSubs = ['install', 'reinstall', 'remove', 'status'];
     const rawAgent = valOf('--agent');
@@ -117,7 +134,7 @@ async function main() {
     process.exit(2);
   }
 
-  if (has('install-skills')) {
+  if (cmd === 'install-skills') {
     const force = has('--force');
     const results = installSkills({ force });
     for (const r of results) process.stdout.write(`slopgate: skill ${r.name} — ${r.action}\n`);
@@ -125,7 +142,7 @@ async function main() {
     process.exit(0);
   }
 
-  if (has('audit')) {
+  if (cmd === 'audit') {
     const config = await requireConfig();
     const sinceDays = Number(valOf('--since-days') ?? 90);
     if (!Number.isFinite(sinceDays) || sinceDays <= 0) {
@@ -136,7 +153,7 @@ async function main() {
     process.exit(0);
   }
 
-  if (has('baseline')) {
+  if (cmd === 'baseline') {
     const config = await requireConfig();
     const exists = existsSync(config.baselinePath);
 

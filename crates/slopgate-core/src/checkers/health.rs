@@ -35,11 +35,19 @@ struct CheckerHealthEntry {
     consecutive_failures: u32,
     #[serde(rename = "lastOk", default, skip_serializing_if = "Option::is_none")]
     last_ok: Option<String>,
-    #[serde(rename = "lastFailure", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "lastFailure",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     last_failure: Option<String>,
     #[serde(rename = "lastError", default, skip_serializing_if = "Option::is_none")]
     last_error: Option<String>,
-    #[serde(rename = "lastDurationSeconds", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "lastDurationSeconds",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     last_duration_seconds: Option<f64>,
 }
 
@@ -51,11 +59,7 @@ struct HealthFile {
 
 /// Read JSON state, increment consecutive infra failures, escalate at threshold,
 /// reset on success, write back. Never panics; write failures are fail-open.
-pub fn update_checker_health(
-    path: &Path,
-    outcomes: &[CheckerOutcome],
-    now: &str,
-) -> Vec<String> {
+pub fn update_checker_health(path: &Path, outcomes: &[CheckerOutcome], now: &str) -> Vec<String> {
     let mut state = load_health_state(path);
     let mut warnings = Vec::new();
 

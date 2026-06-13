@@ -2,13 +2,13 @@
 
 use crate::ast_engine::{run_ast_grep_scan, AstGrepScanOpts};
 use crate::checkers::depcruise::parse_depcruise_output;
+use crate::checkers::depcruise::DepcruiseParsed;
 use crate::checkers::jscpd::parse_jscpd_report;
+use crate::checkers::jscpd::JscpdClone;
 use crate::checkers::knip::parse_knip_output;
+use crate::checkers::knip::KnipFinding;
 use crate::checkers::tsc::{parse_tsc_output, TscError};
 use crate::checkers::type_coverage::{parse_type_coverage_output, TypeCoverageEntry};
-use crate::checkers::depcruise::DepcruiseParsed;
-use crate::checkers::knip::KnipFinding;
-use crate::checkers::jscpd::JscpdClone;
 use crate::config::ResolvedConfig;
 use crate::regex_engine::compile_line_regex;
 use serde_json::{json, Value};
@@ -181,8 +181,7 @@ const PARSER_FIXTURES: &[ParserFixture<'_>] = &[
 
 fn extract_ast_rule_id(yml_text: &str) -> Option<String> {
     let re = regex::Regex::new(r"(?m)^id:\s*(\S+)").ok()?;
-    re.captures(yml_text)
-        .map(|c| c[1].to_string())
+    re.captures(yml_text).map(|c| c[1].to_string())
 }
 
 /// Run engine self-test against canaries and fixtures. Mirrors `runSelfTest`. Never panics.
@@ -191,7 +190,10 @@ pub fn run_self_test(config: &ResolvedConfig) -> i32 {
 
     for p in &config.patterns {
         let Some(canary) = &p.canary else {
-            eprint(&format!("WARN {}: no canary — cannot prove rule still fires", p.id));
+            eprint(&format!(
+                "WARN {}: no canary — cannot prove rule still fires",
+                p.id
+            ));
             continue;
         };
         let flags = p.flags.as_deref().unwrap_or("");
@@ -469,17 +471,12 @@ mod tests {
             .iter()
             .map(|r| repo.join(r).to_string_lossy().into_owned())
             .collect();
-        let mut ast_rule_dirs = vec![
-            repo.join("rules/baseline/ast")
-                .to_string_lossy()
-                .into_owned(),
-        ];
+        let mut ast_rule_dirs = vec![repo
+            .join("rules/baseline/ast")
+            .to_string_lossy()
+            .into_owned()];
         if repo.join("rules/ux/ast").is_dir() {
-            ast_rule_dirs.push(
-                repo.join("rules/ux/ast")
-                    .to_string_lossy()
-                    .into_owned(),
-            );
+            ast_rule_dirs.push(repo.join("rules/ux/ast").to_string_lossy().into_owned());
         }
 
         ResolvedConfig {
@@ -493,16 +490,18 @@ mod tests {
             ast_rule_dirs,
             checkers: BTreeMap::new(),
             ast_disable: HashSet::new(),
-            baseline_path: repo.join(".slopgate/baseline.json").to_string_lossy().into_owned(),
+            baseline_path: repo
+                .join(".slopgate/baseline.json")
+                .to_string_lossy()
+                .into_owned(),
             suppressions_path: repo
                 .join("rules/baseline/fixtures/suppressions.json")
                 .to_string_lossy()
                 .into_owned(),
-            fixtures_dirs: vec![
-                repo.join("rules/baseline/fixtures")
-                    .to_string_lossy()
-                    .into_owned(),
-            ],
+            fixtures_dirs: vec![repo
+                .join("rules/baseline/fixtures")
+                .to_string_lossy()
+                .into_owned()],
             checker_concurrency: 3,
             gate: GateAllow {
                 file: ["critical", "high"].iter().map(|s| s.to_string()).collect(),

@@ -76,7 +76,12 @@ fn mode_str(mode: Mode) -> &'static str {
 fn enumerate_ctx(config: &ResolvedConfig) -> EnumerateCtx {
     EnumerateCtx {
         repo_root: Path::new(&config.repo_root).to_path_buf(),
-        roots: config.roots.iter().map(Path::new).map(Path::to_path_buf).collect(),
+        roots: config
+            .roots
+            .iter()
+            .map(Path::new)
+            .map(Path::to_path_buf)
+            .collect(),
         roots_rel: config.roots_rel.clone(),
         exts: config.exts.clone(),
         skip_dirs: config.skip_dirs.clone(),
@@ -140,10 +145,7 @@ pub fn collect_violations(
     let ctx = enumerate_ctx(config);
     let files = match mode {
         Mode::Staged => list_source_files(&ctx, EnumerateMode::Staged),
-        Mode::File => list_source_files(
-            &ctx,
-            EnumerateMode::File(file_target.unwrap_or("")),
-        ),
+        Mode::File => list_source_files(&ctx, EnumerateMode::File(file_target.unwrap_or(""))),
         Mode::Full => list_source_files(&ctx, EnumerateMode::Walk),
     };
 
@@ -214,38 +216,39 @@ pub fn collect_violations(
 
         let started = Instant::now();
         let mode_label = mode_str(mode);
-        let results: Vec<CheckerRunItemResult> = map_limit(&eligible, config.checker_concurrency as usize, |item| {
-            let t0 = Instant::now();
-            let res = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                (item.checker.run)(
-                    config,
-                    item.cfg,
-                    crate::checkers::index::CheckerRunOpts {
-                        files: if mode == Mode::Full {
-                            None
-                        } else {
-                            Some(&files)
+        let results: Vec<CheckerRunItemResult> =
+            map_limit(&eligible, config.checker_concurrency as usize, |item| {
+                let t0 = Instant::now();
+                let res = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    (item.checker.run)(
+                        config,
+                        item.cfg,
+                        crate::checkers::index::CheckerRunOpts {
+                            files: if mode == Mode::Full {
+                                None
+                            } else {
+                                Some(&files)
+                            },
+                            mode: mode_label,
                         },
-                        mode: mode_label,
-                    },
-                )
-            })) {
-                Ok(res) => res,
-                Err(payload) => {
-                    let msg = panic_payload_str(payload);
-                    crate::checkers::index::CheckerRunResult {
-                        violations: vec![],
-                        errors: vec![format!("{} crashed: {msg}", item.checker.id)],
+                    )
+                })) {
+                    Ok(res) => res,
+                    Err(payload) => {
+                        let msg = panic_payload_str(payload);
+                        crate::checkers::index::CheckerRunResult {
+                            violations: vec![],
+                            errors: vec![format!("{} crashed: {msg}", item.checker.id)],
+                        }
                     }
+                };
+                let seconds = t0.elapsed().as_secs_f64();
+                CheckerRunItemResult {
+                    id: item.checker.id.to_string(),
+                    res,
+                    seconds,
                 }
-            };
-            let seconds = t0.elapsed().as_secs_f64();
-            CheckerRunItemResult {
-                id: item.checker.id.to_string(),
-                res,
-                seconds,
-            }
-        });
+            });
         let elapsed = started.elapsed().as_secs_f64();
         if elapsed > 30.0 {
             notices.push(format!(
@@ -261,12 +264,7 @@ pub fn collect_violations(
             outcomes.push(CheckerOutcome {
                 id: item.id.clone(),
                 infra_failed: item.res.errors.iter().any(|e| is_infra_error(e)),
-                detail: item
-                    .res
-                    .errors
-                    .iter()
-                    .find(|e| is_infra_error(e))
-                    .cloned(),
+                detail: item.res.errors.iter().find(|e| is_infra_error(e)).cloned(),
                 seconds: Some(item.seconds),
             });
             for v in item.res.violations {
@@ -314,16 +312,11 @@ pub fn apply_gate_filters(
 
     let sup = load_suppressions(Path::new(&config.suppressions_path));
     if let Some(err) = &sup.error {
-        let msg = format!(
-            "suppressions.json malformed ({err}) — treating as EMPTY"
-        );
+        let msg = format!("suppressions.json malformed ({err}) — treating as EMPTY");
         if let Some(stderr) = stderr {
             stderr.warning(&msg);
         } else {
-            let _ = writeln!(
-                std::io::stderr(),
-                "⚠ SLOPGATE: {msg}"
-            );
+            let _ = writeln!(std::io::stderr(), "⚠ SLOPGATE: {msg}");
         }
     }
 
@@ -441,8 +434,10 @@ pub fn run_gate_with_stderr(
 
 /// Full-repo commit-tier snapshot, filtered like the gate (severity + suppressions).
 pub fn snapshot_violations(config: &ResolvedConfig) -> Vec<Violation> {
-    let CollectResult { violations, notices } =
-        collect_violations(Mode::Full, config, Tier::Commit, None);
+    let CollectResult {
+        violations,
+        notices,
+    } = collect_violations(Mode::Full, config, Tier::Commit, None);
     for n in notices {
         let _ = writeln!(std::io::stderr(), "⚠ SLOPGATE: {n}");
     }
@@ -495,9 +490,7 @@ mod tests {
         F: FnOnce(&mut GateStderr<'_>) -> GateResult,
     {
         let mut buf = Cursor::new(Vec::new());
-        let mut gate_stderr = GateStderr {
-            writer: &mut buf,
-        };
+        let mut gate_stderr = GateStderr { writer: &mut buf };
         let result = f(&mut gate_stderr);
         let stderr = String::from_utf8(buf.into_inner()).unwrap();
         (result, stderr)
@@ -561,12 +554,7 @@ mod tests {
         });
         fs::write(root.join("src/marked.ts"), "const INFO_MARKER = 1;\n").unwrap();
 
-        let collected = collect_violations(
-            Mode::File,
-            &config,
-            Tier::Fast,
-            Some("src/marked.ts"),
-        );
+        let collected = collect_violations(Mode::File, &config, Tier::Fast, Some("src/marked.ts"));
         assert!(collected.violations.iter().any(|v| v.id == "info-rule"));
 
         let filtered = apply_gate_filters_simple(collected.violations, &config, Mode::File);
@@ -608,12 +596,7 @@ mod tests {
         let line = "const x = foo as any;\n";
         fs::write(root.join("src/bad.ts"), line).unwrap();
 
-        let collected = collect_violations(
-            Mode::File,
-            &config,
-            Tier::Fast,
-            Some("src/bad.ts"),
-        );
+        let collected = collect_violations(Mode::File, &config, Tier::Fast, Some("src/bad.ts"));
         write_baseline(
             Path::new(&config.baseline_path),
             &collected.violations,
@@ -664,9 +647,7 @@ mod tests {
         fs::write(root.join("src/bad.ts"), "const x = foo as any;\n").unwrap();
 
         let mut buf = Cursor::new(Vec::new());
-        let mut gate_stderr = GateStderr {
-            writer: &mut buf,
-        };
+        let mut gate_stderr = GateStderr { writer: &mut buf };
         let filtered = apply_gate_filters(
             collect_violations(Mode::File, &config, Tier::Fast, Some("src/bad.ts")).violations,
             &config,
@@ -687,7 +668,10 @@ mod tests {
         fs::write(root.join("src/bad.ts"), "const x = foo as any;\n").unwrap();
 
         let snap = snapshot_violations(&config);
-        assert!(snap.is_empty(), "high-severity as-any should be filtered by critical-only staged gate");
+        assert!(
+            snap.is_empty(),
+            "high-severity as-any should be filtered by critical-only staged gate"
+        );
     }
 
     #[test]

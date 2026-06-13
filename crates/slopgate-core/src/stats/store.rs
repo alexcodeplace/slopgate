@@ -35,10 +35,7 @@ pub fn append_row(path: &Path, obj: &Value) -> std::io::Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    let mut file = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(path)?;
+    let mut file = OpenOptions::new().create(true).append(true).open(path)?;
     let line = serde_json::to_string(obj).map_err(std::io::Error::other)? + "\n";
     file.write_all(line.as_bytes())?;
     Ok(())
@@ -94,10 +91,7 @@ mod tests {
         let cfg = TestConfig {
             config_dir: dir.path().join(".slopgate"),
         };
-        assert_eq!(
-            project_stats_path(&cfg),
-            cfg.config_dir.join("stats.jsonl")
-        );
+        assert_eq!(project_stats_path(&cfg), cfg.config_dir.join("stats.jsonl"));
     }
 
     #[test]
@@ -148,7 +142,7 @@ mod tests {
     fn read_rows_corrupt_unreadable_file_returns_empty() {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("stats.jsonl");
-        fs::write(&path, &[0xff, 0xfe, 0xfd]).unwrap();
+        fs::write(&path, [0xff, 0xfe, 0xfd]).unwrap();
 
         assert_eq!(read_rows(&path), Vec::<Value>::new());
     }

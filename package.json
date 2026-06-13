@@ -12,8 +12,7 @@
   "files": [
     "bin", "src", "hooks", "rules", "skills",
     "!**/*.test.mjs",
-    "!rules/baseline/fixtures",
-    "!rules/baseline/selftest.config.mjs"
+    "!rules/baseline/fixtures"
   ],
   "engines": { "node": ">=18" },
   "scripts": {

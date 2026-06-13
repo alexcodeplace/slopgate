@@ -78,12 +78,20 @@ fn main() -> ExitCode {
             Ok(s) => match serde_json::from_str::<RawConfig>(&s) {
                 Ok(c) => Some(c),
                 Err(e) => {
-                    print_report(Report { violations: vec![], scanned: 0, errors: vec![format!("config parse {p}: {e}")] });
+                    print_report(Report {
+                        violations: vec![],
+                        scanned: 0,
+                        errors: vec![format!("config parse {p}: {e}")],
+                    });
                     return ExitCode::SUCCESS;
                 }
             },
             Err(e) => {
-                print_report(Report { violations: vec![], scanned: 0, errors: vec![format!("config read {p}: {e}")] });
+                print_report(Report {
+                    violations: vec![],
+                    scanned: 0,
+                    errors: vec![format!("config read {p}: {e}")],
+                });
                 return ExitCode::SUCCESS;
             }
         },
@@ -93,7 +101,11 @@ fn main() -> ExitCode {
     let cfg = match Config::load(user_cfg) {
         Ok(c) => c,
         Err(e) => {
-            print_report(Report { violations: vec![], scanned: 0, errors: vec![e] });
+            print_report(Report {
+                violations: vec![],
+                scanned: 0,
+                errors: vec![e],
+            });
             return ExitCode::SUCCESS;
         }
     };
@@ -126,10 +138,17 @@ fn main() -> ExitCode {
     }
 
     violations.sort_by(|a, b| {
-        a.file.cmp(&b.file).then(a.line.cmp(&b.line)).then(a.col.cmp(&b.col))
+        a.file
+            .cmp(&b.file)
+            .then(a.line.cmp(&b.line))
+            .then(a.col.cmp(&b.col))
     });
 
-    print_report(Report { violations, scanned, errors });
+    print_report(Report {
+        violations,
+        scanned,
+        errors,
+    });
     ExitCode::SUCCESS
 }
 
@@ -147,8 +166,23 @@ fn scan_file(cfg: &Config, rel: &str, src: &str, out: &mut Vec<FileViolation>) {
     detector.visit_program(&parsed.program);
 
     for f in detector.findings.drain(..) {
-        let Finding { line, col, rule, severity, message, snippet } = f;
-        out.push(FileViolation { file: rel.to_string(), line, col, rule, severity, message, snippet });
+        let Finding {
+            line,
+            col,
+            rule,
+            severity,
+            message,
+            snippet,
+        } = f;
+        out.push(FileViolation {
+            file: rel.to_string(),
+            line,
+            col,
+            rule,
+            severity,
+            message,
+            snippet,
+        });
     }
 }
 
