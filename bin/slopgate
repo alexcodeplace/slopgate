@@ -4,25 +4,46 @@
 // this thin node shim is the npm `bin` entry (cross-platform, esbuild/biome model).
 //
 // Resolution order:
-//   1. $SLOPGATE_BIN                       (explicit override)
-//   2. <pkg>/target/release/slopgate-rs    (cargo build --release; dev + this round)
-// Per-platform packaged binaries (deferred distribution work) slot in ahead of (2).
+//   1. $SLOPGATE_BIN                                  (explicit override)
+//   2. slopgate-<platform>-<arch> optional dependency (prebuilt; the npm-install path)
+//   3. <pkg>/target/release/slopgate-rs               (cargo build --release; dev)
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 
+const require = createRequire(import.meta.url);
 const pkgRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
+const binName = process.platform === 'win32' ? 'slopgate-rs.exe' : 'slopgate-rs';
+
+// Resolve the prebuilt binary from the per-platform optionalDependency that npm
+// installed for this host (slopgate-linux-x64, slopgate-darwin-arm64, …). Returns
+// null when the package is absent (unsupported platform, or optional install skipped).
+function fromOptionalDep() {
+  const pkg = `slopgate-${process.platform}-${process.arch}`;
+  try {
+    return require.resolve(`${pkg}/${binName}`);
+  } catch {
+    return null;
+  }
+}
+
 const candidates = [
   process.env.SLOPGATE_BIN,
-  join(pkgRoot, 'target', 'release', 'slopgate-rs'),
+  fromOptionalDep(),
+  join(pkgRoot, 'target', 'release', binName),
 ].filter(Boolean);
 
 const bin = candidates.find((p) => existsSync(p));
 if (!bin) {
+  const host = `${process.platform}-${process.arch}`;
   process.stderr.write(
-    `slopgate: native engine binary not found — build with \`cargo build --release\`\n` +
-    `  looked in: ${candidates.join(', ')}\n`,
+    `slopgate: native engine binary not found for ${host}.\n` +
+    `  The prebuilt package "slopgate-${host}" may have failed to install (it is an\n` +
+    `  optionalDependency), or this platform is not supported. For development, build\n` +
+    `  the engine with \`cargo build --release\`.\n` +
+    `  looked in: ${candidates.join(', ') || '(none)'}\n`,
   );
   process.exit(1);
 }

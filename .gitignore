@@ -33,6 +33,10 @@
 # Native Rust engine crates — source of the runtime binary. Build artifacts
 # (target/) re-ignored by each crate's .gitignore. Whole-crate tracking.
 !/crates/**
+# Release infra: CI workflows + the npm per-platform packaging generator. Tracked
+# (the GitHub release workflow checks these out) but NOT in package.json "files".
+!/.github/**
+!/scripts/**
 
 # 5. Re-ignore genuine BUILD ARTIFACTS inside those trees (not test fixtures —
 #    those are source-of-truth for the self-test/golden suite and ARE tracked,

@@ -1,0 +1,89 @@
+# Release: build the native Rust engine on each supported host, publish one prebuilt
+# per-platform npm package (slopgate-<os>-<arch>), then publish the root `slopgate`
+# launcher pinned to them via optionalDependencies (esbuild/@biomejs model).
+#
+# Trigger: push a semver tag, e.g. `git tag v1.2.3 && git push origin v1.2.3`.
+# Requires repository secret NPM_TOKEN (an npm automation token with publish rights
+# to `slopgate` and the five `slopgate-*` packages).
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  # One leg per host. Each builds its own target natively (no cross-compilation),
+  # assembles npm/<pkg>/, and publishes that single platform package.
+  platform:
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { pkg: slopgate-linux-x64,    target: x86_64-unknown-linux-gnu,  runner: ubuntu-latest }
+          - { pkg: slopgate-linux-arm64,  target: aarch64-unknown-linux-gnu, runner: ubuntu-24.04-arm }
+          - { pkg: slopgate-darwin-x64,   target: x86_64-apple-darwin,       runner: macos-13 }
+          - { pkg: slopgate-darwin-arm64, target: aarch64-apple-darwin,      runner: macos-14 }
+          - { pkg: slopgate-win32-x64,    target: x86_64-pc-windows-msvc,    runner: windows-latest }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Derive version from tag
+        id: v
+        shell: bash
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Build engine
+        run: cargo build --release --locked --target ${{ matrix.target }} -p slopgate-rs
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+
+      - name: Assemble platform package
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+          PKG: ${{ matrix.pkg }}
+        run: node scripts/build-npm-packages.mjs --only "$PKG" --version "$VERSION"
+
+      - name: Publish platform package
+        run: npm publish --provenance --access public
+        working-directory: npm/${{ matrix.pkg }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  # After all platform packages exist, publish the root launcher.
+  root:
+    needs: platform
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Derive version from tag
+        id: v
+        shell: bash
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+
+      - name: Pin version + optionalDependencies
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+        run: node scripts/build-npm-packages.mjs --sync-root --version "$VERSION"
+
+      - name: Publish root package
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
