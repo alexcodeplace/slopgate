@@ -1,0 +1,38 @@
+⚠ SLOPGATE: ast-grep: ast-grep: using PATH binary (version not pinned — results may differ from CI)
+
+╔═ SLOPGATE ═════════════════════════════════════════╗
+║ SLOPGATE — VIOLATIONS IN EDITED FILE               ║
+╚═════════════════════════════════════════════════════╝
+
+── ast ──
+[HIGH] ux-div-onclick rules/baseline/fixtures/src/ux-ast.tsx:6
+  × export const ClickyDiv = () => <div onClick={onThing}>Open</div>;
+  ✓ Use a native <button> (or add role + tabIndex + onKeyDown). Semantic HTML first — ANTI-SLOP UX §11.
+
+[HIGH] ux-img-no-dimensions rules/baseline/fixtures/src/ux-ast.tsx:9
+  × export const Hero = () => <img src="/hero.png" alt="hero" />;
+  ✓ Reserve the footprint: add width and height attributes, or a CSS aspect-ratio / min-height (ANTI-SLOP UX §13). Use a framework <Image> that sets dimensions.
+
+[HIGH] ux-img-no-alt rules/baseline/fixtures/src/ux-ast.tsx:12
+  × export const NoAlt = () => <img src="/x.png" width={32} height={32} />;
+  ✓ Add alt text (alt="…"), or alt="" for purely decorative images (ANTI-SLOP UX §11). Semantic/accessible by default.
+
+[HIGH] ux-anchor-no-href rules/baseline/fixtures/src/ux-ast.tsx:15
+  × export const FakeLink = () => <a onClick={onThing}>go</a>;
+  ✓ Use a <button> for actions, or give the <a> a real href. An anchor with only onClick is invisible to keyboard and screen readers (ANTI-SLOP UX §11).
+
+[HIGH] ux-button-no-type rules/baseline/fixtures/src/ux-ast.tsx:18
+  × export const BareButton = () => <button onClick={onThing}>Save</button>;
+  ✓ Add type="button" (or type="submit" intentionally). A typeless button inside a form submits it on click — a classic silent bug (ANTI-SLOP UX §3/§11).
+
+[HIGH] ux-media-no-dimensions rules/baseline/fixtures/src/ux-ast.tsx:21
+  × export const Embed = () => <iframe src="/player" />;
+  ✓ Reserve the footprint: set width and height (or a CSS aspect-ratio / fixed min-height) so the page does not jump as the media loads (ANTI-SLOP UX §13).
+
+[HIGH] ux-async-onclick-no-disable rules/baseline/fixtures/src/ux-ast.tsx:25
+  × export const AsyncSave = () => <button type="button" onClick={async () => save()}>Save</bu
+  ✓ Disable the trigger while the promise is in flight (disabled={pending}) and show an inline loading indicator. Prevents double-submit and ghost interactions (ANTI-SLOP UX §3/§12).
+
+7 violation(s) in 1 file(s). Fix now while context is hot.
+False positive? NEVER edit suppressions.json yourself — ask the user via AskUserQuestion.
+

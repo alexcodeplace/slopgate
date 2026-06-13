@@ -2,7 +2,6 @@
 
 use crate::rules::packs::{self, Pattern, UxPack};
 use indexmap::IndexMap;
-use regex::RegexBuilder;
 use serde::Deserialize;
 use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -170,29 +169,13 @@ pub fn validate_pattern(p: &Pattern) -> Result<(), String> {
     validate_pattern_str(&p.pattern, p.flags.as_deref())
 }
 
-/// Validate a raw regex pattern + optional flags (strips stateful `g`/`y`).
+/// Validate a raw regex pattern + optional flags by compiling it through the SAME
+/// engine used for matching (`regex_engine::compile_line_regex` — fancy-regex with
+/// JS-compat translation). Validating with the strict `regex` crate wrongly rejected
+/// look-ahead patterns that both the matcher and JS `RegExp` accept (e.g. baseline
+/// `raw-rgb-color`'s `(?![^)]*var\()`).
 pub fn validate_pattern_str(pattern: &str, flags: Option<&str>) -> Result<(), String> {
-    let mut builder = RegexBuilder::new(pattern);
-    if let Some(f) = flags {
-        let stripped: String = f.chars().filter(|c| *c != 'g' && *c != 'y').collect();
-        for c in stripped.chars() {
-            match c {
-                'i' => {
-                    builder.case_insensitive(true);
-                }
-                'm' => {
-                    builder.multi_line(true);
-                }
-                's' => {
-                    builder.dot_matches_new_line(true);
-                }
-                'u' | 'x' | 'U' => {}
-                _ => {}
-            }
-        }
-    }
-    builder
-        .build()
+    crate::regex_engine::compile_line_regex(pattern, flags.unwrap_or(""))
         .map(|_| ())
         .map_err(|e| format!("slopgate: bad regex: {e}"))
 }

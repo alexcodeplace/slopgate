@@ -1,0 +1,23 @@
+# TOML twin of selftest.config.mjs — canonical self-test config for the Rust engine.
+# Fields mirror the JS oracle 1:1 (verified via differential parity harness).
+# Path resolution: roots are repo-root-relative; suppressions/fixtures are config-dir-relative.
+# astRules is intentionally omitted (JS sets `astRules: null`); the resolver always adds
+# rules/baseline/ast, and UX-high adds rules/ux/ast.
+roots = ["rules/baseline/fixtures/src"]
+exts = [".ts", ".tsx"]
+skipDirs = ["node_modules"]
+baseline = ["no-stubs", "ts-suppress", "as-any", "raw-hex", "kv-ban", "live-secrets", "eval-ban", "pii-logs", "weak-hash", "sql-safety"]
+rules = []
+suppressions = "./fixtures/suppressions.json"
+fixtures = "./fixtures"
+
+[ux]
+a11y = "high"
+cls = "high"
+feedback = "high"
+taste = "advisory"
+advisory = "advisory"
+
+[gate]
+file = ["critical", "high"]
+staged = ["critical", "high"]
