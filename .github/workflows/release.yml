@@ -15,6 +15,12 @@ on:
 permissions:
   contents: read
 
+# Force bash on every runner (Windows defaults to PowerShell, where `$VAR` env
+# refs in run: steps don't expand — the platform packaging step needs bash).
+defaults:
+  run:
+    shell: bash
+
 jobs:
   # One leg per host. Each builds its own target natively (no cross-compilation),
   # assembles npm/<pkg>/, and publishes that single platform package.

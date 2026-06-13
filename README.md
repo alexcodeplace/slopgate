@@ -23,12 +23,10 @@ A global code-quality / anti-slop gate for Claude Code and git. Engine is shared
   - **diff-shape** — wide commits spanning too many directories (encourages focused changes)
 
 - **Shared regex + AST rule packs** — fast-tier and commit-tier both run these
-  - `no-stubs` — placeholder/TODO markers
-  - `ts-suppress` — TypeScript suppression directives
-  - `as-any` — unsafe `as any` casts
-  - Semantic rules (empty catch, swallowed errors, console debug left)
-  - Test-slop rules (unskipped/unawaited tests, missing assertions)
-  - Security rules (eval, dangerously unsafe HTML)
+  - Convention: `no-stubs`, `ts-suppress`, `as-any`, `raw-hex` (design tokens), `sql-safety`
+  - Security: `live-secrets`, `eval-ban`, `pii-logs`, `weak-hash`
+  - Cloudflare boundary: `kv-ban` (plus the opt-in `stack = ["cloudflare"]` pack)
+  - Built-in AST rules: empty-catch, unsafe `innerHTML`/`dangerouslySetInnerHTML`, `target="_blank"` without `rel`, `window` access during render
   
 - **Native git pre-commit hook** — no daemon, no CI coupling, just git
   
@@ -36,20 +34,22 @@ A global code-quality / anti-slop gate for Claude Code and git. Engine is shared
   
 - **Suppressions** — per-file, per-line, with line-hash stability across edits
   
-- **Self-test** — `npm run self-test` validates rule engines + baseline checker parsers
+- **Self-test** — `slopgate --self-test` validates rule engines + baseline checker parsers against bundled fixtures
 
 ---
 
 ## Install
 
 ```bash
-npm install slopgate
+npm install -g slopgate
 ```
+
+The matching prebuilt native engine for your platform (linux / macOS / Windows × x64 / arm64) is pulled in automatically as an optional dependency — no toolchain or build step required.
 
 Then onboard a project:
 
 ```bash
-npx slopgate init [path-to-repo]
+slopgate init [path-to-repo]
 ```
 
 This:
@@ -88,9 +88,9 @@ slopgate baseline --update --config .slopgate/config.toml
 slopgate baseline --prune --config .slopgate/config.toml
 ```
 
-### Run self-test:
+### Run self-test (validate the engine against bundled fixtures):
 ```bash
-npm run self-test
+slopgate --self-test --config "$(npm root -g)/slopgate/rules/baseline/selftest.config.toml"
 ```
 
 ### Install or reinstall hooks:
@@ -379,23 +379,46 @@ staged = ["critical", "high"]  # commit-tier report threshold
 
 ## Rule Packs
 
-### Baseline Packs (Shipped)
+### Baseline Regex Packs (Shipped)
 
-All are opt-in via the `baseline` array in config.
+All are opt-in via the `baseline` array in config. Severity drives the gate threshold (`critical`/`high` block by default).
 
-| Pack | Rules | Description |
-|------|-------|-------------|
-| `no-stubs` | placeholder, TODO markers, "not implemented" | Forbids stub/deferred-work comments |
-| `ts-suppress` | @ts-ignore, @ts-expect-error | TypeScript suppression directives |
-| `as-any` | `as any` casts | Unsafe type escapes |
-| `raw-hex` | hardcoded #RGB hex colors, raw px spacing | Use design tokens instead |
-| `kv-ban` | Cloudflare KV usage | KV is eventually-consistent; use Durable Objects |
+| Pack | Severity | Category | Catches |
+|------|----------|----------|---------|
+| `no-stubs` | critical | convention | Stub / placeholder / "not implemented" / deferred-work markers |
+| `ts-suppress` | high | convention | `@ts-ignore` / `@ts-expect-error` — suppressing tsc instead of fixing the cause |
+| `as-any` | high | convention | `as any` casts that disable type safety |
+| `raw-hex` | high | convention | Hardcoded hex / `rgb()` colors + raw multi-digit `px` — use design tokens |
+| `sql-safety` | critical | convention | `SELECT … FOR UPDATE` with an aggregate (Postgres rejects this at runtime) |
+| `kv-ban` | critical | boundary | Cloudflare KV in read-after-write paths (eventually-consistent) |
+| `live-secrets` | critical | security | Hardcoded Stripe / webhook / Google live credentials |
+| `eval-ban` | critical | security | `eval` / dynamic code execution (injection surface) |
+| `pii-logs` | high | security | PII fields written to logs / error trackers |
+| `weak-hash` | high | security | MD5 / SHA-1 for integrity checks or passwords (cryptographically broken) |
+
+### Baseline AST Rules (Shipped, Always Active)
+
+Loaded automatically alongside the regex packs (the resolver always adds `rules/baseline/ast`); disable any by id via `astDisable = [...]`.
+
+| Rule id | Catches |
+|---------|---------|
+| `empty-catch` (ts + tsx) | Empty `catch` block silently swallowing an error |
+| `inner-html` | Unsafe `innerHTML` / `dangerouslySetInnerHTML` assignment |
+| `target-blank-norel` | `target="_blank"` anchor missing `rel="noopener"` |
+| `window-in-render` | `window`/`document` access during render (SSR hazard) |
+
+### Stack Packs (Shipped)
+
+Opt-in via `stack = ["cloudflare"]`:
+
+| Pack | Rule ids |
+|------|----------|
+| `cloudflare` | `cf-env-spread-secrets`, `process-env-access`, `waituntil-bare-method-ref`, `cf-getCloudflareContext-banned`, `hono-env-direct-access` |
 
 **Planned (v2+):**
-- Semantic rules — empty-catch, swallowed-error, console-debug-left
 - Depth rules — pass-through-fn, delegating-wrapper (Ousterhout symptoms)
 - Test-slop rules — test-no-assertion, test-skip-only
-- Extended security rules — eval, new Function
+- Custom project **regex** rule packs (the `rules = [...]` field — see [Project-Owned Rules](#project-owned-rules))
 
 ### Project-Owned Rules
 
@@ -520,7 +543,7 @@ Init wires slopgate into `.claude/settings.json`:
 ROOT=$(git rev-parse --show-toplevel) || exit 0
 CONFIG="$ROOT/.slopgate/config.toml"
 [ -f "$CONFIG" ] || exit 0
-exec node /path/to/slopgate/bin/slopgate --staged --config "$CONFIG"
+exec slopgate --staged --config "$CONFIG"
 ```
 
 The hook can be bypassed with `git commit --no-verify`, which is intentional (user-initiated escape hatch).
@@ -582,7 +605,7 @@ Commit a file with `const x = y as any;`:
 ```
 slopgate: 1 violation(s)
 
-ast › as-any-cast
+regex › as-any-cast
   src/utils.ts:42
   Unsafe `as any` cast
   severity: high
@@ -624,15 +647,15 @@ module.exports = {
 
 Now commits that import database code from UI layer are blocked.
 
-### Example 4: Silence a Rule in One Project
+### Example 4: Silence a Built-in Rule in One Project
 
 Config:
 ```toml
-astDisable = ["console-debug-left"]  # CLI tools log on purpose
-baseline = ["semantic"]
+baseline = ["no-stubs", "as-any"]
+astDisable = ["target-blank-norel"]  # this app links only to vetted internal routes
 ```
 
-The `console-debug-left` rule fires everywhere except this project.
+`astDisable` lists built-in AST rule ids to turn off for this repo; every other rule stays active.
 
 ---
 
@@ -675,7 +698,6 @@ Tool crash / timeout → `⚠ skipped: <id> (<reason>)` warning, gate continues 
 
 ## Limitations & Future Work
 
-- **Single-machine tool** — engine path is embedded absolute in hooks (assumed stable location)
 - **Git-only** — no other VCS support
 - **No auto-fix** — violations are reported, not automatically corrected
 - **No CI integration yet** — hooks are local and Claude Code only; CI layer is future work
