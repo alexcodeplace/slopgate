@@ -21,7 +21,6 @@
 
 # 4. Allow-list: distributed code trees (== package.json "files").
 !/bin/**
-!/src/**
 !/hooks/**
 !/rules/**
 !/skills/**
@@ -34,9 +33,7 @@
 
 # 5. Re-ignore the non-distributed bits inside those trees
 #    (mirrors the "!…" negations in package.json "files").
-*.test.mjs
 rules/baseline/fixtures/
-rules/baseline/selftest.config.mjs
 # Native engine binary is a BUILD ARTIFACT (cargo build --release → target/),
 # resolved at runtime by bin/slopgate. Never track it; per-platform packaging
 # of this binary is the deferred npm-distribution work.

@@ -10,7 +10,7 @@ case "$FILE" in *.test.ts|*.test.tsx) exit 0 ;; *.ts|*.tsx|*.astro) ;; *) exit 0
 case "$FILE" in */.slopgate/fixtures/*|*/slopgate/*/fixtures/*) exit 0 ;; esac
 
 ROOT=$(git -C "$(dirname "$FILE")" rev-parse --show-toplevel 2>/dev/null) || exit 0
-CONFIG="$ROOT/.slopgate/config.mjs"
+CONFIG="$ROOT/.slopgate/config.toml"
 [ -f "$CONFIG" ] || exit 0
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

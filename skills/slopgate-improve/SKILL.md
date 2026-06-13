@@ -13,9 +13,9 @@ Scope / focus area (optional): $ARGUMENTS — blank = all sources.
 
 | Tier | Pack location | Who opts in |
 |------|--------------|-------------|
-| **baseline** | `slopgate/rules/baseline/index.mjs` | Any project — universal TypeScript/web rules |
-| **stack** | `slopgate/rules/stack/index.mjs` | Projects using that runtime (e.g. `stack: ['cloudflare']`) |
-| **project** | `<repo>/.slopgate/rules/<name>.mjs` | That repo only |
+| **baseline** | built-in: `crates/slopgate-core/src/rules/baseline.json` (compiled into the engine) | Any project — enabled by name in TOML (`baseline = ["no-stubs", ...]`) |
+| **stack** | built-in: `crates/slopgate-core/src/rules/stack.json` (compiled into the engine) | Projects using that runtime — enabled by name in TOML (`stack = ["cloudflare"]`) |
+| **project** | ast-grep YAML in the `astRules` dir (`<repo>/.slopgate/rules/ast/<id>.yml`) | That repo only. NOTE: project custom **regex** packs (non-empty `rules = [...]`) are NOT yet supported by the native engine — they error (`PHASE-2: project rule packs`). Use ast-grep YAML, or defer the rule. |
 
 When proposing a new rule, assign the lowest tier where it applies without FPs:
 - Applies to any TypeScript/web project → baseline
@@ -25,13 +25,15 @@ When proposing a new rule, assign the lowest tier where it applies without FPs:
 ## Phase 1 — Inventory current coverage
 
 ```bash
-# List all enabled rule IDs (baseline + stack + project)
-grep -o "id: '[^']*'" <repo>/.slopgate/rules/*.mjs 2>/dev/null
-# Baseline packs enabled:
-grep 'baseline:' <repo>/.slopgate/config.mjs
-# Stack packs enabled:
-grep 'stack:' <repo>/.slopgate/config.mjs
+# Baseline packs enabled (TOML array — `baseline = [...]`):
+grep 'baseline' <repo>/.slopgate/config.toml
+# Stack packs enabled (TOML array — `stack = [...]`):
+grep 'stack' <repo>/.slopgate/config.toml
+# Project ast-grep rule IDs (ids live in the .yml files under the astRules dir):
+grep -rho "^id:.*" <repo>/.slopgate/rules/ast/*.yml 2>/dev/null
 ```
+
+Built-in (baseline/stack) pack IDs are engine-internal — they are not in a grep-able shipped file. The authoritative set of what is enabled = the pack names in `config.toml` plus the project ast `.yml` ids above; to see exactly what fires, run the engine with `--file` / `--self-test` (Phase 5).
 
 Build a set of already-covered rule IDs. Do NOT propose rules with IDs already present.
 
@@ -89,7 +91,7 @@ For each bucket-A rule, draft:
 - Does it match anything it shouldn't? If yes → add excludeGlobs or raise threshold to medium/low.
 - Low confidence → defer to C (judge-only), do not ship noise.
 
-**Tier decision:** assign to baseline / stack / project per the tier model above.
+**Tier decision:** assign to baseline / stack / project per the tier model above. NOTE: a **project-tier regex** rule cannot ship on the native engine (non-empty `rules = [...]` errors — `PHASE-2: project rule packs`). If a regex candidate is genuinely project-specific, either re-express it as an ast-grep rule (bucket B, Phase 4B) or defer it (bucket C / report as deferred). Only baseline/stack regex packs are loadable today.
 
 ## Phase 4B — Author ast-grep candidates
 
@@ -117,20 +119,20 @@ For bucket-C rules: append to `<repo>/scripts/code-quality/judge-rules.md` (or e
 
 For each new regex rule:
 ```bash
-# Canary must match
+# Canary must match (approximation — the engine matches via fancy-regex for JS-RegExp parity)
 node -e "console.log(new RegExp('<pattern>').test('<canary>'))"
 # Run self-test
-node /home/user/Projects/slopgate/bin/slopgate --self-test --config <repo>/.slopgate/config.mjs
+node /home/user/Projects/slopgate/bin/slopgate --self-test --config <repo>/.slopgate/config.toml
 # Dry-run on repo (count hits; review for FPs)
-node /home/user/Projects/slopgate/bin/slopgate --config <repo>/.slopgate/config.mjs 2>&1 | grep '<id>'
+node /home/user/Projects/slopgate/bin/slopgate --config <repo>/.slopgate/config.toml 2>&1 | grep '<id>'
 ```
 
 If FP count > 5% of hits → add excludeGlobs or demote to medium/low. If still noisy → demote to bucket C.
 
 ## Phase 6 — Apply
 
-- Baseline/stack rules: write to slopgate repo, commit (`feat(rules): add <id> to baseline|stack/cloudflare`)
-- Project rules: write to `<repo>/.slopgate/rules/`, commit to project repo
+- Baseline/stack rules: edit the built-in JSON in the slopgate repo (`crates/slopgate-core/src/rules/baseline.json` or `stack.json`, loaded by `crates/slopgate-core/src/rules/packs.rs`), rebuild (`cargo build --release`), commit (`feat(rules): add <id> to baseline|stack/cloudflare`). Note: the packs are compiled in via `include_str!`, so the rebuild is required for the new rule to take effect. The file is a JSON object keyed by pack name (`"no-stubs": [ {...}, ... ]`); add your rule object to the right pack's array, writing it as **JSON** — double-quoted keys and strings — matching the existing entries (the Phase 4A draft is shown as a JS literal; translate it to JSON, not the other way around).
+- Project ast-grep rules: write the `.yml` to `<repo>/.slopgate/rules/ast/` (the `astRules` dir), commit to project repo. (Project regex packs are not loadable — see Phase 4A note.)
 - Run self-test one final time; must exit 0.
 
 ## Phase 7 — Report (conversation text only, no files)

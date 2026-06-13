@@ -6,7 +6,7 @@ let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{try{process.stdout.write
 echo "$CMD" | grep -qE 'git[[:space:]]+commit' || exit 0
 
 ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
-CONFIG="$ROOT/.slopgate/config.mjs"
+CONFIG="$ROOT/.slopgate/config.toml"
 [ -f "$CONFIG" ] || exit 0
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 exec node "$HERE/../bin/slopgate" --staged --config "$CONFIG"

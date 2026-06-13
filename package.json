@@ -10,14 +10,13 @@
   "bugs": { "url": "https://github.com/alexcodeplace/slopgate/issues" },
   "bin": { "slopgate": "bin/slopgate" },
   "files": [
-    "bin", "src", "hooks", "rules", "skills",
-    "!**/*.test.mjs",
+    "bin", "hooks", "rules", "skills",
     "!rules/baseline/fixtures",
     "!bin/slopgate-rs"
   ],
   "engines": { "node": ">=18" },
   "scripts": {
     "self-test": "node bin/slopgate --self-test --config rules/baseline/selftest.config.toml",
-    "test": "node --test \"src/**/*.test.mjs\""
+    "test": "cargo test --workspace"
   }
 }

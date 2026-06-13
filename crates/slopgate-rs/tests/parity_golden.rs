@@ -1,12 +1,18 @@
 //! Stage-0b durable parity test.
 //!
-//! The Rust engine's gate output must match the golden files frozen from the JS
-//! oracle (`tools/parity/parity.mjs --write`). This is the regression guard that
-//! survives deletion of the JS engine — there is no live oracle to diff against
-//! anymore, so the committed goldens ARE the contract.
+//! The Rust engine's gate output must match the golden files that were frozen
+//! from the (now-deleted) JS oracle at the moment of the clean switch. This is
+//! the regression guard that survives deletion of the JS engine — there is no
+//! live oracle to diff against anymore, so the committed `*.norm` goldens ARE
+//! the contract.
 //!
-//! Normalization here MUST stay in sync with `tools/parity/parity.mjs`:
-//! strip ANSI SGR sequences (`ESC [ … m`) and `<n>ms` / `<n>.<n>ms` timings.
+//! Regenerating goldens: the JS oracle is gone, so there is no `--write` path.
+//! A *deliberate*, reviewed change in Rust gate output is re-blessed by copying
+//! this test's normalized actual output over the `*.norm` files — never to make
+//! a red test green without understanding why the output moved.
+//!
+//! Normalization is self-contained below: strip ANSI SGR sequences (`ESC [ … m`)
+//! and `<n>ms` / `<n>.<n>ms` timings.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -113,8 +119,8 @@ fn gate_output_matches_js_oracle_golden() {
         assert_eq!(
             normalize(&raw),
             golden,
-            "{name}: gate output diverges from JS-oracle golden — \
-             investigate before regenerating with `node tools/parity/parity.mjs --write`"
+            "{name}: gate output diverges from the frozen golden — \
+             investigate WHY before re-blessing the `{name}.norm` file"
         );
     }
 }

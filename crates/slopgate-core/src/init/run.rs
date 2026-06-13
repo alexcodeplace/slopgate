@@ -228,14 +228,17 @@ fn run_init_inner(
             stdout,
             "  1. Review .slopgate/convention-sources.json for project rule candidates"
         );
-        let _ = writeln!(stdout, "  2. Author project rule packs in .slopgate/rules/");
+        let _ = writeln!(
+            stdout,
+            "  2. Author project rules as ast-grep YAML in .slopgate/rules/ast/"
+        );
         let _ = writeln!(
             stdout,
             "  3. Run a dry-run gate pass before enabling blocking mode"
         );
         let _ = writeln!(
             stdout,
-            "  4. Drive each new rule to zero hits before adding to baseline/rules"
+            "  4. Drive each new rule to zero hits before enabling blocking mode"
         );
         let _ = writeln!(
             stdout,

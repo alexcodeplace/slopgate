@@ -54,13 +54,13 @@ npx slopgate init [path-to-repo]
 
 This:
 1. Detects TypeScript roots, file extensions, and package layout
-2. Scaffolds `.slopgate/config.mjs` with detected checkers enabled
+2. Scaffolds `.slopgate/config.toml` with detected checkers enabled
 3. Writes `.slopgate/suppressions.json` and `.slopgate/depcruise.cjs` (starter)
 4. Creates `.slopgate/convention-sources.json` (hints for authoring project rules from local skills/agents/docs)
 5. Creates `.slopgate/rules/ast/` and `.slopgate/fixtures/src/` directories
 6. Installs git pre-commit hook (or appends to existing)
 7. Merges Claude Code hook settings into `.claude/settings.json`
-8. Prints next steps (including: run `slopgate baseline --config .slopgate/config.mjs`)
+8. Prints next steps (including: run `slopgate baseline --config .slopgate/config.toml`)
 
 ---
 
@@ -68,24 +68,24 @@ This:
 
 ### Run the gate on staged changes (pre-commit):
 ```bash
-slopgate --staged --config .slopgate/config.mjs
+slopgate --staged --config .slopgate/config.toml
 ```
 
 ### Run on a single file (post-edit, fast tier):
 ```bash
-slopgate --file src/app.ts --config .slopgate/config.mjs
+slopgate --file src/app.ts --config .slopgate/config.toml
 ```
 
 ### Create/update the baseline:
 ```bash
 # Create baseline (refuses if it exists)
-slopgate baseline --config .slopgate/config.mjs
+slopgate baseline --config .slopgate/config.toml
 
 # Update baseline (re-snapshot all current violations)
-slopgate baseline --update --config .slopgate/config.mjs
+slopgate baseline --update --config .slopgate/config.toml
 
 # Prune baseline (remove entries no longer occurring)
-slopgate baseline --prune --config .slopgate/config.mjs
+slopgate baseline --prune --config .slopgate/config.toml
 ```
 
 ### Run self-test:
@@ -95,7 +95,7 @@ npm run self-test
 
 ### Install or reinstall hooks:
 ```bash
-slopgate install-hooks --config .slopgate/config.mjs
+slopgate install-hooks --config .slopgate/config.toml
 ```
 
 ---
@@ -110,7 +110,7 @@ Onboard a new repository. Detects roots, extensions, installed checkers, and sca
 - No `--config` required; generates config during init
 
 **Creates:**
-- `.slopgate/config.mjs` — project config (roots, extensions, rule packs, checkers, baseline/suppressions paths)
+- `.slopgate/config.toml` — project config (roots, extensions, rule packs, checkers, baseline/suppressions paths)
 - `.slopgate/suppressions.json` — line-level violation suppressions (empty initially)
 - `.slopgate/depcruise.cjs` — starter dependency-cruiser rules (if depcruise detected)
 - `.slopgate/convention-sources.json` — hints for authoring project-specific rule packs
@@ -118,7 +118,7 @@ Onboard a new repository. Detects roots, extensions, installed checkers, and sca
 - `.git/hooks/pre-commit` — native git pre-commit hook (creates new or appends to existing)
 - `.claude/settings.json` — Claude Code hook entries (idempotent merge)
 
-**Next step:** Run `slopgate baseline --config .slopgate/config.mjs` to create the initial ratchet baseline
+**Next step:** Run `slopgate baseline --config .slopgate/config.toml` to create the initial ratchet baseline
 
 ---
 
@@ -126,7 +126,7 @@ Onboard a new repository. Detects roots, extensions, installed checkers, and sca
 Run commit-tier gate on staged files. Used by git pre-commit hook and Claude Code PreToolUse hook.
 
 **Flags:**
-- `--config <path>` (required) — path to `.slopgate/config.mjs`
+- `--config <path>` (required) — path to `.slopgate/config.toml`
 - `--tier fast|commit` (optional) — override default tier (default: commit for `--staged`)
 
 **Exit codes:**
@@ -146,7 +146,7 @@ Run fast-tier gate on a single file (post-edit). Used by Claude Code PostToolUse
 
 **Flags:**
 - `--file <path>` (required) — repo-relative path to check
-- `--config <path>` (required) — path to `.slopgate/config.mjs`
+- `--config <path>` (required) — path to `.slopgate/config.toml`
 - `--tier fast|commit` (optional) — override default tier (default: fast for `--file`)
 
 **Exit codes:** same as `--staged`
@@ -192,7 +192,7 @@ Install or upgrade the git pre-commit hook.
 Internal: validate regex + AST engines and checker parsers against fixtures.
 
 **Flags:**
-- `--config <path>` (required) — typically `rules/baseline/selftest.config.mjs`
+- `--config <path>` (required) — typically `rules/baseline/selftest.config.toml`
 
 Runs in-process tests; exit 0 = all pass, exit 1 = failure. Used by `npm run self-test`.
 
@@ -284,24 +284,21 @@ The UX module provides opinionated static analysis rules for common UX anti-patt
 
 ### Configuration
 
-```javascript
-// .slopgate/config.mjs
-export default {
-  // ... other config
-  
-  // UX module (optional) — off by default, opt-in per sub-module
-  ux: {
-    a11y: 'high',        // Accessibility violations (gate commits)
-    cls: 'high',         // Cumulative Layout Shift violations (gate commits)
-    feedback: 'high',    // Silent async / double-submit (gate commits)
-    taste: 'advisory',   // Design taste violations (report only, don't gate)
-    advisory: 'advisory',// Heuristic nudges (report only, higher false-positive)
-    // taste: 'medium',  // equivalent to 'advisory'
-    // taste: true,      // use sub-module default severity
-    // omit key = that sub-module OFF
-    // delete whole ux:{} block = entire module OFF
-  },
-};
+```toml
+# .slopgate/config.toml
+# ... other config
+
+# UX module (optional) — off by default, opt-in per sub-module
+[ux]
+a11y = "high"        # Accessibility violations (gate commits)
+cls = "high"         # Cumulative Layout Shift violations (gate commits)
+feedback = "high"    # Silent async / double-submit (gate commits)
+taste = "advisory"   # Design taste violations (report only, don't gate)
+advisory = "advisory" # Heuristic nudges (report only, higher false-positive)
+# taste = "medium"   # equivalent to 'advisory'
+# taste = true       # use sub-module default severity
+# omit key = that sub-module OFF
+# delete whole [ux] table = entire module OFF
 ```
 
 ### Sub-modules
@@ -336,50 +333,40 @@ Pair the static UX module with the `/slopgate-ux` skill for semantic UX directiv
 
 ---
 
-## Config Reference (`.slopgate/config.mjs`)
+## Config Reference (`.slopgate/config.toml`)
 
-```javascript
-export default {
-  // Repository layout
-  roots: ['src'],                          // source roots to scan
-  exts: ['.ts', '.tsx', '.astro'],        // file extensions
-  skipDirs: ['node_modules', 'dist'],      // dirs to skip
+```toml
+# Repository layout
+roots = ["src"]                          # source roots to scan
+exts = [".ts", ".tsx", ".astro"]         # file extensions
+skipDirs = ["node_modules", "dist"]      # dirs to skip
 
-  // Rule packs
-  baseline: ['no-stubs', 'ts-suppress', 'as-any'],  // baseline packs to enable (opt-in)
-  rules: [],                                // project-owned rule .mjs files
-  astRules: './rules/ast',                 // dir of .yml AST rules (optional)
-  astDisable: [],                          // rule ids to disable (escape hatch)
+# Rule packs
+baseline = ["no-stubs", "ts-suppress", "as-any"]  # built-in baseline packs to enable (opt-in)
+rules = []                               # project regex rule packs — must be [] (PHASE-2, not yet supported)
+astRules = "./rules/ast"                 # dir of .yml AST rules (optional)
+astDisable = []                          # rule ids to disable (escape hatch)
 
-  // Commit-tier checkers (detected at init; false/absent = off)
-  checkers: {
-    tsc:           true,                   // or { tsconfig: 'tsconfig.json', timeout: 120 }
-    knip:          true,
-    jscpd:         { minTokens: 50 },      // token threshold (optional)
-    depcruise:     true,                   // uses .slopgate/depcruise.cjs
-    typeCoverage:  true,
-    diffShape:     { maxDirs: 5 },         // max root dirs per commit (optional)
-    // false or absent = disabled
-  },
+# Custom file paths (relative to repo root)
+suppressions = "./suppressions.json"     # line-level exemptions
+fixtures = "./fixtures"                  # test fixture canaries
+# baselinePath is auto-computed: .slopgate/baseline.json
 
-  // UX module (optional) — off by default, opt-in per sub-module
-  ux: {
-    a11y: 'high',        // accessibility violations 
-    cls: 'high',         // cumulative layout shift
-    taste: 'advisory',   // design taste (reports, doesn't gate)
-  },
+# Commit-tier checkers (detected at init; absent = off)
+# Per-checker options as key = value under each [checkers.<name>] table.
+[checkers.tsc]
+# e.g. timeout = 60
 
-  // Severity filtering (which violations show in reports)
-  gate: {
-    file: ['critical', 'high'],   // fast-tier report threshold
-    staged: ['critical', 'high'], // commit-tier report threshold
-  },
+# UX module (optional) — off by default, opt-in per sub-module
+[ux]
+a11y = "high"        # accessibility violations
+cls = "high"         # cumulative layout shift
+taste = "advisory"   # design taste (reports, doesn't gate)
 
-  // File paths (relative to repo root)
-  suppressions: './suppressions.json',     // line-level exemptions
-  fixtures: './fixtures',                  // test fixture canaries
-  // baselinePath is auto-computed: .slopgate/baseline.json
-};
+# Severity filtering (which violations show in reports)
+[gate]
+file = ["critical", "high"]    # fast-tier report threshold
+staged = ["critical", "high"]  # commit-tier report threshold
 ```
 
 **Auto-generated during `init`:**
@@ -412,38 +399,24 @@ All are opt-in via the `baseline` array in config.
 
 ### Project-Owned Rules
 
-Add custom rules by:
+Add custom rules as **AST rules** — `.yml` files in ast-grep syntax:
 
-1. **Regex rule** — `.mjs` file exporting a `Pattern[]`:
-   ```javascript
-   export default [{
-     id: 'my-rule',
-     title: 'Description',
-     category: 'category',
-     severity: 'critical' | 'high' | 'low',
-     pattern: 'regex',
-     flags: 'i',
-     description: '...',
-     resolution: '...',
-     canary: '...',
-   }];
-   ```
-
-2. **AST rule** — `.yml` file (ast-grep syntax):
-   ```yaml
-   id: my-ast-rule
-   pattern: |
-     kind: function_declaration
-     # ...
-   message: Rule violation
-   severity: high
-   ```
-
-Add to config:
-```javascript
-rules: ['./rules/my-regex-rule.mjs'],
-astRules: './rules/ast',  // auto-loads all .yml files
+```yaml
+id: my-ast-rule
+pattern: |
+  kind: function_declaration
+  # ...
+message: Rule violation
+severity: high
 ```
+
+Point `astRules` at the directory holding them:
+
+```toml
+astRules = "./rules/ast"  # auto-loads all .yml files in this dir
+```
+
+> **Note:** Custom **project regex rule packs** (the `rules = [...]` field) are **not yet supported** by the native engine. `rules` must currently be `[]`; a non-empty value errors with `slopgate: project rule pack "<path>" cannot be loaded by the native TOML resolver (PHASE-2: project rule packs)`. Project regex packs are planned (PHASE-2). For now, use ast-grep YAML for custom rules, or one of the built-in baseline/stack packs.
 
 ---
 
@@ -451,10 +424,12 @@ astRules: './rules/ast',  // auto-loads all .yml files
 
 ### Regex Rules
 
-Patterns are JavaScript regex strings with flags (i, m, s, etc.). A pattern matches any line containing the regex.
+> **Note:** Authoring *custom project* regex rule packs is **not yet supported** by the native engine (PHASE-2 — see [Project-Owned Rules](#project-owned-rules)). The shape below describes how the **built-in** regex packs are defined (compiled into the engine); it is reference, not a workflow you can wire in via `rules` today. Use ast-grep YAML for custom rules.
+
+Patterns are regex strings with flags (i, m, s, etc.). A pattern matches any line containing the regex.
 
 **Example:**
-```javascript
+```
 {
   id: 'no-stubs-placeholder',
   pattern: 'placeholder\\s+(?:for now|impl)',
@@ -541,7 +516,7 @@ Init wires slopgate into `.claude/settings.json`:
 ```bash
 #!/usr/bin/env bash
 ROOT=$(git rev-parse --show-toplevel) || exit 0
-CONFIG="$ROOT/.slopgate/config.mjs"
+CONFIG="$ROOT/.slopgate/config.toml"
 [ -f "$CONFIG" ] || exit 0
 exec node /path/to/slopgate/bin/slopgate --staged --config "$CONFIG"
 ```
@@ -595,9 +570,10 @@ Validates:
 ### Example 1: Block Unsafe Type Casts
 
 Config:
-```javascript
-baseline: ['as-any'],
-gate: { staged: ['critical', 'high'] },
+```toml
+baseline = ["as-any"]
+[gate]
+staged = ["critical", "high"]
 ```
 
 Commit a file with `const x = y as any;`:
@@ -618,12 +594,13 @@ Fix it to `const x = y as unknown;` or a proper type, then commit.
 ### Example 2: Allow Pre-Existing Copy-Paste, Block New Ones
 
 Config:
-```javascript
-checkers: { jscpd: { minTokens: 50 } },
-baseline: [],
+```toml
+baseline = []
+[checkers.jscpd]
+minTokens = 50
 ```
 
-Run `slopgate baseline --config .slopgate/config.mjs` to baseline existing clones. Now:
+Run `slopgate baseline --config .slopgate/config.toml` to baseline existing clones. Now:
 - Commits pass unless they introduce NEW duplications
 - Track paydown via `slopgate baseline --prune` (drops resolved entries)
 
@@ -648,9 +625,9 @@ Now commits that import database code from UI layer are blocked.
 ### Example 4: Silence a Rule in One Project
 
 Config:
-```javascript
-astDisable: ['console-debug-left'],  // CLI tools log on purpose
-baseline: ['semantic'],
+```toml
+astDisable = ["console-debug-left"]  # CLI tools log on purpose
+baseline = ["semantic"]
 ```
 
 The `console-debug-left` rule fires everywhere except this project.
@@ -664,7 +641,7 @@ The `console-debug-left` rule fires everywhere except this project.
 ```
 git commit
   └─ .git/hooks/pre-commit
-       └─ slopgate --staged --config <repo>/.slopgate/config.mjs
+       └─ slopgate --staged --config <repo>/.slopgate/config.toml
             ├─ Enumerate staged files
             ├─ Regex engine (patterns → violations)
             ├─ AST engine (ast-grep rules → violations)

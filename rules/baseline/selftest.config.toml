@@ -1,7 +1,7 @@
-# TOML twin of selftest.config.mjs — canonical self-test config for the Rust engine.
-# Fields mirror the JS oracle 1:1 (verified via differential parity harness).
+# Canonical self-test config for the Rust engine.
+# Behavior frozen against the former JS oracle via the Stage-0b golden regression test.
 # Path resolution: roots are repo-root-relative; suppressions/fixtures are config-dir-relative.
-# astRules is intentionally omitted (JS sets `astRules: null`); the resolver always adds
+# astRules is intentionally omitted; the resolver always adds
 # rules/baseline/ast, and UX-high adds rules/ux/ast.
 roots = ["rules/baseline/fixtures/src"]
 exts = [".ts", ".tsx"]

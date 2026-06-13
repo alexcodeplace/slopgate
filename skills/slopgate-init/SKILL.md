@@ -21,20 +21,25 @@ Before authoring any rule, decide which tier it belongs to:
 
 | Tier | Lives in | Config key | Who benefits |
 |------|----------|-----------|--------------|
-| **baseline** | `slopgate/rules/baseline/index.mjs` | `baseline: ['pack-name']` | Any TypeScript/web project |
-| **stack** | `slopgate/rules/stack/index.mjs` | `stack: ['cloudflare']` | Projects using that runtime/framework |
-| **project** | `<repo>/.slopgate/rules/<name>.mjs` | `rules: ['./rules/<name>.mjs']` | This repo only |
+| **baseline** | built-in (compiled into the engine) | `baseline = ["no-stubs", …]` | Any TypeScript/web project |
+| **stack** | built-in (compiled into the engine) | `stack = ["cloudflare"]` | Projects using that runtime/framework |
+| **project (ast)** | `<repo>/.slopgate/rules/ast/<id>.yml` | `astRules = "./rules/ast"` | This repo only |
 
-Assign the **lowest tier** where the rule applies without false positives. Only project-specific business logic or tuned overrides belong in project tier.
+`baseline`/`stack` packs are engine-internal (compiled-in); a project-setup agent does **not** edit
+their contents — it only enables packs by name in the TOML config. Project-specific rules are authored
+as **ast-grep YAML** in the `astRules` dir. Custom regex rule packs (the old `.mjs` arrays) are **not yet
+supported** by the native engine (planned, PHASE-2); a non-empty `rules = [...]` errors, so `rules` stays `[]`.
+
+Assign the **lowest tier** where the rule applies without false positives. Only project-specific business logic belongs in project tier.
 
 ---
 
 ## Step 0 — Already initialized?
 
-Check if `.slopgate/config.mjs` exists in the target repo:
+Check if `.slopgate/config.toml` exists in the target repo:
 
 ```bash
-ls <repo>/.slopgate/config.mjs 2>/dev/null
+ls <repo>/.slopgate/config.toml 2>/dev/null
 ```
 
 If it exists → **stop, invoke `/slopgate-improve` instead.** This skill is for greenfield only.
@@ -48,11 +53,11 @@ node /home/user/Projects/slopgate/bin/slopgate init <repo-abs-path>
 ```
 
 This auto-detects source roots (monorepo workspace-aware), exts, and skipDirs; writes a populated
-`.slopgate/config.mjs`; emits `.slopgate/convention-sources.json` (the manifest of convention inputs
+`.slopgate/config.toml`; emits `.slopgate/convention-sources.json` (the manifest of convention inputs
 to read); and **safe-merges** the edit/commit hooks into the repo's existing `.claude/settings.json`
 (appends, never clobbers — a `.bak` is written). Idempotent: re-running preserves an existing config.
 
-Read the printed summary. **Sanity-check the detected `roots`** — fix `config.mjs` by hand if the repo
+Read the printed summary. **Sanity-check the detected `roots`** — fix `config.toml` by hand if the repo
 has an unusual layout the detector missed.
 
 ## Step 2 — Read the convention sources
@@ -92,11 +97,13 @@ For each convention you find, decide if a static scanner can enforce it. Build a
 **Confidence rubric:** high = the pattern matches the violation and almost nothing else; med = some
 false positives expected, needs `exceptGlobs` tuning; low = high FP risk → defer, don't ship noise.
 
-**Authoring gotcha (mechanize correctly):** for import-membership / import-shape checks use a **regex
-rule**, NOT an ast-grep `constraints` regex on a spread metavar (`$$$A`) — ast-grep constraints do not
-filter spreads and the rule fires on every import. Reserve ast rules for structural patterns
-(`$X.query($$$)` etc.). Line-oriented regex misses multi-line imports — accept that limit or use a
-multiline scan; never trust a single-line grep's "0 hits" to prove a symbol is absent.
+**Authoring gotcha (mechanize correctly):** import-membership / import-shape checks are the classic
+regex-rule case — but the native engine does not yet support custom regex rule packs (PHASE-2), so such
+a check is **not currently mechanizable as a project rule**. Do NOT reach for an ast-grep `constraints`
+regex on a spread metavar (`$$$A`) as a substitute — ast-grep constraints do not filter spreads and the
+rule fires on every import. Reserve ast rules for genuine structural patterns (`$X.query($$$)` etc.). If
+a convention truly needs regex (not expressible in ast-grep), defer it as PHASE-2 rather than shipping a
+brittle ast-grep approximation. Never trust a single-line grep's "0 hits" to prove a symbol is absent.
 
 ## Step 4 — Triage (high-reasoning; the implementer does NOT self-approve)
 
@@ -109,16 +116,16 @@ when the candidate review shows the project actually wants them.
 
 ## Step 4b — Offer the UX module (greenfield only)
 
-The UX module (`ux:{}` in config) is **optional and off by default** — UX taste varies, so it is
-never auto-enabled. The scaffold writes it as a commented template. Decide whether to offer it:
+The UX module (a `[ux]` table in config) is **optional and off by default** — UX taste varies, so it is
+never auto-enabled. The scaffold does not emit a `[ux]` table — you add one only on consent. Decide whether to offer it:
 
 - **Existing project with substantial UI already written** → do NOT push it. Mention one line
-  ("UX module available — uncomment `ux:` in config to enable") and move on. Turning it on now would
+  ("UX module available — add a `[ux]` table to config to enable") and move on. Turning it on now would
   flag a pile of pre-existing markup; ratchet absorbs gating violations, but the advisory noise annoys.
 - **Greenfield / "just vibing a new project"** → offer it. These are good-enough defaults for someone
   with no strong UI opinion. Ask the user which sub-modules to enable (don't assume):
 
-  Sub-modules (`ux:` keys, value = severity; `'advisory'` reports but never blocks, `'high'` gates):
+  Sub-modules (`[ux]` keys, value = `"high"` \| `"advisory"` \| `true`; `"advisory"` reports but never blocks, `"high"` gates, `true` = the pack's default severity below):
   | key | catches | default |
   |-----|---------|---------|
   | `a11y` | `<div onClick>`→`<button>`, anchor-no-href, img-no-alt, button-no-type, positive tabIndex (§11) | `high` |
@@ -127,24 +134,28 @@ never auto-enabled. The scaffold writes it as a commented template. Decide wheth
   | `taste` | emoji-as-icon, "Trusted by", Lorem ipsum, robotic microcopy, heavy drop-shadow, linear/long motion (§0/§6/§26) | `advisory` |
   | `advisory` | modal-no-close, index-as-key, view-state-not-in-URL — higher false-positive nudges (§10/§14) | `advisory` |
 
-  Use AskUserQuestion (multi-select sub-modules + a severity choice). On consent, uncomment/author the
-  `ux:` block in `.slopgate/config.mjs`. Opt-out UX is symmetric: deleting a key disables one sub-module,
-  deleting the block disables the module. Pair with the `/slopgate-ux` skill (prompt-time design
+  Use AskUserQuestion (multi-select sub-modules + a severity choice). On consent, author the
+  `[ux]` table in `.slopgate/config.toml`. Opt-out UX is symmetric: deleting a key disables one sub-module,
+  deleting the table disables the module. Pair with the `/slopgate-ux` skill (prompt-time design
   directives) for the semantic UX rules a static scanner can't enforce.
 
 ## Step 5 — Author the approved rules
 
-- **Baseline/stack rules** (generic enough): add to `slopgate/rules/baseline/index.mjs` or `slopgate/rules/stack/index.mjs`. Add fixture canary. Run slopgate self-test.
-- **Project regex rules** → `.slopgate/rules/<project>-patterns.mjs` (array of `{id,title,category,severity,pattern,description,resolution,excludeGlobs?,canary}`). Every rule MUST have a `canary` string it matches.
-- **Project AST rules** → `.slopgate/rules/ast/<id>.yml` (only for genuine structural patterns).
+- **Baseline/stack rules** are built into the engine — a project-setup agent does **not** author or edit
+  them, it only enables packs by name (`baseline = [...]` / `stack = [...]`) in `config.toml`.
+- **Project regex rules** are **not yet supported** by the native engine (PHASE-2). Do NOT author a `.mjs`
+  rule pack and do NOT set `rules = [...]` — a non-empty `rules` errors. Keep `rules = []`. If a convention
+  genuinely needs regex (not expressible in ast-grep), defer it with a one-line reason.
+- **Project AST rules** → `.slopgate/rules/ast/<id>.yml` (ast-grep YAML — this is THE project-rule path).
 - Add `.slopgate/fixtures/src/` canary files so `--self-test` proves each rule fires.
-- Wire enabled rule files into `config.mjs` `rules` / keep `astRules: './rules/ast'`.
-- Override a baseline rule with the same `id` in project rules to tune pattern/excludeGlobs — last-wins dedup applies.
+- Keep `astRules = "./rules/ast"` in `config.toml`; leave `rules = []`.
+- To silence a built-in ast rule, list its `id` in `astDisable = [...]`. (Overriding a built-in
+  baseline/stack rule's pattern from a project rule pack was a regex-pack feature — deferred to PHASE-2.)
 
 ## Step 6 — Drive to zero (zero-tolerance before enabling)
 
 ```bash
-node /home/user/Projects/slopgate/bin/slopgate --self-test --config .slopgate/config.mjs   # expect 0
+node /home/user/Projects/slopgate/bin/slopgate --self-test --config .slopgate/config.toml   # expect 0
 # full dry-run count per rule id → must reach {}
 ```
 
@@ -174,7 +185,7 @@ any enabled rule's canary). If not 2, the wiring is broken — fix before commit
 ## Step 8 — Commit runtime config only
 
 ```bash
-git add .slopgate/config.mjs .slopgate/rules .slopgate/suppressions.json .slopgate/convention-sources.json .claude/settings.json
+git add .slopgate/config.toml .slopgate/rules .slopgate/suppressions.json .slopgate/convention-sources.json .claude/settings.json
 git commit -m "feat: adopt slopgate (<project> rule pack + edit/commit hooks)"
 ```
 
@@ -187,7 +198,7 @@ allow-list rejects `.slopgate/`, STOP and ask the user.
 ## Red flags
 
 - Forcing a regex for a semantic convention → noise; if `detect: none`, skip it.
-- ast-grep `constraints` on a `$$$` spread for import checks → mass false positives; use a regex rule.
+- ast-grep `constraints` on a `$$$` spread for import checks → mass false positives; regex rule packs are PHASE-2, so defer such a check rather than approximating it with ast-grep.
 - Wiring hooks before the tree is at zero → every edit trips legacy debt.
 - Overwriting an existing `.claude/settings.json` → the CLI safe-merges; never hand-replace it.
 - An implementing agent self-approving which conventions become rules → that's the orchestrator's call.

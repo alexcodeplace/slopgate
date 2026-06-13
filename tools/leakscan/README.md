@@ -49,11 +49,11 @@ non-empty list **replaces** the default for that key):
 
 ## slopgate integration
 
-Wired as the `leakscan` checker (`src/checkers/leakscan.mjs`). Enable in
-`.slopgate/config.mjs`:
+Wired as the `leakscan` checker (`crates/slopgate-core/src/checkers/leakscan.rs`).
+Enable in `.slopgate/config.toml`:
 
-```js
-checkers: { leakscan: {} }   // or { leakscan: { rules: 'leakscan.json', timeout: 60 } }
+```toml
+[checkers.leakscan]              # or: rules = "leakscan.json"  /  timeout = 60
 ```
 
 The adapter resolves the binary from `cfg.bin` → `$LEAKSCAN_BIN` →

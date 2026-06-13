@@ -1,4 +1,6 @@
-//! Rule packs embedded from the JS source (committed JSON, identical by construction).
+//! Built-in rule packs, compiled into the engine from the committed JSON in
+//! `crates/slopgate-core/src/rules/*.json` via `include_str!`. These JSON files
+//! are the canonical source of truth for baseline/stack/ux pack patterns.
 
 use serde::Deserialize;
 use std::collections::BTreeMap;
