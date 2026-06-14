@@ -84,6 +84,13 @@ jobs:
           merge-multiple: true
           path: vendor
 
+      # upload/download-artifact@v4 does NOT preserve the executable bit, so the
+      # staged 0755 binaries arrive here as 0644 and npm packs them non-executable
+      # (launcher then dies with EACCES). Restore +x before packing. The Windows
+      # .exe needs no bit; only the unix `slopgate-rs` files do.
+      - name: Restore executable bit on engine binaries
+        run: find vendor -type f -name slopgate-rs -exec chmod 0755 {} +
+
       - name: Set version from tag
         env:
           REF: ${{ github.ref_name }}
