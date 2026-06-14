@@ -31,7 +31,10 @@ jobs:
         include:
           - { key: linux-x64,    target: x86_64-unknown-linux-gnu,  runner: ubuntu-latest }
           - { key: linux-arm64,  target: aarch64-unknown-linux-gnu, runner: ubuntu-24.04-arm }
-          - { key: darwin-x64,   target: x86_64-apple-darwin,       runner: macos-13 }
+          # x86_64 mac built on Apple-Silicon runner via cross-compile (Intel macos-13
+          # runners are being retired and queue indefinitely). Apple's toolchain
+          # cross-compiles x86_64-apple-darwin from arm natively — `--target` drives it.
+          - { key: darwin-x64,   target: x86_64-apple-darwin,       runner: macos-14 }
           - { key: darwin-arm64, target: aarch64-apple-darwin,      runner: macos-14 }
           - { key: win32-x64,    target: x86_64-pc-windows-msvc,    runner: windows-latest }
     runs-on: ${{ matrix.runner }}

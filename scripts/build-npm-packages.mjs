@@ -32,7 +32,7 @@ const REPO = join(dirname(fileURLToPath(import.meta.url)), '..');
 const PLATFORMS = [
   { key: 'linux-x64',    target: 'x86_64-unknown-linux-gnu',  exe: false, runner: 'ubuntu-latest' },
   { key: 'linux-arm64',  target: 'aarch64-unknown-linux-gnu', exe: false, runner: 'ubuntu-24.04-arm' },
-  { key: 'darwin-x64',   target: 'x86_64-apple-darwin',       exe: false, runner: 'macos-13' },
+  { key: 'darwin-x64',   target: 'x86_64-apple-darwin',       exe: false, runner: 'macos-14' },
   { key: 'darwin-arm64', target: 'aarch64-apple-darwin',      exe: false, runner: 'macos-14' },
   { key: 'win32-x64',    target: 'x86_64-pc-windows-msvc',    exe: true,  runner: 'windows-latest' },
 ];
