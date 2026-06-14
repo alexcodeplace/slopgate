@@ -1,5 +1,5 @@
 {
-  "name": "slopgate",
+  "name": "@alexcodeplace/slopgate",
   "version": "1.0.0",
   "type": "module",
   "description": "Global code-quality / anti-slop gate — engine shared, rules per-project.",
