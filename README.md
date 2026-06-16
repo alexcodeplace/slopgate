@@ -409,7 +409,7 @@ All are opt-in via the `baseline` array in config. Severity drives the gate thre
 |------|----------|----------|---------|
 | `no-stubs` | critical | convention | Stub / placeholder / "not implemented" / deferred-work markers |
 | `ts-suppress` | high | convention | `@ts-ignore` / `@ts-expect-error` — suppressing tsc instead of fixing the cause |
-| `as-any` | high | convention | `as any` casts that disable type safety |
+| `as-any` | high | convention | `as any`, `: any`, `Array<any>`, `Promise<any>`, `Record<string, any>` escape hatches that disable type safety |
 | `no-narration-comments` | high | convention | Comments that narrate a diff/history/removal (`changed from`, `used to`, `no longer needed`, `track later`) instead of explaining a non-obvious constraint |
 | `raw-hex` | high | convention | Hardcoded hex / `rgb()` colors + raw multi-digit `px` — use design tokens |
 | `sql-safety` | critical | convention | `SELECT … FOR UPDATE` with an aggregate (Postgres rejects this at runtime) |
@@ -427,6 +427,7 @@ Loaded automatically alongside the regex packs (the resolver always adds `rules/
 |---------|---------|
 | `empty-catch` (ts + tsx) | Empty `catch` block silently swallowing an error |
 | `inner-html` | Unsafe `innerHTML` / `dangerouslySetInnerHTML` assignment |
+| `focused-test` | Focused tests committed via `test.only` / `it.only` / `describe.only` / `fit` / `fdescribe` |
 | `target-blank-norel` | `target="_blank"` anchor missing `rel="noopener"` |
 | `window-in-render` | `window`/`document` access during render (SSR hazard) |
 
@@ -440,7 +441,7 @@ Opt-in via `stack = ["cloudflare"]`:
 
 **Planned (v2+):**
 - Depth rules — pass-through-fn, delegating-wrapper (Ousterhout symptoms)
-- Test-slop rules — test-no-assertion, test-skip-only
+- Test-slop rules — test-no-assertion, test-skip
 - Custom project **regex** rule packs (the `rules = [...]` field — see [Project-Owned Rules](#project-owned-rules))
 
 ### Project-Owned Rules

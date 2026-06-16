@@ -13,6 +13,12 @@ const namePlaceholder = 1;
 /* eslint-disable zync/no-raw-html-in-pages */
 // changed from foo to bar
 function bad(el: HTMLElement) { el.innerHTML = '<b>hi</b>'; }
+const _dangerous = <div dangerouslySetInnerHTML={{ __html: html }} />;
+const _safeAttrName = { dangerouslySetInnerHTML: html };
+describe.only('focused suite canary', () => {});
+fdescribe('focused suite shorthand canary', () => {});
+describe('regular suite negative canary', () => {});
+// describe.only('commented focused suite negative canary', () => {});
 // live-secrets canary:
 const _sk = "sk_live_aaaaaaaaaaaa";
 // eval-ban canary:

@@ -1,12 +1,15 @@
 id: inner-html-assignment
 language: tsx
 severity: error
-message: innerHTML / insertAdjacentHTML assignment — XSS surface
+message: innerHTML / insertAdjacentHTML / dangerouslySetInnerHTML — XSS surface
 note: '{"severity":"high","category":"security","resolution":"Build DOM via safe APIs or sanitize with isomorphic-dompurify."}'
 rule:
   any:
     - pattern: $X.innerHTML = $$$
     - pattern: $X.insertAdjacentHTML($$$)
+    - all:
+        - kind: jsx_attribute
+        - regex: '^dangerouslySetInnerHTML='
 ignores:
   - '**/*.test.ts'
   - '**/*.test.tsx'
