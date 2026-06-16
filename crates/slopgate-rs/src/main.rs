@@ -1,7 +1,9 @@
 use serde_json::Value;
 use slopgate_core::audit::run::run_audit;
 use slopgate_core::config::resolve_config;
-use slopgate_core::gate::{run_gate, snapshot_violations, Mode, Tier};
+use slopgate_core::gate::{
+    run_gate_with_options, snapshot_violations, GateOptions, Mode, Phase, Tier,
+};
 use slopgate_core::help::HELP_TEXT;
 use slopgate_core::init::run::{engine_root, run_init_io};
 use slopgate_core::install::agent_hooks::{
@@ -580,16 +582,31 @@ fn dispatch(
 
     let tier = match val_of(args, "--tier") {
         None => None,
-        Some("fast") => Some(Tier::Fast),
-        Some("commit") => Some(Tier::Commit),
-        Some(_) => {
-            write_slopgate_err(stderr, "slopgate: --tier must be fast|commit");
-            return Ok(2);
-        }
+        Some(raw) => Tier::parse(raw),
     };
+    if has(args, "--tier") && tier.is_none() {
+        write_slopgate_err(
+            stderr,
+            &format!("slopgate: --tier must be {}", Tier::values()),
+        );
+        return Ok(2);
+    }
+
+    let phase = match val_of(args, "--phase") {
+        None => None,
+        Some(raw) => Phase::parse(raw),
+    };
+    if has(args, "--phase") && phase.is_none() {
+        write_slopgate_err(
+            stderr,
+            &format!("slopgate: --phase must be {}", Phase::values()),
+        );
+        return Ok(2);
+    }
+    let gate_options = GateOptions { tier, phase };
 
     if has(args, "--staged") {
-        let result = run_gate(Mode::Staged, &config, tier, None);
+        let result = run_gate_with_options(Mode::Staged, &config, gate_options, None);
         if result.code == 1 {
             let record_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 record_incidents(&result.violations, &config, "staged");
@@ -612,7 +629,7 @@ fn dispatch(
     }
 
     if let Some(file_target) = val_of(args, "--file") {
-        let result = run_gate(Mode::File, &config, tier, Some(file_target));
+        let result = run_gate_with_options(Mode::File, &config, gate_options, Some(file_target));
         return Ok(result.code);
     }
 
@@ -729,6 +746,44 @@ mod tests {
         let (code, _, err) = run_capture(args);
         assert_eq!(code, 2);
         assert_eq!(err, "slopgate: --tier must be fast|commit\n");
+    }
+
+    #[test]
+    fn bad_phase_returns_two() {
+        let dir = setup_tmp_repo();
+        let root = dir.path();
+        fs::write(root.join("src/clean.ts"), "export const x = 1;\n").unwrap();
+
+        let mut args = base_args(root);
+        args.extend([
+            "--phase".into(),
+            "deploy".into(),
+            "--file".into(),
+            "src/clean.ts".into(),
+        ]);
+        let (code, _, err) = run_capture(args);
+        assert_eq!(code, 2);
+        assert_eq!(
+            err,
+            "slopgate: --phase must be edit|commit|push|ci|pr|nightly\n"
+        );
+    }
+
+    #[test]
+    fn phase_flag_runs_file_gate() {
+        let dir = setup_tmp_repo();
+        let root = dir.path();
+        fs::write(root.join("src/clean.ts"), "export const x = 1;\n").unwrap();
+
+        let mut args = base_args(root);
+        args.extend([
+            "--phase".into(),
+            "edit".into(),
+            "--file".into(),
+            "src/clean.ts".into(),
+        ]);
+        let (code, _, err) = run_capture(args);
+        assert_eq!(code, 0, "stderr:\n{err}");
     }
 
     #[test]

@@ -137,6 +137,8 @@ type-coverage success.";
             patterns: vec![],
             ast_rule_dirs: vec![],
             checkers: Default::default(),
+            checker_phases: Default::default(),
+            phases: crate::config::default_phase_settings(),
             ast_disable: Default::default(),
             baseline_path: String::new(),
             suppressions_path: String::new(),

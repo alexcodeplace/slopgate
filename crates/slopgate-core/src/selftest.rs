@@ -489,6 +489,8 @@ mod tests {
             patterns,
             ast_rule_dirs,
             checkers: BTreeMap::new(),
+            checker_phases: BTreeMap::new(),
+            phases: crate::config::default_phase_settings(),
             ast_disable: HashSet::new(),
             baseline_path: repo
                 .join(".slopgate/baseline.json")
@@ -584,6 +586,8 @@ mod tests {
             }],
             ast_rule_dirs: vec![],
             checkers: BTreeMap::new(),
+            checker_phases: BTreeMap::new(),
+            phases: crate::config::default_phase_settings(),
             ast_disable: HashSet::new(),
             baseline_path: String::new(),
             suppressions_path: String::new(),
