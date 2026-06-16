@@ -1,0 +1,36 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "/Users/angelhermon/Documents/Codex/2026-06-16/agent-repo-search-users-angelhermon-codex/work/slopgate/hooks/edit-hook.sh",
+            "type": "command"
+          }
+        ],
+        "matcher": "Edit|Write"
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "/Users/angelhermon/Documents/Codex/2026-06-16/agent-repo-search-users-angelhermon-codex/work/slopgate/hooks/commit-hook.sh",
+            "type": "command"
+          }
+        ],
+        "matcher": "Bash"
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "command": "/Users/angelhermon/Documents/Codex/2026-06-16/agent-repo-search-users-angelhermon-codex/work/slopgate/hooks/session-start.sh",
+            "type": "command"
+          }
+        ]
+      }
+    ]
+  }
+}
