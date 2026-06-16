@@ -4,6 +4,7 @@ use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
+use std::process::Command;
 
 const EXCLUDE_SCAN: &[&str] = &[
     "node_modules",
@@ -296,6 +297,113 @@ fn bin_exists(target_dir: &Path, name: &str) -> bool {
     path_exists(&target_dir.join("node_modules/.bin").join(name))
 }
 
+fn path_bin_exists(target_dir: &Path, name: &str, args: &[&str]) -> bool {
+    Command::new(name)
+        .args(args)
+        .current_dir(target_dir)
+        .output()
+        .ok()
+        .is_some_and(|o| o.status.success())
+}
+
+fn tool_exists(target_dir: &Path, name: &str, args: &[&str]) -> bool {
+    bin_exists(target_dir, name) || path_bin_exists(target_dir, name, args)
+}
+
+fn has_shell_shebang(path: &Path) -> bool {
+    let Ok(contents) = fs::read_to_string(path) else {
+        return false;
+    };
+    let first = contents.lines().next().unwrap_or("");
+    first.starts_with("#!")
+        && ["sh", "bash", "zsh", "ksh", "dash"]
+            .iter()
+            .any(|shell| first.contains(shell))
+}
+
+fn is_shell_script_path(path: &Path) -> bool {
+    if !path.is_file() {
+        return false;
+    }
+    if path
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| ["sh", "bash", "zsh", "ksh", "dash", "bats"].contains(&e))
+    {
+        return true;
+    }
+    has_shell_shebang(path)
+}
+
+fn has_shell_scripts(dir: &Path, depth: i32) -> bool {
+    if depth < 0 || !path_exists(dir) {
+        return false;
+    }
+    let entries = match fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return false,
+    };
+    for ent in entries.flatten() {
+        let path = ent.path();
+        let Ok(file_type) = ent.file_type() else {
+            continue;
+        };
+        if file_type.is_file() && is_shell_script_path(&path) {
+            return true;
+        }
+        if file_type.is_dir() {
+            let name = ent.file_name().to_string_lossy().into_owned();
+            if is_excluded_scan(&name) || name == ".git" || name == "target" {
+                continue;
+            }
+            if has_shell_scripts(&path, depth - 1) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn has_workflow_files(target_dir: &Path) -> bool {
+    let dir = target_dir.join(".github/workflows");
+    let Ok(entries) = fs::read_dir(dir) else {
+        return false;
+    };
+    entries.flatten().any(|entry| {
+        let path = entry.path();
+        path.is_file()
+            && path
+                .extension()
+                .and_then(|e| e.to_str())
+                .is_some_and(|e| e == "yml" || e == "yaml")
+    })
+}
+
+fn has_typos_scope(target_dir: &Path) -> bool {
+    if ["docs", "rules", "skills"]
+        .iter()
+        .any(|p| path_exists(&target_dir.join(p)))
+    {
+        return true;
+    }
+    if [
+        "README.md",
+        "CONTRIBUTING.md",
+        "CHANGELOG.md",
+        "SECURITY.md",
+        "CODE_OF_CONDUCT.md",
+    ]
+    .iter()
+    .any(|p| path_exists(&target_dir.join(p)))
+    {
+        return true;
+    }
+    detect_roots(target_dir)
+        .roots
+        .iter()
+        .any(|root| path_exists(&target_dir.join(root)))
+}
+
 /// Detect which checkers are available in the project.
 pub fn detect_checkers(target_dir: &Path) -> Value {
     let mut checkers = serde_json::Map::new();
@@ -314,6 +422,15 @@ pub fn detect_checkers(target_dir: &Path) -> Value {
     }
     if bin_exists(target_dir, "type-coverage") {
         checkers.insert("type-coverage".to_string(), json!(true));
+    }
+    if tool_exists(target_dir, "shellcheck", &["--version"]) && has_shell_scripts(target_dir, 5) {
+        checkers.insert("shellcheck".to_string(), json!(true));
+    }
+    if tool_exists(target_dir, "actionlint", &["-version"]) && has_workflow_files(target_dir) {
+        checkers.insert("actionlint".to_string(), json!(true));
+    }
+    if tool_exists(target_dir, "typos", &["--version"]) && has_typos_scope(target_dir) {
+        checkers.insert("typos".to_string(), json!(true));
     }
     checkers.insert("diff-shape".to_string(), json!({ "maxDirs": 5 }));
 
@@ -526,6 +643,32 @@ mod tests {
         assert_eq!(checkers.get("tsc"), Some(&json!(true)));
         assert_eq!(checkers.get("knip"), Some(&json!(true)));
         assert_eq!(checkers.get("diff-shape"), Some(&json!({ "maxDirs": 5 })));
+    }
+
+    #[test]
+    fn detect_checkers_flags_optional_external_adapters_when_relevant() {
+        let tmp = TempDir::new().unwrap();
+        write_file(
+            &tmp.path().join("node_modules/.bin/shellcheck"),
+            "#!/usr/bin/env sh\n",
+        );
+        write_file(
+            &tmp.path().join("node_modules/.bin/actionlint"),
+            "#!/usr/bin/env sh\n",
+        );
+        write_file(
+            &tmp.path().join("node_modules/.bin/typos"),
+            "#!/usr/bin/env sh\n",
+        );
+        write_file(&tmp.path().join("scripts/lint.sh"), "#!/usr/bin/env sh\n");
+        write_file(&tmp.path().join(".github/workflows/ci.yml"), "name: ci\n");
+        write_file(&tmp.path().join("docs/guide.md"), "# Guide\n");
+
+        let checkers = detect_checkers(tmp.path());
+
+        assert_eq!(checkers.get("shellcheck"), Some(&json!(true)));
+        assert_eq!(checkers.get("actionlint"), Some(&json!(true)));
+        assert_eq!(checkers.get("typos"), Some(&json!(true)));
     }
 
     #[test]

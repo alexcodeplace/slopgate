@@ -1,0 +1,14 @@
+[
+  {
+    "file": "./src/lib.rs",
+    "line": 3,
+    "typo": "retrive",
+    "corrections": ["retrieve"]
+  },
+  {
+    "file": "docs/guide.md",
+    "line": 9,
+    "typo": "succesfully",
+    "corrections": ["successfully"]
+  }
+]

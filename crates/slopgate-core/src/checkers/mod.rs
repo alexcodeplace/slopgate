@@ -1,3 +1,4 @@
+pub mod actionlint;
 pub mod depcruise;
 pub mod diff_shape;
 pub mod health;
@@ -6,5 +7,7 @@ pub mod jscpd;
 pub mod knip;
 pub mod leakscan;
 pub mod shared;
+pub mod shellcheck;
 pub mod tsc;
 pub mod type_coverage;
+pub mod typos;
