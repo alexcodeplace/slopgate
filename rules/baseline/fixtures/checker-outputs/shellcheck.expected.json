@@ -1,0 +1,16 @@
+[
+  {
+    "file": "scripts/deploy.sh",
+    "line": 7,
+    "code": "SC2086",
+    "level": "warning",
+    "message": "Double quote to prevent globbing and word splitting."
+  },
+  {
+    "file": "hooks/commit-hook.sh",
+    "line": 2,
+    "code": "SC2148",
+    "level": "style",
+    "message": "Tips depend on target shell and yours is unknown."
+  }
+]

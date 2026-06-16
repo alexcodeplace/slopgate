@@ -1,12 +1,15 @@
 //! Checker registry — mirrors `src/checkers/index.mjs`.
 
+use crate::checkers::actionlint;
 use crate::checkers::depcruise;
 use crate::checkers::diff_shape;
 use crate::checkers::jscpd;
 use crate::checkers::knip;
 use crate::checkers::leakscan;
+use crate::checkers::shellcheck;
 use crate::checkers::tsc;
 use crate::checkers::type_coverage;
+use crate::checkers::typos;
 use crate::config::ResolvedConfig;
 use crate::report::Violation;
 use serde_json::Value;
@@ -73,6 +76,21 @@ pub static CHECKERS: &[Checker] = &[
         run: type_coverage::run,
     },
     Checker {
+        id: "shellcheck",
+        detect: shellcheck::detect,
+        run: shellcheck::run,
+    },
+    Checker {
+        id: "actionlint",
+        detect: actionlint::detect,
+        run: actionlint::run,
+    },
+    Checker {
+        id: "typos",
+        detect: typos::detect,
+        run: typos::run,
+    },
+    Checker {
         id: "diff-shape",
         detect: diff_shape::detect,
         run: diff_shape::run,
@@ -95,6 +113,9 @@ mod tests {
                 "depcruise",
                 "leakscan",
                 "type-coverage",
+                "shellcheck",
+                "actionlint",
+                "typos",
                 "diff-shape"
             ]
         );
