@@ -392,6 +392,7 @@ mod tests {
             },
             ux_ast_severity: Default::default(),
             ux_ast_all: Default::default(),
+            agent: crate::config::AgentConfig::default(),
         };
 
         let opts = AstGrepScanOpts {
@@ -508,6 +509,7 @@ mod tests {
             },
             ux_ast_severity: Default::default(),
             ux_ast_all: Default::default(),
+            agent: crate::config::AgentConfig::default(),
         };
 
         let got = run_ast_grep_scan(&config, None, &AstGrepScanOpts::default());
@@ -549,6 +551,7 @@ mod tests {
             },
             ux_ast_severity: Default::default(),
             ux_ast_all: Default::default(),
+            agent: crate::config::AgentConfig::default(),
         };
 
         let got = run_ast_grep_scan_in(&config, None, &AstGrepScanOpts::default(), &not_a_dir);
@@ -589,6 +592,7 @@ mod tests {
             },
             ux_ast_severity: Default::default(),
             ux_ast_all: Default::default(),
+            agent: crate::config::AgentConfig::default(),
         };
 
         let files = vec!["README.md".to_string()];

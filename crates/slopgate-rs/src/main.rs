@@ -1,11 +1,13 @@
 use serde_json::Value;
+use slopgate_core::agent::{goal_check_hook_output, prompt_meta_hook_output};
 use slopgate_core::audit::run::run_audit;
 use slopgate_core::config::resolve_config;
 use slopgate_core::gate::{run_gate, snapshot_violations, Mode, Tier};
 use slopgate_core::help::HELP_TEXT;
 use slopgate_core::init::run::{engine_root, run_init_io};
 use slopgate_core::install::agent_hooks::{
-    home_dir, install_agent_hooks, remove_agent_hooks, status_agent_hooks, status_symbol, AGENTS,
+    home_dir, install_agent_hooks_with_options, remove_agent_hooks, status_agent_hooks,
+    status_symbol, AgentHookOptions, AGENTS,
 };
 use slopgate_core::install::hooks::{install_pre_commit_hook, HookInstallAction};
 use slopgate_core::install::skills::{default_skills_dest_in, install_skills, SkillInstallAction};
@@ -19,7 +21,7 @@ use slopgate_core::stats::query::{
 use slopgate_core::stats::record::record_incidents;
 use slopgate_core::stats::store::{global_stats_path_in, project_stats_path, read_rows};
 use std::collections::{HashMap, HashSet};
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::Path;
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -47,6 +49,12 @@ fn write_top_level_err(stderr: &mut dyn Write, err: &str) {
 
 fn writeln_stdout(stdout: &mut dyn Write, line: &str) {
     let _ = writeln!(stdout, "{line}");
+}
+
+fn write_json_stdout(stdout: &mut dyn Write, value: &Value) {
+    if serde_json::to_writer(&mut *stdout, value).is_ok() {
+        let _ = writeln!(stdout);
+    }
 }
 
 fn pad_end(s: &str, width: usize) -> String {
@@ -345,6 +353,20 @@ fn dispatch(
         }
 
         if sub == Some("install") || sub == Some("reinstall") {
+            let hook_options = if let Some(config_path) = val_of(args, "--config") {
+                match resolve_config(config_path) {
+                    Ok(config) => AgentHookOptions {
+                        prompt_meta: config.agent.prompt_meta.enabled,
+                        goal: config.agent.goal.enabled,
+                    },
+                    Err(e) => {
+                        write_top_level_err(stderr, &e);
+                        return Ok(1);
+                    }
+                }
+            } else {
+                AgentHookOptions::default()
+            };
             if sub == Some("reinstall") {
                 let rem = remove_agent_hooks(home, &engine, agent_ids_ref);
                 for r in rem {
@@ -356,7 +378,8 @@ fn dispatch(
                     }
                 }
             }
-            let results = install_agent_hooks(home, &engine, agent_ids_ref);
+            let results =
+                install_agent_hooks_with_options(home, &engine, agent_ids_ref, hook_options);
             if results.is_empty() {
                 writeln_stdout(
                     stdout,
@@ -448,6 +471,34 @@ fn dispatch(
             }
         };
         writeln_stdout(stdout, &run_audit(&config, since_days, has(args, "--json")));
+        return Ok(0);
+    }
+
+    if has(args, "prompt-meta") {
+        let config = match require_config(args, stderr) {
+            ConfigResult::Ok(c) => c,
+            ConfigResult::Exit(code) => return Ok(code),
+        };
+        let mut input = String::new();
+        if std::io::stdin().read_to_string(&mut input).is_ok() {
+            if let Some(out) = prompt_meta_hook_output(&config.agent.prompt_meta, &input) {
+                write_json_stdout(stdout, &out);
+            }
+        }
+        return Ok(0);
+    }
+
+    if has(args, "goal-check") {
+        let config = match require_config(args, stderr) {
+            ConfigResult::Ok(c) => c,
+            ConfigResult::Exit(code) => return Ok(code),
+        };
+        let mut input = String::new();
+        if std::io::stdin().read_to_string(&mut input).is_ok() {
+            if let Some(out) = goal_check_hook_output(&config.agent.goal, &input) {
+                write_json_stdout(stdout, &out);
+            }
+        }
         return Ok(0);
     }
 

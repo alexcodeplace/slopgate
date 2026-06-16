@@ -240,6 +240,7 @@ mod tests {
             },
             ux_ast_severity: Default::default(),
             ux_ast_all: Default::default(),
+            agent: crate::config::AgentConfig::default(),
         };
         let det = detect(&config, &serde_json::json!({}));
         assert!(!det.available);

@@ -512,6 +512,7 @@ mod tests {
                 .values()
                 .flat_map(|p| p.ast_ids.iter().cloned())
                 .collect(),
+            agent: crate::config::AgentConfig::default(),
         }
     }
 
@@ -595,6 +596,7 @@ mod tests {
             },
             ux_ast_severity: BTreeMap::new(),
             ux_ast_all: HashSet::new(),
+            agent: crate::config::AgentConfig::default(),
         };
         let code = run_self_test(&config);
         assert_eq!(code, 1, "broken canary must fail self-test");
