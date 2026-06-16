@@ -57,6 +57,146 @@
     ]
   },
   {
+    "id": "explicit-any-annotation",
+    "pattern": "^\\s*(?!\\/\\/|\\/\\*|\\*|\\*\\/)(?:(?!\\/\\/|\\/\\*).)*:\\s*any\\b",
+    "flags": "",
+    "cases": [
+      {
+        "line": "const value: any = payload;",
+        "match": true
+      },
+      {
+        "line": "function accept(value: any) {}",
+        "match": true
+      },
+      {
+        "line": "// const value: any = payload;",
+        "match": false
+      },
+      {
+        "line": "/* const value: any = payload; */",
+        "match": false
+      },
+      {
+        "line": "* @param value: any",
+        "match": false
+      },
+      {
+        "line": "const value: unknown = payload;",
+        "match": false
+      },
+      {
+        "line": "const x = foo as any;",
+        "match": false
+      }
+    ]
+  },
+  {
+    "id": "array-any-generic",
+    "pattern": "^\\s*(?!\\/\\/|\\/\\*|\\*|\\*\\/)(?:(?!\\/\\/|\\/\\*).)*(?:[:=,<({\\[]\\s*)Array\\s*<\\s*any\\s*>",
+    "flags": "",
+    "cases": [
+      {
+        "line": "const values: Array<any> = [];",
+        "match": true
+      },
+      {
+        "line": "type Values = Array<any>;",
+        "match": true
+      },
+      {
+        "line": "// type Values = Array<any>;",
+        "match": false
+      },
+      {
+        "line": "/* type Values = Array<any>; */",
+        "match": false
+      },
+      {
+        "line": "* @type {Array<any>}",
+        "match": false
+      },
+      {
+        "line": "const values: Array<unknown> = [];",
+        "match": false
+      },
+      {
+        "line": "const label = \"Array<any>\";",
+        "match": false
+      }
+    ]
+  },
+  {
+    "id": "promise-any-generic",
+    "pattern": "^\\s*(?!\\/\\/|\\/\\*|\\*|\\*\\/)(?:(?!\\/\\/|\\/\\*).)*(?:[:=,<({\\[]\\s*)Promise\\s*<\\s*any\\s*>",
+    "flags": "",
+    "cases": [
+      {
+        "line": "async function load(): Promise<any> { return fetchJson(); }",
+        "match": true
+      },
+      {
+        "line": "type Load = Promise<any>;",
+        "match": true
+      },
+      {
+        "line": "// async function load(): Promise<any>;",
+        "match": false
+      },
+      {
+        "line": "/* type Load = Promise<any>; */",
+        "match": false
+      },
+      {
+        "line": "* @returns {Promise<any>}",
+        "match": false
+      },
+      {
+        "line": "async function load(): Promise<unknown> { return fetchJson(); }",
+        "match": false
+      },
+      {
+        "line": "const label = \"Promise<any>\";",
+        "match": false
+      }
+    ]
+  },
+  {
+    "id": "record-string-any-generic",
+    "pattern": "^\\s*(?!\\/\\/|\\/\\*|\\*|\\*\\/)(?:(?!\\/\\/|\\/\\*).)*(?:[:=,<({\\[]\\s*)Record\\s*<\\s*string\\s*,\\s*any\\s*>",
+    "flags": "",
+    "cases": [
+      {
+        "line": "type Payload = Record<string, any>;",
+        "match": true
+      },
+      {
+        "line": "const values: Record<string, any> = {};",
+        "match": true
+      },
+      {
+        "line": "// type Payload = Record<string, any>;",
+        "match": false
+      },
+      {
+        "line": "/* type Payload = Record<string, any>; */",
+        "match": false
+      },
+      {
+        "line": "* @type {Record<string, any>}",
+        "match": false
+      },
+      {
+        "line": "type Payload = Record<string, unknown>;",
+        "match": false
+      },
+      {
+        "line": "const label = \"Record<string, any>\";",
+        "match": false
+      }
+    ]
+  },
+  {
     "id": "raw-hex-color",
     "pattern": "#[0-9a-fA-F]{3,8}\\b",
     "flags": "",

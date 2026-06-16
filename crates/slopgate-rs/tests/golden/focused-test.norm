@@ -1,0 +1,21 @@
+⚠ SLOPGATE: ast-grep: ast-grep: using PATH binary (version not pinned — results may differ from CI)
+
+╔═ SLOPGATE ═════════════════════════════════════════╗
+║ SLOPGATE — VIOLATIONS IN EDITED FILE               ║
+╚═════════════════════════════════════════════════════╝
+
+── ast ──
+[CRITICAL] focused-test-only-ts rules/baseline/fixtures/src/focused-test.ts:2
+  × test.only('focused test canary', () => {});
+  ✓ Remove .only before committing so the full test suite runs.
+
+[CRITICAL] focused-test-only-ts rules/baseline/fixtures/src/focused-test.ts:3
+  × it.only('focused spec canary', () => {});
+  ✓ Remove .only before committing so the full test suite runs.
+
+[CRITICAL] focused-test-shorthand-ts rules/baseline/fixtures/src/focused-test.ts:4
+  × fit('focused shorthand canary', () => {});
+  ✓ Replace fit/fdescribe with test/it/describe before committing so the full test suite runs.
+
+3 violation(s) in 1 file(s). Fix now while context is hot.
+False positive? NEVER edit suppressions.json yourself — ask the user via AskUserQuestion.
