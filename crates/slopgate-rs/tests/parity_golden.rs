@@ -94,7 +94,12 @@ fn normalize(s: &str) -> String {
 fn gate_output(repo: &Path, file: &str) -> (i32, String) {
     let out = Command::new(env!("CARGO_BIN_EXE_slopgate-rs"))
         .current_dir(repo)
-        .args(["--file", file, "--config", "rules/baseline/selftest.config.toml"])
+        .args([
+            "--file",
+            file,
+            "--config",
+            "rules/baseline/selftest.config.toml",
+        ])
         .output()
         .expect("run slopgate-rs");
     let mut combined = String::from_utf8_lossy(&out.stdout).into_owned();
@@ -105,7 +110,9 @@ fn gate_output(repo: &Path, file: &str) -> (i32, String) {
 #[test]
 fn gate_output_matches_js_oracle_golden() {
     if !ast_grep_available() {
-        eprintln!("SKIP parity_golden: ast-grep not available (AST canary parity cannot be checked)");
+        eprintln!(
+            "SKIP parity_golden: ast-grep not available (AST canary parity cannot be checked)"
+        );
         return;
     }
     let repo = repo_root();

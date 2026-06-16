@@ -588,6 +588,25 @@ Validates:
 - Ratchet fingerprints (stability under line shifts)
 - Suppressions (line hashing, deduplication)
 
+### CI and Package Smoke Checks
+
+CI keeps the Rust workspace and npm package path honest with:
+
+```bash
+cargo fmt --all --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+cargo build --locked -p slopgate-rs
+SLOPGATE_BIN=target/debug/slopgate-rs npm run self-test
+npm pack --dry-run --json
+```
+
+GitHub Actions workflows are linted with `actionlint`. `zizmor` runs as a
+non-blocking advisory security check for workflow hardening.
+
+`cargo-deny` / `cargo audit` are deferred until the project has an agreed
+advisory/license policy and a validated low-noise config.
+
 ---
 
 ## Examples
@@ -700,7 +719,7 @@ Tool crash / timeout → `⚠ skipped: <id> (<reason>)` warning, gate continues 
 
 - **Git-only** — no other VCS support
 - **No auto-fix** — violations are reported, not automatically corrected
-- **No CI integration yet** — hooks are local and Claude Code only; CI layer is future work
+- **Local gate integration only** — hooks are local and Claude Code/git based; CI covers project/package quality but does not replace per-repo slopgate adoption
 - **`slopgate audit` command** — planned for v2 (non-gating architecture-health report: hotspots, module shape, co-change coupling, ratchet progress tracking)
 - **Embeddings-based semantic duplicate detection** — planned, not in v1
 - **API-surface diff gate** — track breaking changes to public exports (future)
