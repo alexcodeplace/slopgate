@@ -163,6 +163,7 @@ mod tests {
             },
             ux_ast_severity: Default::default(),
             ux_ast_all: Default::default(),
+            agent: crate::config::AgentConfig::default(),
         };
         let files: Vec<String> = (0..7).map(|i| format!("src/d{i}/f.ts")).collect();
         let res = (checker.run)(

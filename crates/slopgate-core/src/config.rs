@@ -22,6 +22,35 @@ pub struct PhaseSettings {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentPromptMetaConfig {
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentGoalConfig {
+    pub enabled: bool,
+    pub max_continuations: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentConfig {
+    pub prompt_meta: AgentPromptMetaConfig,
+    pub goal: AgentGoalConfig,
+}
+
+impl Default for AgentConfig {
+    fn default() -> Self {
+        Self {
+            prompt_meta: AgentPromptMetaConfig { enabled: false },
+            goal: AgentGoalConfig {
+                enabled: false,
+                max_continuations: 1,
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedConfig {
     pub repo_root: String,
     pub config_dir: String,
@@ -42,6 +71,7 @@ pub struct ResolvedConfig {
     pub gate: GateAllow,
     pub ux_ast_severity: BTreeMap<String, String>,
     pub ux_ast_all: HashSet<String>,
+    pub agent: AgentConfig,
 }
 
 impl ResolvedConfig {
@@ -79,6 +109,7 @@ struct RawConfig {
     checker_concurrency: Option<u32>,
     #[serde(default)]
     ux: BTreeMap<String, toml::Value>,
+    agent: Option<RawAgent>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -97,6 +128,26 @@ struct RawGate {
     file: Vec<String>,
     #[serde(default)]
     staged: Vec<String>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct RawAgent {
+    prompt_meta: Option<RawAgentPromptMeta>,
+    goal: Option<RawAgentGoal>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct RawAgentPromptMeta {
+    enabled: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct RawAgentGoal {
+    enabled: Option<bool>,
+    max_continuations: Option<u32>,
 }
 
 fn git_root(from_dir: &Path) -> Option<PathBuf> {
@@ -298,6 +349,22 @@ fn ux_ast_all_ids() -> HashSet<String> {
         .collect()
 }
 
+fn resolve_agent_config(raw: Option<RawAgent>) -> AgentConfig {
+    let raw = raw.unwrap_or_default();
+    let prompt_meta = raw.prompt_meta.unwrap_or_default();
+    let goal = raw.goal.unwrap_or_default();
+
+    AgentConfig {
+        prompt_meta: AgentPromptMetaConfig {
+            enabled: prompt_meta.enabled.unwrap_or(false),
+        },
+        goal: AgentGoalConfig {
+            enabled: goal.enabled.unwrap_or(false),
+            max_continuations: goal.max_continuations.unwrap_or(1).min(8),
+        },
+    }
+}
+
 /// Validate a pattern's required fields and regex compile-ability.
 pub fn validate_pattern(p: &Pattern) -> Result<(), String> {
     for (k, v) in [
@@ -478,6 +545,7 @@ fn resolve_inner(
     }
 
     let baseline_path = path_to_string(config_dir.join("baseline.json"));
+    let agent = resolve_agent_config(raw.agent);
     Ok(ResolvedConfig {
         repo_root: path_to_string(repo_root),
         config_dir: path_to_string(config_dir),
@@ -501,6 +569,7 @@ fn resolve_inner(
         },
         ux_ast_severity,
         ux_ast_all: ux_ast_all_ids(),
+        agent,
     })
 }
 
@@ -573,6 +642,42 @@ mod tests {
         assert_eq!(c.phase_settings(Phase::Commit).budget_seconds, 30);
         assert!(!c.phase_settings(Phase::Nightly).baseline_filter);
         assert!(c.checker_phases.is_empty());
+        assert!(!c.agent.prompt_meta.enabled);
+        assert!(!c.agent.goal.enabled);
+        assert_eq!(c.agent.goal.max_continuations, 1);
+    }
+
+    #[test]
+    fn parses_opt_in_agent_config() {
+        let c = resolve_config_str(
+            r#"
+            [agent.promptMeta]
+            enabled = true
+
+            [agent.goal]
+            enabled = true
+            maxContinuations = 3
+            "#,
+        )
+        .unwrap();
+
+        assert!(c.agent.prompt_meta.enabled);
+        assert!(c.agent.goal.enabled);
+        assert_eq!(c.agent.goal.max_continuations, 3);
+    }
+
+    #[test]
+    fn caps_goal_continuations() {
+        let c = resolve_config_str(
+            r#"
+            [agent.goal]
+            enabled = true
+            maxContinuations = 99
+            "#,
+        )
+        .unwrap();
+
+        assert_eq!(c.agent.goal.max_continuations, 8);
     }
 
     #[test]

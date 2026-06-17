@@ -88,6 +88,13 @@ pub struct StatusRow {
     pub path: PathBuf,
 }
 
+/// Optional agent hooks gated by project config.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct AgentHookOptions {
+    pub prompt_meta: bool,
+    pub goal: bool,
+}
+
 /// Resolve the user's home directory from `$HOME` (production callers read once at the call site).
 pub fn home_dir() -> PathBuf {
     std::env::var_os("HOME")
@@ -137,6 +144,15 @@ fn required_hook_entries(engine_root: &Path) -> Vec<(&'static str, Option<&'stat
         ("PreToolUse", Some("Bash|Edit|Write"), baseline_guard),
         ("PostToolUse", Some("Edit|Write"), edit),
     ]
+}
+
+fn optional_hook_paths(engine_root: &Path) -> (String, String) {
+    let prompt_meta = engine_root.join("hooks/prompt-meta-hook.sh");
+    let goal_stop = engine_root.join("hooks/goal-stop-hook.sh");
+    (
+        prompt_meta.to_string_lossy().into_owned(),
+        goal_stop.to_string_lossy().into_owned(),
+    )
 }
 
 fn is_slopgate_cmd(cmd: Option<&str>, engine_root: &Path) -> bool {
@@ -219,6 +235,16 @@ fn write_json_pretty(path: &Path, root: &Value) -> Result<(), SlopError> {
 
 /// Idempotently merge slopgate hooks into a claude-format hooks JSON file.
 pub fn merge_hooks(file_path: &Path, engine_root: &Path) -> Result<MergeResult, SlopError> {
+    merge_hooks_with_options(file_path, engine_root, AgentHookOptions::default())
+}
+
+/// Idempotently merge slopgate hooks, plus optional prompt/goal hooks when enabled.
+pub fn merge_hooks_with_options(
+    file_path: &Path,
+    engine_root: &Path,
+    options: AgentHookOptions,
+) -> Result<MergeResult, SlopError> {
+    let (prompt_meta, goal_stop) = optional_hook_paths(engine_root);
     let existed = file_path.is_file();
     let mut root = if existed {
         let raw = fs::read_to_string(file_path)
@@ -244,6 +270,9 @@ pub fn merge_hooks(file_path: &Path, engine_root: &Path) -> Result<MergeResult, 
     for (event, matcher, command) in required_hook_entries(engine_root) {
         added_any |= ensure_hook_entry(&mut root, event, matcher, &command);
     }
+    added_any |=
+        options.prompt_meta && ensure_hook_entry(&mut root, "UserPromptSubmit", None, &prompt_meta);
+    added_any |= options.goal && ensure_hook_entry(&mut root, "Stop", None, &goal_stop);
 
     if !added_any {
         return Ok(MergeResult {
@@ -436,6 +465,16 @@ pub fn install_agent_hooks(
     engine_root: &Path,
     agent_ids: Option<&[String]>,
 ) -> Vec<InstallRow> {
+    install_agent_hooks_with_options(home, engine_root, agent_ids, AgentHookOptions::default())
+}
+
+/// Install slopgate hooks for all detected (or specified) agents.
+pub fn install_agent_hooks_with_options(
+    home: &Path,
+    engine_root: &Path,
+    agent_ids: Option<&[String]>,
+    options: AgentHookOptions,
+) -> Vec<InstallRow> {
     let targets: Vec<&AgentDef> = match agent_ids {
         Some(ids) => AGENTS
             .iter()
@@ -448,7 +487,7 @@ pub fn install_agent_hooks(
         .into_iter()
         .filter_map(|a| {
             let file_path = agent_file_path(home, a);
-            match merge_hooks(&file_path, engine_root) {
+            match merge_hooks_with_options(&file_path, engine_root, options) {
                 Ok(r) => Some(InstallRow {
                     id: a.id.to_string(),
                     label: a.label.to_string(),
@@ -523,6 +562,8 @@ mod tests {
         fs::write(dir.path().join("hooks/edit-hook.sh"), "").unwrap();
         fs::write(dir.path().join("hooks/session-start.sh"), "").unwrap();
         fs::write(dir.path().join("hooks/baseline-guard.sh"), "").unwrap();
+        fs::write(dir.path().join("hooks/prompt-meta-hook.sh"), "").unwrap();
+        fs::write(dir.path().join("hooks/goal-stop-hook.sh"), "").unwrap();
         dir
     }
 
@@ -561,6 +602,38 @@ mod tests {
             .unwrap()
             .iter()
             .any(|e| e["matcher"] == "Edit|Write" && e["hooks"][0]["command"] == edit));
+    }
+
+    #[test]
+    fn merge_adds_optional_prompt_and_goal_hooks_when_enabled() {
+        let engine = setup_engine();
+        let (prompt_meta, goal_stop) = optional_hook_paths(engine.path());
+        let settings = tempfile::tempdir().unwrap();
+        let file = settings.path().join("settings.json");
+
+        let result = merge_hooks_with_options(
+            &file,
+            engine.path(),
+            AgentHookOptions {
+                prompt_meta: true,
+                goal: true,
+            },
+        )
+        .unwrap();
+        assert_eq!(result.action, "created");
+
+        let root: Value = serde_json::from_str(&fs::read_to_string(&file).unwrap()).unwrap();
+        let hooks = root.get("hooks").unwrap();
+        assert!(hooks["UserPromptSubmit"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|e| e["hooks"][0]["command"] == prompt_meta));
+        assert!(hooks["Stop"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|e| e["hooks"][0]["command"] == goal_stop));
     }
 
     #[test]

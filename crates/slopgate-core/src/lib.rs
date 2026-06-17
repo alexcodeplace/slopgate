@@ -1,3 +1,4 @@
+pub mod agent;
 pub mod ast_engine;
 pub mod audit;
 pub mod checkers;
