@@ -39,7 +39,7 @@ jobs:
           - { key: win32-x64,    target: x86_64-pc-windows-msvc,    runner: windows-latest }
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -48,14 +48,14 @@ jobs:
       - name: Build engine
         run: cargo build --release --locked --target ${{ matrix.target }} -p slopgate-rs
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 20
 
       - name: Stage binary into vendor/
         run: node scripts/build-npm-packages.mjs --stage "${{ matrix.key }}"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: vendor-${{ matrix.key }}
           path: vendor
@@ -70,15 +70,15 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 20
           registry-url: https://registry.npmjs.org
 
       - name: Collect platform binaries
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: vendor-*
           merge-multiple: true
