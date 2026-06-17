@@ -54,16 +54,18 @@ slopgate init <repo-abs-path>
 
 This auto-detects source roots (monorepo workspace-aware), exts, and skipDirs; writes a populated
 `.slopgate/config.toml`; emits `.slopgate/convention-sources.json` (the manifest of convention inputs
-to read); and **safe-merges** the edit/commit hooks into the repo's existing `.claude/settings.json`
-(appends, never clobbers — a `.bak` is written). Idempotent: re-running preserves an existing config.
+to read); **safe-merges** the repo-local Claude Code edit/commit/session/baseline-guard hooks into
+`.claude/settings.json`; and installs the same hook set for detected user-level Claude/Codex/Grok/Gemini
+settings files (appends, never clobbers — a `.bak` is written for existing JSON files). Idempotent:
+re-running preserves an existing config.
 
 Read the printed summary. **Sanity-check the detected `roots`** — fix `config.toml` by hand if the repo
 has an unusual layout the detector missed.
 
 ## Step 2 — Read the convention sources
 
-Open `.slopgate/convention-sources.json`. Read every file it lists: `claudeMd` (root + subtrees),
-`skills`, `agents`, `commands`, `editorRules`, `knowledgeDocs`. These are the project's own rules in
+Open `.slopgate/convention-sources.json`. Read every file it lists: `claude_md` (root + subtrees),
+`skills`, `agents`, `commands`, `editor_rules`, `knowledge_docs`. These are the project's own rules in
 prose. (For large repos, push the reading to a cursor-agent that returns a candidate table, not file
 dumps — see Step 4 / cursor-orchestrator return-size discipline.)
 
@@ -190,8 +192,9 @@ git commit -m "feat: adopt slopgate (<project> rule pack + edit/commit hooks)"
 ```
 
 Commit `.slopgate/**` + `.claude/settings.json` only — the pinned-rules design requires rules to live
-in project git. Do NOT add fixtures-only or `.bak` files unless the repo wants them. If the repo's git
-allow-list rejects `.slopgate/`, STOP and ask the user.
+in project git, while user-level Claude/Codex/Grok/Gemini hook files live outside the repo. Do NOT add
+fixtures-only or `.bak` files unless the repo wants them. If the repo's git allow-list rejects
+`.slopgate/`, STOP and ask the user.
 
 ---
 
@@ -200,7 +203,7 @@ allow-list rejects `.slopgate/`, STOP and ask the user.
 - Forcing a regex for a semantic convention → noise; if `detect: none`, skip it.
 - ast-grep `constraints` on a `$$$` spread for import checks → mass false positives; regex rule packs are PHASE-2, so defer such a check rather than approximating it with ast-grep.
 - Wiring hooks before the tree is at zero → every edit trips legacy debt.
-- Overwriting an existing `.claude/settings.json` → the CLI safe-merges; never hand-replace it.
+- Overwriting an existing `.claude/settings.json` or user-level agent hook file → the CLI safe-merges; never hand-replace it.
 - An implementing agent self-approving which conventions become rules → that's the orchestrator's call.
 - Enabling a baseline pack the candidate review didn't justify (e.g. `kv-ban` in a non-CF repo).
 - Authoring a project rule that belongs in baseline/stack — check existing packs first.
@@ -210,8 +213,8 @@ allow-list rejects `.slopgate/`, STOP and ask the user.
 ## Learned Rules
 
 ### install-hooks-from-worktree | fired:1 | 2026-06-14
-Running `install-hooks` / agent-hooks install from a temp or verification worktree (`/tmp/*`, `.worktrees/*`) → wrong: writes that worktree's CWD absolute path into global `~/.claude/settings.json` without dedup; deleting the worktree dangles the path → "not found" on every Edit/commit/session, and repeats stack duplicate hook fires (broke unstoppable production sessions, 2026-06-14).
-Prevent: install hooks ONLY from the canonical repo checkout. Verify wiring via direct hook stdin test (Step 7), never a global install from a throwaway tree. After any stray install, `grep ~/.claude/settings.json` for the worktree/tmp path and delete the stale entry across ALL hook groups (PostToolUse/PreToolUse/SessionStart — rot triplicates).
+Running `install-hooks` / agent-hooks install from a temp or verification worktree (`/tmp/*`, `.worktrees/*`) → wrong: writes that worktree's CWD absolute path into user-level agent hook settings (for example `~/.claude/settings.json`) without dedup; deleting the worktree dangles the path → "not found" on every Edit/commit/session, and repeats stack duplicate hook fires (broke unstoppable production sessions, 2026-06-14).
+Prevent: install hooks ONLY from the canonical repo checkout. Verify wiring via direct hook stdin test (Step 7), never a global install from a throwaway tree. After any stray install, `grep` the relevant user-level agent hook file for the worktree/tmp path and delete the stale entry across ALL hook groups (PostToolUse/PreToolUse/SessionStart, including the baseline guard PreToolUse entry).
 
 ### ast-rule-shape | fired:1 | 2026-06-14
 Authoring `.slopgate/rules/ast/*.yml` with a top-level `pattern: |` holding `kind:`/`children:` → wrong: invalid ast-grep, matches nothing. Real shape = top-level `rule:` holding `pattern: '<code-snippet>'` OR structural `kind/has/inside/all/any/not`; slopgate severity/category/resolution live in the JSON `note` field, separate from ast-grep's own `severity:`.

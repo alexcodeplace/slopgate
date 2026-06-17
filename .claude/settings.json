@@ -20,6 +20,15 @@
           }
         ],
         "matcher": "Bash"
+      },
+      {
+        "hooks": [
+          {
+            "command": "/Users/angelhermon/Documents/Codex/2026-06-16/agent-repo-search-users-angelhermon-codex/work/slopgate/hooks/baseline-guard.sh",
+            "type": "command"
+          }
+        ],
+        "matcher": "Bash|Edit|Write"
       }
     ],
     "SessionStart": [

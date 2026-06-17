@@ -1,6 +1,6 @@
 # slopgate
 
-A global code-quality / anti-slop gate for Claude Code and git. Engine is shared, rules are per-project.
+A global code-quality / anti-slop gate for hook-capable agent CLIs (Claude Code, Codex, Grok, Gemini) and git. Engine is shared, rules are per-project.
 
 **What it does:** Catches code quality violations in two tiers — a fast post-edit scan (regex + AST rules, instant feedback) and a heavy commit-tier scan (static type checkers, dead-code analysis, architecture rules, copy-paste detection). A **ratchet baseline** lets legacy repos adopt without flooding — only NEW violations block commits; pre-existing ones are baselined and tracked for paydown.
 
@@ -10,15 +10,16 @@ A global code-quality / anti-slop gate for Claude Code and git. Engine is shared
 
 - **Two-tier gate**
   - **Fast tier** (post-edit hook): regex patterns + AST rules, instant feedback as you code
-  - **Commit tier** (pre-commit hook): includes heavy checkers (tsc, knip, jscpd, dependency-cruiser, type-coverage, diff-shape) + AST + regex, blocks commits
+  - **Commit tier** (pre-commit hook): includes heavy checkers (tsc, knip, jscpd, dependency-cruiser, leakscan, type-coverage, diff-shape) + AST + regex, blocks commits
   
 - **Ratchet baseline** — snapshot violations at adoption time; only NEW violations fail the gate. Track debt paydown over time.
 
-- **Six commit-tier checkers**
+- **Seven commit-tier checkers**
   - **tsc** — TypeScript type errors (full-project scope)
   - **knip** — dead/unused code (exports, files, dependencies)
   - **jscpd** — copy-paste duplication (token-level)
   - **dependency-cruiser** — architecture rules (cycles, orphans, layer boundaries)
+  - **leakscan** — presentation-layer files importing/calling raw data or transport APIs
   - **type-coverage** — propagation of `any` type (per-expression tracking)
   - **diff-shape** — wide commits spanning too many directories (encourages focused changes)
 
@@ -30,7 +31,7 @@ A global code-quality / anti-slop gate for Claude Code and git. Engine is shared
   
 - **Native git pre-commit hook** — no daemon, no CI coupling, just git
   
-- **Claude Code integration** — hooks into PreToolUse (commit) and PostToolUse (edit) events
+- **Agent hook integration** — installs PreToolUse/PostToolUse/SessionStart hooks for Claude Code, Codex, Grok, and Gemini settings files when detected or requested
   
 - **Suppressions** — per-file, per-line, with line-hash stability across edits
   
@@ -53,13 +54,13 @@ slopgate init [path-to-repo]
 ```
 
 This:
-1. Detects TypeScript roots, file extensions, and package layout
+1. Detects source roots, file extensions, and package layout
 2. Scaffolds `.slopgate/config.toml` with detected checkers enabled
 3. Writes `.slopgate/suppressions.json` and `.slopgate/depcruise.cjs` (starter)
 4. Creates `.slopgate/convention-sources.json` (hints for authoring project rules from local skills/agents/docs)
 5. Creates `.slopgate/rules/ast/` and `.slopgate/fixtures/src/` directories
 6. Installs git pre-commit hook (or appends to existing)
-7. Merges Claude Code hook settings into `.claude/settings.json`
+7. Merges repo-local Claude Code hook settings into `.claude/settings.json` and installs detected user-level agent hook files for Claude/Codex/Grok/Gemini
 8. Prints next steps (including: run `slopgate baseline --config .slopgate/config.toml`)
 
 ---
@@ -116,14 +117,16 @@ Onboard a new repository. Detects roots, extensions, installed checkers, and sca
 - `.slopgate/convention-sources.json` — hints for authoring project-specific rule packs
 - `.slopgate/rules/ast/` and `.slopgate/fixtures/src/` — directories for custom rules and fixtures
 - `.git/hooks/pre-commit` — native git pre-commit hook (creates new or appends to existing)
-- `.claude/settings.json` — Claude Code hook entries (idempotent merge)
+- `.claude/settings.json` — repo-local Claude Code hook entries (idempotent merge)
+
+When an agent CLI is detected, `init` also updates that user's hook settings file through the same installer used by `slopgate agent-hooks`.
 
 **Next step:** Run `slopgate baseline --config .slopgate/config.toml` to create the initial ratchet baseline
 
 ---
 
 ### `slopgate --staged --config <path>`
-Run commit-tier gate on staged files. Used by git pre-commit hook and Claude Code PreToolUse hook.
+Run commit-tier gate on staged files. Used by the git pre-commit hook and agent PreToolUse commit hook.
 
 **Flags:**
 - `--config <path>` (required) — path to `.slopgate/config.toml`
@@ -142,7 +145,7 @@ Run commit-tier gate on staged files. Used by git pre-commit hook and Claude Cod
 ---
 
 ### `slopgate --file <path> --config <path>`
-Run fast-tier gate on a single file (post-edit). Used by Claude Code PostToolUse hook.
+Run fast-tier gate on a single file (post-edit). Used by the agent PostToolUse edit hook.
 
 **Flags:**
 - `--file <path>` (required) — repo-relative path to check
@@ -220,7 +223,7 @@ Runs on every Edit/Write to a `.ts`, `.tsx`, or `.astro` file.
 Runs before `git commit` or when `--staged` is called manually.
 
 **Scope:** All staged files + full repo (for checkers like tsc, knip that need graph context)
-**Engines:** Regex patterns + AST rules + six heavy checkers
+**Engines:** Regex patterns + AST rules + seven heavy checkers
 **Baseline:** Consulted; only NEW violations block commit
 **Latency:** 5–30 seconds (tsc + knip dominate)
 **Feedback:** Commit blocked or passes
@@ -338,7 +341,7 @@ Pair the static UX module with the `/slopgate-ux` skill for semantic UX directiv
 ```toml
 # Repository layout
 roots = ["src"]                          # source roots to scan
-exts = [".ts", ".tsx", ".astro"]         # file extensions
+exts = [".ts", ".tsx", ".astro"]         # file extensions; Rust repos may detect [".rs"]
 skipDirs = ["node_modules", "dist"]      # dirs to skip
 
 # Rule packs
@@ -357,6 +360,9 @@ fixtures = "./fixtures"                  # test fixture canaries
 [checkers.tsc]
 # e.g. timeout = 60
 
+[checkers.leakscan]
+# enabled by init only when a bundled/dev leakscan binary exists and frontend TSX/JSX roots are present
+
 # UX module (optional) — off by default, opt-in per sub-module
 [ux]
 a11y = "high"        # accessibility violations
@@ -373,7 +379,7 @@ staged = ["critical", "high"]  # commit-tier report threshold
 - `roots` — detected from workspace packages and src/ dirs
 - `exts` — detected from file walk
 - `skipDirs` — detected from common exclusions (node_modules, dist, tests, .worktrees)
-- `checkers` — detected from installed binaries and config files (all true initially)
+- `checkers` — detected from installed binaries, config files, and conservative checker-specific signals
 
 ---
 
@@ -502,22 +508,41 @@ least once.
 
 ## Hooks Integration
 
-### Claude Code Hooks
+### Agent Hooks
 
-Init wires slopgate into `.claude/settings.json`:
+`init` wires repo-local Claude Code hooks into `.claude/settings.json`. The same hook set is managed for user-level Claude, Codex, Grok, and Gemini settings with:
+
+```bash
+slopgate agent-hooks status
+slopgate agent-hooks install --agent claude,codex,grok,gemini
+slopgate agent-hooks remove --agent codex
+```
+
+The hook JSON uses this shape:
 
 ```json
 {
   "hooks": {
-    "PreToolUse": [{
-      "matcher": "Bash",
-      "hooks": [
-        {
-          "type": "command",
-          "command": "/path/to/slopgate/hooks/commit-hook.sh"
-        }
-      ]
-    }],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/path/to/slopgate/hooks/commit-hook.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash|Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/path/to/slopgate/hooks/baseline-guard.sh"
+          }
+        ]
+      }
+    ],
     "PostToolUse": [{
       "matcher": "Edit|Write",
       "hooks": [
@@ -526,13 +551,23 @@ Init wires slopgate into `.claude/settings.json`:
           "command": "/path/to/slopgate/hooks/edit-hook.sh"
         }
       ]
+    }],
+    "SessionStart": [{
+      "hooks": [
+        {
+          "type": "command",
+          "command": "/path/to/slopgate/hooks/session-start.sh"
+        }
+      ]
     }]
   }
 }
 ```
 
 - **PreToolUse** (commit-hook.sh) — fires before Bash tool use; checks for `git commit` in the command and runs `slopgate --staged`
+- **PreToolUse** (baseline-guard.sh) — blocks direct agent edits/removals of `.slopgate/baseline.json` and `.slopgate/suppressions.json`, plus agent-run `slopgate baseline`
 - **PostToolUse** (edit-hook.sh) — fires after Edit/Write; runs `slopgate --file` on the touched file (fast tier, 5-second timeout)
+- **SessionStart** (session-start.sh) — records the active model/session for stats attribution
 
 ### Git Pre-Commit Hook
 
@@ -690,6 +725,7 @@ Each checker has a per-tool timeout (configurable):
 - knip: 90s
 - jscpd: 60s
 - depcruise: 60s
+- leakscan: 60s
 - type-coverage: 120s
 
 Tool crash / timeout → `⚠ skipped: <id> (<reason>)` warning, gate continues (fail-open on infra). Violations still block; missing tools don't.
@@ -700,7 +736,7 @@ Tool crash / timeout → `⚠ skipped: <id> (<reason>)` warning, gate continues 
 
 - **Git-only** — no other VCS support
 - **No auto-fix** — violations are reported, not automatically corrected
-- **No CI integration yet** — hooks are local and Claude Code only; CI layer is future work
+- **No CI integration yet** — hooks are local; CI layer is future work
 - **`slopgate audit` command** — planned for v2 (non-gating architecture-health report: hotspots, module shape, co-change coupling, ratchet progress tracking)
 - **Embeddings-based semantic duplicate detection** — planned, not in v1
 - **API-surface diff gate** — track breaking changes to public exports (future)

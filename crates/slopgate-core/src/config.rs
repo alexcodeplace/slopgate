@@ -176,9 +176,7 @@ fn parse_phase(raw: &str, context: &str) -> Result<Phase, String> {
 }
 
 fn parse_tier(raw: &str, context: &str) -> Result<Tier, String> {
-    Tier::parse(raw).ok_or_else(|| {
-        format!("slopgate: {context} tier must be {}", Tier::values())
-    })
+    Tier::parse(raw).ok_or_else(|| format!("slopgate: {context} tier must be {}", Tier::values()))
 }
 
 fn process_phases(
