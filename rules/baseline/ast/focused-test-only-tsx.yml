@@ -1,0 +1,10 @@
+id: focused-test-only-tsx
+language: tsx
+severity: error
+message: Focused test committed
+note: '{"severity":"critical","category":"test","resolution":"Remove .only before committing so the full test suite runs."}'
+rule:
+  any:
+    - pattern: test.only($$$)
+    - pattern: it.only($$$)
+    - pattern: describe.only($$$)

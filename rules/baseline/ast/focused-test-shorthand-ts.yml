@@ -1,0 +1,15 @@
+id: focused-test-shorthand-ts
+language: typescript
+severity: error
+message: Focused test helper committed
+note: '{"severity":"critical","category":"test","resolution":"Replace fit/fdescribe with test/it/describe before committing so the full test suite runs."}'
+files:
+  - '**/*.test.ts'
+  - '**/*.spec.ts'
+  - '**/__tests__/**/*.ts'
+  - '**/tests/**/*.ts'
+  - '**/fixtures/**/*.ts'
+rule:
+  any:
+    - pattern: fit($$$)
+    - pattern: fdescribe($$$)

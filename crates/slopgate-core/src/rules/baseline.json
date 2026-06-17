@@ -43,6 +43,74 @@
       "description": "Escape-hatch cast that disables type safety.",
       "resolution": "Use a precise type or a discriminated narrowing.",
       "canary": "const x = foo as any;"
+    },
+    {
+      "id": "explicit-any-annotation",
+      "title": "`: any` type annotation",
+      "category": "convention",
+      "severity": "high",
+      "pattern": "^\\s*(?!\\/\\/|\\/\\*|\\*|\\*\\/)(?:(?!\\/\\/|\\/\\*).)*:\\s*any\\b",
+      "description": "Explicit `any` annotation disables type checking at the boundary.",
+      "resolution": "Use a precise type, unknown plus narrowing, or a generic constraint.",
+      "canary": "const value: any = payload;",
+      "negativeCanary": [
+        "// const value: any = payload;",
+        "/* const value: any = payload; */",
+        "* @param value: any",
+        "const value: unknown = payload;",
+        "const x = foo as any;"
+      ]
+    },
+    {
+      "id": "array-any-generic",
+      "title": "`Array<any>` generic",
+      "category": "convention",
+      "severity": "high",
+      "pattern": "^\\s*(?!\\/\\/|\\/\\*|\\*|\\*\\/)(?:(?!\\/\\/|\\/\\*).)*(?:[:=,<({\\[]\\s*)Array\\s*<\\s*any\\s*>",
+      "description": "`Array<any>` propagates unchecked values through collections.",
+      "resolution": "Use a precise element type or Array<unknown> with narrowing at reads.",
+      "canary": "const values: Array<any> = [];",
+      "negativeCanary": [
+        "// type Values = Array<any>;",
+        "/* type Values = Array<any>; */",
+        "* @type {Array<any>}",
+        "const values: Array<unknown> = [];",
+        "const label = \"Array<any>\";"
+      ]
+    },
+    {
+      "id": "promise-any-generic",
+      "title": "`Promise<any>` generic",
+      "category": "convention",
+      "severity": "high",
+      "pattern": "^\\s*(?!\\/\\/|\\/\\*|\\*|\\*\\/)(?:(?!\\/\\/|\\/\\*).)*(?:[:=,<({\\[]\\s*)Promise\\s*<\\s*any\\s*>",
+      "description": "`Promise<any>` hides the async value contract from callers.",
+      "resolution": "Return a precise promise type or Promise<unknown> with explicit narrowing.",
+      "canary": "async function load(): Promise<any> { return fetchJson(); }",
+      "negativeCanary": [
+        "// async function load(): Promise<any>;",
+        "/* type Load = Promise<any>; */",
+        "* @returns {Promise<any>}",
+        "async function load(): Promise<unknown> { return fetchJson(); }",
+        "const label = \"Promise<any>\";"
+      ]
+    },
+    {
+      "id": "record-string-any-generic",
+      "title": "`Record<string, any>` generic",
+      "category": "convention",
+      "severity": "high",
+      "pattern": "^\\s*(?!\\/\\/|\\/\\*|\\*|\\*\\/)(?:(?!\\/\\/|\\/\\*).)*(?:[:=,<({\\[]\\s*)Record\\s*<\\s*string\\s*,\\s*any\\s*>",
+      "description": "`Record<string, any>` erases the value contract for dictionary-shaped data.",
+      "resolution": "Use a precise value type, Record<string, unknown>, or a validated schema type.",
+      "canary": "type Payload = Record<string, any>;",
+      "negativeCanary": [
+        "// type Payload = Record<string, any>;",
+        "/* type Payload = Record<string, any>; */",
+        "* @type {Record<string, any>}",
+        "type Payload = Record<string, unknown>;",
+        "const label = \"Record<string, any>\";"
+      ]
     }
   ],
   "raw-hex": [

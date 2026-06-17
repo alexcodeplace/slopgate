@@ -1,0 +1,15 @@
+id: focused-test-shorthand-tsx
+language: tsx
+severity: error
+message: Focused test helper committed
+note: '{"severity":"critical","category":"test","resolution":"Replace fit/fdescribe with test/it/describe before committing so the full test suite runs."}'
+files:
+  - '**/*.test.tsx'
+  - '**/*.spec.tsx'
+  - '**/__tests__/**/*.tsx'
+  - '**/tests/**/*.tsx'
+  - '**/fixtures/**/*.tsx'
+rule:
+  any:
+    - pattern: fit($$$)
+    - pattern: fdescribe($$$)
