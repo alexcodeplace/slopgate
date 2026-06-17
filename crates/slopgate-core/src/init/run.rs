@@ -23,8 +23,31 @@ pub struct AgentHookResult {
     pub action: String,
 }
 
-/// Engine repo root (`parent of src/`), resolved from this crate's manifest dir.
+/// Engine root: the directory that ships `hooks/`, `rules/`, and `skills/`.
+///
+/// Must be resolved at *runtime*, never from `env!("CARGO_MANIFEST_DIR")` — that
+/// is a compile-time constant baked into the binary, so a CI-built artifact would
+/// carry the CI build path (`/home/runner/work/...`) and write it into user
+/// settings on `init`. Resolution order:
+///   1. `$SLOPGATE_ENGINE_ROOT`              — explicit override escape hatch
+///   2. walk up from `current_exe()`         — find the ancestor containing the
+///      shipped `hooks/session-start.sh` marker (robust to `vendor/<host>/` vs
+///      `target/release/` layout depth)
+///   3. `CARGO_MANIFEST_DIR` + `../..`       — source-tree fallback for `cargo
+///      test`/`cargo run` from a checkout, where no shipped layout exists
 pub fn engine_root() -> PathBuf {
+    if let Some(root) = std::env::var_os("SLOPGATE_ENGINE_ROOT") {
+        return PathBuf::from(root);
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        let mut dir = exe.canonicalize().unwrap_or(exe);
+        while let Some(parent) = dir.parent() {
+            if parent.join("hooks/session-start.sh").is_file() {
+                return parent.to_path_buf();
+            }
+            dir = parent.to_path_buf();
+        }
+    }
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
         .canonicalize()
