@@ -739,7 +739,9 @@ mod tests {
         write_file(&tmp.path().join(".github/workflows/ci.yml"), "name: ci\n");
         write_file(&tmp.path().join("docs/guide.md"), "# Guide\n");
 
-        let checkers = detect_checkers(tmp.path());
+        let roots = detect_roots(tmp.path()).roots;
+        let exts = detect_exts(tmp.path(), &roots);
+        let checkers = detect_checkers(tmp.path(), &roots, &exts, tmp.path());
 
         assert_eq!(checkers.get("shellcheck"), Some(&json!(true)));
         assert_eq!(checkers.get("actionlint"), Some(&json!(true)));

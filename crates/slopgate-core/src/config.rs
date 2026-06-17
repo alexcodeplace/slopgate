@@ -293,15 +293,12 @@ fn extract_checker_phases(
     }
 }
 
-fn process_checkers(
-    raw: BTreeMap<String, toml::Value>,
-) -> Result<
-    (
-        BTreeMap<String, serde_json::Value>,
-        BTreeMap<String, BTreeSet<Phase>>,
-    ),
-    String,
-> {
+type ProcessedCheckers = (
+    BTreeMap<String, serde_json::Value>,
+    BTreeMap<String, BTreeSet<Phase>>,
+);
+
+fn process_checkers(raw: BTreeMap<String, toml::Value>) -> Result<ProcessedCheckers, String> {
     let mut out = BTreeMap::new();
     let mut phase_out = BTreeMap::new();
     for (name, v) in raw {

@@ -129,7 +129,7 @@ fn gate_output_matches_js_oracle_golden() {
         ),
         ("ux-ast", "rules/baseline/fixtures/src/ux-ast.tsx"),
     ] {
-        let (code, raw) = gate_output(&repo, &file);
+        let (code, raw) = gate_output(&repo, file);
         assert_eq!(code, 1, "{name}: expected exit 1 (violations present)");
         let golden = std::fs::read_to_string(golden_dir.join(format!("{name}.norm")))
             .unwrap_or_else(|e| panic!("read golden {name}.norm: {e}"));
