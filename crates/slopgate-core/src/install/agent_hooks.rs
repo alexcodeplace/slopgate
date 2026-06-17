@@ -127,12 +127,30 @@ fn hook_paths(engine_root: &Path) -> (String, String, String) {
     )
 }
 
+/// Path suffixes of the three hook scripts slopgate installs. Used to recognize a
+/// slopgate hook by *identity* regardless of which install root wrote it.
+const SLOPGATE_HOOK_SUFFIXES: [&str; 3] = [
+    "hooks/commit-hook.sh",
+    "hooks/edit-hook.sh",
+    "hooks/session-start.sh",
+];
+
+/// True when `cmd` is one of slopgate's installed hooks.
+///
+/// Matches the current install (command lives under `engine_root`) AND — crucially
+/// — recognizes hooks left by a *prior* install at a different root (a CI build
+/// path, a worktree, `/tmp`) by script identity. Without the identity match,
+/// `remove`/`status` only see hooks whose path equals the current root, so stale
+/// entries from other roots are never cleaned and stack forever on every
+/// `init`/`install` (the dedup-by-exact-path weakness).
 fn is_slopgate_cmd(cmd: Option<&str>, engine_root: &Path) -> bool {
     let Some(cmd) = cmd else {
         return false;
     };
-    let root = engine_root.to_string_lossy();
-    cmd.contains(root.as_ref())
+    if cmd.contains(engine_root.to_string_lossy().as_ref()) {
+        return true;
+    }
+    SLOPGATE_HOOK_SUFFIXES.iter().any(|s| cmd.ends_with(s))
 }
 
 fn ensure_hook_entry(
@@ -739,5 +757,27 @@ mod tests {
         let cmd = engine.path().join("hooks/commit-hook.sh");
         assert!(is_slopgate_cmd(Some(cmd.to_str().unwrap()), engine.path()));
         assert!(!is_slopgate_cmd(Some("/other/hook.sh"), engine.path()));
+    }
+
+    #[test]
+    fn is_slopgate_cmd_matches_foreign_root_by_identity() {
+        // Hooks installed by a prior build at a DIFFERENT root (CI path, worktree,
+        // /tmp) must still be recognized so remove/status self-heal stale entries.
+        let engine = setup_engine();
+        for suffix in SLOPGATE_HOOK_SUFFIXES {
+            let foreign = format!("/home/runner/work/slopgate/slopgate/{suffix}");
+            assert!(
+                is_slopgate_cmd(Some(&foreign), engine.path()),
+                "foreign-root hook not recognized: {foreign}"
+            );
+        }
+        // A node-launcher invocation embedding the script path is still ours.
+        assert!(is_slopgate_cmd(
+            Some("/tmp/slopgate-verify/hooks/edit-hook.sh"),
+            engine.path()
+        ));
+        // Unrelated commands and None stay false.
+        assert!(!is_slopgate_cmd(Some("/usr/bin/prettier"), engine.path()));
+        assert!(!is_slopgate_cmd(None, engine.path()));
     }
 }
