@@ -381,6 +381,8 @@ mod tests {
             patterns: vec![],
             ast_rule_dirs: vec![rule_dir.to_string_lossy().into_owned()],
             checkers: Default::default(),
+            checker_phases: Default::default(),
+            phases: crate::config::default_phase_settings(),
             ast_disable: Default::default(),
             baseline_path: String::new(),
             suppressions_path: String::new(),
@@ -392,6 +394,7 @@ mod tests {
             },
             ux_ast_severity: Default::default(),
             ux_ast_all: Default::default(),
+            agent: crate::config::AgentConfig::default(),
         };
 
         let opts = AstGrepScanOpts {
@@ -497,6 +500,8 @@ mod tests {
                 .to_string_lossy()
                 .into_owned()],
             checkers: Default::default(),
+            checker_phases: Default::default(),
+            phases: crate::config::default_phase_settings(),
             ast_disable: Default::default(),
             baseline_path: String::new(),
             suppressions_path: String::new(),
@@ -508,6 +513,7 @@ mod tests {
             },
             ux_ast_severity: Default::default(),
             ux_ast_all: Default::default(),
+            agent: crate::config::AgentConfig::default(),
         };
 
         let got = run_ast_grep_scan(&config, None, &AstGrepScanOpts::default());
@@ -538,6 +544,8 @@ mod tests {
             patterns: vec![],
             ast_rule_dirs: vec![rule_dir.to_string_lossy().into_owned()],
             checkers: Default::default(),
+            checker_phases: Default::default(),
+            phases: crate::config::default_phase_settings(),
             ast_disable: Default::default(),
             baseline_path: String::new(),
             suppressions_path: String::new(),
@@ -549,6 +557,7 @@ mod tests {
             },
             ux_ast_severity: Default::default(),
             ux_ast_all: Default::default(),
+            agent: crate::config::AgentConfig::default(),
         };
 
         let got = run_ast_grep_scan_in(&config, None, &AstGrepScanOpts::default(), &not_a_dir);
@@ -578,6 +587,8 @@ mod tests {
             patterns: vec![],
             ast_rule_dirs: vec![rule_dir.to_string_lossy().into_owned()],
             checkers: Default::default(),
+            checker_phases: Default::default(),
+            phases: crate::config::default_phase_settings(),
             ast_disable: Default::default(),
             baseline_path: String::new(),
             suppressions_path: String::new(),
@@ -589,6 +600,7 @@ mod tests {
             },
             ux_ast_severity: Default::default(),
             ux_ast_all: Default::default(),
+            agent: crate::config::AgentConfig::default(),
         };
 
         let files = vec!["README.md".to_string()];

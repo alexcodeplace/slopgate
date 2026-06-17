@@ -52,6 +52,91 @@ pub fn local_bin(repo_root: &Path, name: &str) -> Option<PathBuf> {
     }
 }
 
+/// True when a command can be spawned successfully with a cheap probe.
+pub fn command_available(bin: &Path, args: &[&str], cwd: Option<&Path>) -> bool {
+    let mut cmd = Command::new(bin);
+    cmd.args(args);
+    if let Some(cwd) = cwd {
+        cmd.current_dir(cwd);
+    }
+    cmd.output().ok().is_some_and(|o| o.status.success())
+}
+
+/// Resolve a configured/local/PATH tool binary.
+///
+/// `cfg.bin` is authoritative when present. Bare names are resolved via PATH; paths
+/// with separators are resolved relative to the repo root unless already absolute.
+pub fn resolve_tool_bin(
+    repo_root: &Path,
+    cfg: &Value,
+    name: &str,
+    probe_args: &[&str],
+) -> Option<PathBuf> {
+    if let Some(bin) = cfg
+        .get("bin")
+        .and_then(|b| b.as_str())
+        .filter(|s| !s.is_empty())
+    {
+        let candidate = if bin.contains('/') || bin.contains('\\') {
+            let p = Path::new(bin);
+            if p.is_absolute() {
+                p.to_path_buf()
+            } else {
+                repo_root.join(p)
+            }
+        } else {
+            PathBuf::from(bin)
+        };
+        return command_available(&candidate, probe_args, Some(repo_root)).then_some(candidate);
+    }
+
+    let mut candidates = Vec::new();
+    if let Some(local) = local_bin(repo_root, name) {
+        candidates.push(local);
+    }
+    candidates.push(repo_root.join(".slopgate").join("bin").join(name));
+    candidates.push(repo_root.join("bin").join(name));
+    candidates.push(PathBuf::from(name));
+
+    candidates
+        .into_iter()
+        .find(|bin| command_available(bin, probe_args, Some(repo_root)))
+}
+
+/// Raw staged file paths from git, without Slopgate root/ext filtering.
+pub fn git_staged_paths(repo_root: &Path) -> Vec<String> {
+    let output = Command::new("git")
+        .args(["diff", "--cached", "--name-only", "--diff-filter=ACMR"])
+        .current_dir(repo_root)
+        .output();
+
+    let Ok(output) = output else {
+        return vec![];
+    };
+    if !output.status.success() {
+        return vec![];
+    }
+
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter(|line| !line.is_empty())
+        .map(|line| line.replace('\\', "/"))
+        .collect()
+}
+
+/// Normalize a tool-reported path to a repo-relative POSIX path when possible.
+pub fn repo_relative_path(repo_root: &Path, file: &str) -> String {
+    let normalized = file.replace('\\', "/");
+    let trimmed = normalized.strip_prefix("./").unwrap_or(&normalized);
+    let path = Path::new(trimmed);
+    if path.is_absolute() {
+        if let Ok(rel) = path.strip_prefix(repo_root) {
+            return rel.to_string_lossy().replace('\\', "/");
+        }
+    }
+    trimmed.to_string()
+}
+
 /// Per-repo slopgate cache dir (`<config_dir>/cache`). Self-gitignoring.
 pub fn ensure_cache_dir(config_dir: &Path) -> std::io::Result<PathBuf> {
     let dir = config_dir.join("cache");

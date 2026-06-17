@@ -4,6 +4,7 @@ use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
+use std::process::Command;
 
 const EXCLUDE_SCAN: &[&str] = &[
     "node_modules",
@@ -14,7 +15,10 @@ const EXCLUDE_SCAN: &[&str] = &[
     ".worktrees",
 ];
 const SCAN_BASES: &[&str] = &["", "apps", "packages", "workers"];
-const EXT_CANDIDATES: &[&str] = &[".ts", ".tsx", ".astro", ".js", ".jsx", ".vue", ".svelte"];
+const EXT_CANDIDATES: &[&str] = &[
+    ".ts", ".tsx", ".astro", ".js", ".jsx", ".vue", ".svelte", ".rs",
+];
+const LEAKSCAN_FRONTEND_EXTS: &[&str] = &[".tsx", ".jsx"];
 const OPTIONAL_SKIP: &[&str] = &[
     ".next",
     ".open-next",
@@ -296,8 +300,180 @@ fn bin_exists(target_dir: &Path, name: &str) -> bool {
     path_exists(&target_dir.join("node_modules/.bin").join(name))
 }
 
+fn path_bin_exists(target_dir: &Path, name: &str, args: &[&str]) -> bool {
+    Command::new(name)
+        .args(args)
+        .current_dir(target_dir)
+        .output()
+        .ok()
+        .is_some_and(|o| o.status.success())
+}
+
+fn tool_exists(target_dir: &Path, name: &str, args: &[&str]) -> bool {
+    bin_exists(target_dir, name) || path_bin_exists(target_dir, name, args)
+}
+
+fn leakscan_binary_exists(target_dir: &Path, engine_root: &Path) -> bool {
+    [
+        engine_root.join("bin/leakscan"),
+        target_dir.join("tools/leakscan/target/release/leakscan"),
+        target_dir.join("tools/leakscan/target/debug/leakscan"),
+    ]
+    .iter()
+    .any(|p| path_exists(p))
+}
+
+fn has_shell_shebang(path: &Path) -> bool {
+    let Ok(contents) = fs::read_to_string(path) else {
+        return false;
+    };
+    let first = contents.lines().next().unwrap_or("");
+    first.starts_with("#!")
+        && ["sh", "bash", "zsh", "ksh", "dash"]
+            .iter()
+            .any(|shell| first.contains(shell))
+}
+
+fn is_shell_script_path(path: &Path) -> bool {
+    if !path.is_file() {
+        return false;
+    }
+    if path
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| ["sh", "bash", "zsh", "ksh", "dash", "bats"].contains(&e))
+    {
+        return true;
+    }
+    has_shell_shebang(path)
+}
+
+fn has_shell_scripts(dir: &Path, depth: i32) -> bool {
+    if depth < 0 || !path_exists(dir) {
+        return false;
+    }
+    let entries = match fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return false,
+    };
+    for ent in entries.flatten() {
+        let path = ent.path();
+        let Ok(file_type) = ent.file_type() else {
+            continue;
+        };
+        if file_type.is_file() && is_shell_script_path(&path) {
+            return true;
+        }
+        if file_type.is_dir() {
+            let name = ent.file_name().to_string_lossy().into_owned();
+            if is_excluded_scan(&name) || name == ".git" || name == "target" {
+                continue;
+            }
+            if has_shell_scripts(&path, depth - 1) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn walk_has_leakscan_frontend_file(dir: &Path) -> bool {
+    if !path_exists(dir) {
+        return false;
+    }
+    let entries = match fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return false,
+    };
+    for ent in entries.flatten() {
+        let Ok(file_type) = ent.file_type() else {
+            continue;
+        };
+        if file_type.is_dir() {
+            let name = ent.file_name();
+            let name = name.to_string_lossy();
+            if is_excluded_scan(&name) || BASE_SKIP.contains(&name.as_ref()) {
+                continue;
+            }
+            if walk_has_leakscan_frontend_file(&ent.path()) {
+                return true;
+            }
+        } else {
+            let path = ent.path();
+            let ext = path
+                .extension()
+                .and_then(|e| e.to_str())
+                .map(|e| format!(".{e}"));
+            if ext
+                .as_deref()
+                .is_some_and(|e| LEAKSCAN_FRONTEND_EXTS.contains(&e))
+            {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn has_workflow_files(target_dir: &Path) -> bool {
+    let dir = target_dir.join(".github/workflows");
+    let Ok(entries) = fs::read_dir(dir) else {
+        return false;
+    };
+    entries.flatten().any(|entry| {
+        let path = entry.path();
+        path.is_file()
+            && path
+                .extension()
+                .and_then(|e| e.to_str())
+                .is_some_and(|e| e == "yml" || e == "yaml")
+    })
+}
+
+fn has_typos_scope(target_dir: &Path) -> bool {
+    if ["docs", "rules", "skills"]
+        .iter()
+        .any(|p| path_exists(&target_dir.join(p)))
+    {
+        return true;
+    }
+    if [
+        "README.md",
+        "CONTRIBUTING.md",
+        "CHANGELOG.md",
+        "SECURITY.md",
+        "CODE_OF_CONDUCT.md",
+    ]
+    .iter()
+    .any(|p| path_exists(&target_dir.join(p)))
+    {
+        return true;
+    }
+    detect_roots(target_dir)
+        .roots
+        .iter()
+        .any(|root| path_exists(&target_dir.join(root)))
+}
+
+fn has_leakscan_frontend_roots(target_dir: &Path, roots: &[String], exts: &[String]) -> bool {
+    if !exts
+        .iter()
+        .any(|e| LEAKSCAN_FRONTEND_EXTS.contains(&e.as_str()))
+    {
+        return false;
+    }
+    roots
+        .iter()
+        .any(|root| walk_has_leakscan_frontend_file(&target_dir.join(root)))
+}
+
 /// Detect which checkers are available in the project.
-pub fn detect_checkers(target_dir: &Path) -> Value {
+pub fn detect_checkers(
+    target_dir: &Path,
+    roots: &[String],
+    exts: &[String],
+    engine_root: &Path,
+) -> Value {
     let mut checkers = serde_json::Map::new();
 
     if path_exists(&target_dir.join("tsconfig.json")) && bin_exists(target_dir, "tsc") {
@@ -314,6 +490,20 @@ pub fn detect_checkers(target_dir: &Path) -> Value {
     }
     if bin_exists(target_dir, "type-coverage") {
         checkers.insert("type-coverage".to_string(), json!(true));
+    }
+    if tool_exists(target_dir, "shellcheck", &["--version"]) && has_shell_scripts(target_dir, 5) {
+        checkers.insert("shellcheck".to_string(), json!(true));
+    }
+    if tool_exists(target_dir, "actionlint", &["-version"]) && has_workflow_files(target_dir) {
+        checkers.insert("actionlint".to_string(), json!(true));
+    }
+    if tool_exists(target_dir, "typos", &["--version"]) && has_typos_scope(target_dir) {
+        checkers.insert("typos".to_string(), json!(true));
+    }
+    if leakscan_binary_exists(target_dir, engine_root)
+        && has_leakscan_frontend_roots(target_dir, roots, exts)
+    {
+        checkers.insert("leakscan".to_string(), json!(true));
     }
     checkers.insert("diff-shape".to_string(), json!({ "maxDirs": 5 }));
 
@@ -522,10 +712,40 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         setup_workspace_project(tmp.path());
 
-        let checkers = detect_checkers(tmp.path());
+        let roots = detect_roots(tmp.path()).roots;
+        let exts = detect_exts(tmp.path(), &roots);
+        let checkers = detect_checkers(tmp.path(), &roots, &exts, tmp.path());
         assert_eq!(checkers.get("tsc"), Some(&json!(true)));
         assert_eq!(checkers.get("knip"), Some(&json!(true)));
         assert_eq!(checkers.get("diff-shape"), Some(&json!({ "maxDirs": 5 })));
+    }
+
+    #[test]
+    fn detect_checkers_flags_optional_external_adapters_when_relevant() {
+        let tmp = TempDir::new().unwrap();
+        write_file(
+            &tmp.path().join("node_modules/.bin/shellcheck"),
+            "#!/usr/bin/env sh\n",
+        );
+        write_file(
+            &tmp.path().join("node_modules/.bin/actionlint"),
+            "#!/usr/bin/env sh\n",
+        );
+        write_file(
+            &tmp.path().join("node_modules/.bin/typos"),
+            "#!/usr/bin/env sh\n",
+        );
+        write_file(&tmp.path().join("scripts/lint.sh"), "#!/usr/bin/env sh\n");
+        write_file(&tmp.path().join(".github/workflows/ci.yml"), "name: ci\n");
+        write_file(&tmp.path().join("docs/guide.md"), "# Guide\n");
+
+        let roots = detect_roots(tmp.path()).roots;
+        let exts = detect_exts(tmp.path(), &roots);
+        let checkers = detect_checkers(tmp.path(), &roots, &exts, tmp.path());
+
+        assert_eq!(checkers.get("shellcheck"), Some(&json!(true)));
+        assert_eq!(checkers.get("actionlint"), Some(&json!(true)));
+        assert_eq!(checkers.get("typos"), Some(&json!(true)));
     }
 
     #[test]
@@ -534,9 +754,79 @@ mod tests {
         write_file(&tmp.path().join("tsconfig.json"), "{}");
         // no node_modules/.bin/tsc
 
-        let checkers = detect_checkers(tmp.path());
+        let roots = detect_roots(tmp.path()).roots;
+        let exts = detect_exts(tmp.path(), &roots);
+        let checkers = detect_checkers(tmp.path(), &roots, &exts, tmp.path());
         assert!(checkers.get("tsc").is_none());
         assert_eq!(checkers.get("diff-shape"), Some(&json!({ "maxDirs": 5 })));
+    }
+
+    #[test]
+    fn detect_exts_includes_rs_for_rust_roots() {
+        let tmp = TempDir::new().unwrap();
+        write_file(
+            &tmp.path().join("crates/core/src/lib.rs"),
+            "pub fn x() {}\n",
+        );
+
+        let roots = detect_roots(tmp.path()).roots;
+        let exts = detect_exts(tmp.path(), &roots);
+
+        assert!(roots.contains(&"crates/core/src".to_string()));
+        assert!(exts.contains(&".rs".to_string()));
+    }
+
+    #[test]
+    fn detect_checkers_enables_leakscan_for_bundled_binary_and_frontend_sources() {
+        let tmp = TempDir::new().unwrap();
+        let engine = TempDir::new().unwrap();
+        write_file(
+            &tmp.path().join("src/components/Button.tsx"),
+            "export function Button() { return null; }\n",
+        );
+        write_file(&engine.path().join("bin/leakscan"), "#!/bin/sh\n");
+
+        let roots = detect_roots(tmp.path()).roots;
+        let exts = detect_exts(tmp.path(), &roots);
+        let checkers = detect_checkers(tmp.path(), &roots, &exts, engine.path());
+
+        assert_eq!(checkers.get("leakscan"), Some(&json!(true)));
+    }
+
+    #[test]
+    fn detect_checkers_enables_leakscan_for_dev_binary_and_frontend_sources() {
+        let tmp = TempDir::new().unwrap();
+        write_file(
+            &tmp.path().join("src/components/Button.jsx"),
+            "export function Button() { return null; }\n",
+        );
+        write_file(
+            &tmp.path().join("tools/leakscan/target/debug/leakscan"),
+            "#!/bin/sh\n",
+        );
+
+        let roots = detect_roots(tmp.path()).roots;
+        let exts = detect_exts(tmp.path(), &roots);
+        let checkers = detect_checkers(tmp.path(), &roots, &exts, tmp.path());
+
+        assert_eq!(checkers.get("leakscan"), Some(&json!(true)));
+    }
+
+    #[test]
+    fn detect_checkers_omits_leakscan_for_rust_only_roots_even_with_binary() {
+        let tmp = TempDir::new().unwrap();
+        let engine = TempDir::new().unwrap();
+        write_file(
+            &tmp.path().join("crates/core/src/lib.rs"),
+            "pub fn x() {}\n",
+        );
+        write_file(&engine.path().join("bin/leakscan"), "#!/bin/sh\n");
+
+        let roots = detect_roots(tmp.path()).roots;
+        let exts = detect_exts(tmp.path(), &roots);
+        let checkers = detect_checkers(tmp.path(), &roots, &exts, engine.path());
+
+        assert!(checkers.get("leakscan").is_none());
     }
 
     #[test]

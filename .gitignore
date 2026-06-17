@@ -2,7 +2,7 @@
 # STRICT WHITELIST .gitignore
 # Track the public-facing code PLUS the dev/test material needed to build and
 # verify it (fixtures, parity vectors, golden files). Everything else — specs,
-# plans, reports, .github, .claude, node_modules — is ignored.
+# plans, reports, node_modules — is ignored unless explicitly allow-listed below.
 # NOTE: git tracking is intentionally BROADER than the npm tarball. The published
 # package is narrowed further by package.json "files" (e.g. fixtures are tracked
 # here so the self-test/golden suite runs on a clean checkout, but excluded from
@@ -37,6 +37,8 @@
 # (the GitHub release workflow checks these out) but NOT in package.json "files".
 !/.github/**
 !/scripts/**
+!/.slopgate/**
+!/.claude/settings.json
 
 # 5. Re-ignore genuine BUILD ARTIFACTS inside those trees (not test fixtures —
 #    those are source-of-truth for the self-test/golden suite and ARE tracked,
@@ -46,6 +48,8 @@
 # of this binary is the deferred npm-distribution work.
 bin/slopgate-rs
 .worktrees/
+.slopgate/cache/
+.slopgate/stats.jsonl
 
 # scratch / demo workspaces
 tmp/

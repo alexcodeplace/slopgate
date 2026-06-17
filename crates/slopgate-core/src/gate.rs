@@ -4,9 +4,10 @@ use crate::ast_engine::{run_ast_grep_scan, AstGrepScanOpts};
 use crate::checkers::health::{is_infra_error, update_checker_health, CheckerOutcome};
 use crate::checkers::index::{Checker, CHECKERS};
 use crate::checkers::shared::{ensure_cache_dir, map_limit};
-use crate::config::ResolvedConfig;
+use crate::config::{default_checker_phases, ResolvedConfig};
 use crate::enumerate::{list_source_files, EnumerateCtx, EnumerateMode};
 use crate::hash::line_hash;
+pub use crate::phase::{Phase, Tier};
 use crate::ratchet::{filter_new, load_baseline, staged_renames};
 use crate::regex_engine::scan_regex;
 use crate::report::{print_gate_report_to, Violation};
@@ -25,13 +26,6 @@ pub enum Mode {
     Full,
 }
 
-/// Checker tier — mirrors JS `'fast'|'commit'`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Tier {
-    Fast,
-    Commit,
-}
-
 /// Result of [`collect_violations`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CollectResult {
@@ -44,6 +38,12 @@ pub struct CollectResult {
 pub struct GateResult {
     pub violations: Vec<Violation>,
     pub code: i32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct GateOptions {
+    pub tier: Option<Tier>,
+    pub phase: Option<Phase>,
 }
 
 /// Stderr sink for gate machine-surface output (testable).
@@ -95,6 +95,52 @@ fn gate_allow(config: &ResolvedConfig, mode: Mode) -> &HashSet<String> {
     }
 }
 
+fn default_phase(mode: Mode, tier: Option<Tier>) -> Phase {
+    if let Some(tier) = tier {
+        return match tier {
+            Tier::Fast => Phase::Edit,
+            Tier::Commit => Phase::Commit,
+        };
+    }
+    match mode {
+        Mode::File => Phase::Edit,
+        Mode::Staged | Mode::Full => Phase::Commit,
+    }
+}
+
+fn effective_phase(mode: Mode, options: GateOptions) -> Phase {
+    options
+        .phase
+        .unwrap_or_else(|| default_phase(mode, options.tier))
+}
+
+fn effective_tier(config: &ResolvedConfig, phase: Phase, options: GateOptions) -> Tier {
+    options
+        .tier
+        .unwrap_or_else(|| config.phase_settings(phase).tier)
+}
+
+fn should_apply_baseline(
+    config: &ResolvedConfig,
+    phase: Phase,
+    tier: Tier,
+    options: GateOptions,
+) -> bool {
+    if options.tier.is_some() {
+        return tier == Tier::Commit;
+    }
+    config.phase_settings(phase).baseline_filter
+}
+
+pub fn checker_enabled_for_phase(config: &ResolvedConfig, checker_id: &str, phase: Phase) -> bool {
+    config
+        .checker_phases
+        .get(checker_id)
+        .cloned()
+        .unwrap_or_else(default_checker_phases)
+        .contains(&phase)
+}
+
 fn iso_now() -> String {
     use std::process::Command;
     Command::new("date")
@@ -142,6 +188,19 @@ pub fn collect_violations(
     tier: Tier,
     file_target: Option<&str>,
 ) -> CollectResult {
+    let phase = default_phase(mode, Some(tier));
+    collect_violations_for_phase(mode, config, tier, phase, file_target)
+}
+
+/// Collect raw violations for a concrete phase (no suppressions / severity /
+/// ratchet filtering).
+pub fn collect_violations_for_phase(
+    mode: Mode,
+    config: &ResolvedConfig,
+    tier: Tier,
+    phase: Phase,
+    file_target: Option<&str>,
+) -> CollectResult {
     let ctx = enumerate_ctx(config);
     let files = match mode {
         Mode::Staged => list_source_files(&ctx, EnumerateMode::Staged),
@@ -184,6 +243,9 @@ pub fn collect_violations(
             let Some(cfg) = config.checkers.get(checker.id) else {
                 continue;
             };
+            if !checker_enabled_for_phase(config, checker.id, phase) {
+                continue;
+            }
             let det = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 (checker.detect)(config, cfg)
             })) {
@@ -250,9 +312,10 @@ pub fn collect_violations(
                 }
             });
         let elapsed = started.elapsed().as_secs_f64();
-        if elapsed > 30.0 {
+        let budget_seconds = config.phase_settings(phase).budget_seconds;
+        if elapsed > f64::from(budget_seconds) {
             notices.push(format!(
-                "commit-tier checkers took {:.0}s (budget ~30s) — check tsc incremental cache / disable slow checkers",
+                "{phase}-phase checkers took {:.0}s (budget ~{budget_seconds}s) — check tsc incremental cache / disable slow checkers",
                 elapsed
             ));
         }
@@ -352,11 +415,21 @@ pub fn run_gate(
     tier: Option<Tier>,
     file_target: Option<&str>,
 ) -> GateResult {
+    run_gate_with_options(mode, config, GateOptions { tier, phase: None }, file_target)
+}
+
+/// Run the gate for a lifecycle phase.
+pub fn run_gate_with_options(
+    mode: Mode,
+    config: &ResolvedConfig,
+    options: GateOptions,
+    file_target: Option<&str>,
+) -> GateResult {
     let mut stderr = std::io::stderr();
     let mut gate_stderr = GateStderr {
         writer: &mut stderr,
     };
-    run_gate_with_stderr(mode, config, tier, file_target, &mut gate_stderr)
+    run_gate_with_options_stderr(mode, config, options, file_target, &mut gate_stderr)
 }
 
 /// Same as [`run_gate`] but writes machine-surface stderr to `gate_stderr` (unit tests).
@@ -367,16 +440,32 @@ pub fn run_gate_with_stderr(
     file_target: Option<&str>,
     gate_stderr: &mut GateStderr<'_>,
 ) -> GateResult {
-    let eff_tier = tier.unwrap_or(match mode {
-        Mode::Staged => Tier::Commit,
-        Mode::File => Tier::Fast,
-        Mode::Full => Tier::Commit,
-    });
+    run_gate_with_options_stderr(
+        mode,
+        config,
+        GateOptions { tier, phase: None },
+        file_target,
+        gate_stderr,
+    )
+}
+
+/// Same as [`run_gate_with_options`] but writes machine-surface stderr to
+/// `gate_stderr` (unit tests).
+pub fn run_gate_with_options_stderr(
+    mode: Mode,
+    config: &ResolvedConfig,
+    options: GateOptions,
+    file_target: Option<&str>,
+    gate_stderr: &mut GateStderr<'_>,
+) -> GateResult {
+    let phase = effective_phase(mode, options);
+    let eff_tier = effective_tier(config, phase, options);
+    let baseline_filter = should_apply_baseline(config, phase, eff_tier, options);
 
     let CollectResult {
         violations: collected,
         notices,
-    } = collect_violations(mode, config, eff_tier, file_target);
+    } = collect_violations_for_phase(mode, config, eff_tier, phase, file_target);
 
     for n in notices {
         gate_stderr.notice(&n);
@@ -385,7 +474,7 @@ pub fn run_gate_with_stderr(
     let mut violations = apply_gate_filters(collected, config, mode, Some(gate_stderr));
 
     let mut baselined_count = 0u32;
-    if eff_tier == Tier::Commit {
+    if baseline_filter {
         let bl = load_baseline(Path::new(&config.baseline_path));
         if let Some(err) = &bl.error {
             gate_stderr.warning(&format!(
@@ -616,6 +705,107 @@ mod tests {
         assert_eq!(result.code, 0, "stderr:\n{stderr}");
         assert!(result.violations.is_empty());
         assert!(stderr.contains("pre-existing baselined"));
+    }
+
+    #[test]
+    fn phase_commit_applies_baseline_by_default() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+        let config = setup_repo(root);
+        let line = "const x = foo as any;\n";
+        fs::write(root.join("src/bad.ts"), line).unwrap();
+
+        let collected = collect_violations(Mode::File, &config, Tier::Fast, Some("src/bad.ts"));
+        write_baseline(
+            Path::new(&config.baseline_path),
+            &collected.violations,
+            "test",
+        )
+        .unwrap();
+
+        let (result, stderr) = capture_stderr(|stderr| {
+            run_gate_with_options_stderr(
+                Mode::File,
+                &config,
+                GateOptions {
+                    tier: None,
+                    phase: Some(Phase::Commit),
+                },
+                Some("src/bad.ts"),
+                stderr,
+            )
+        });
+        assert_eq!(result.code, 0, "stderr:\n{stderr}");
+        assert!(stderr.contains("pre-existing baselined"));
+    }
+
+    #[test]
+    fn phase_can_disable_baseline_filtering_explicitly() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+        let toml = format!("{}\n[phases.pr]\nbaseline = false\n", fixture_toml());
+        let config = test_config(root, &toml);
+        fs::create_dir_all(root.join("src")).unwrap();
+        fs::write(root.join("src/bad.ts"), "const x = foo as any;\n").unwrap();
+
+        let collected = collect_violations(Mode::File, &config, Tier::Fast, Some("src/bad.ts"));
+        write_baseline(
+            Path::new(&config.baseline_path),
+            &collected.violations,
+            "test",
+        )
+        .unwrap();
+
+        let (result, stderr) = capture_stderr(|stderr| {
+            run_gate_with_options_stderr(
+                Mode::File,
+                &config,
+                GateOptions {
+                    tier: None,
+                    phase: Some(Phase::Pr),
+                },
+                Some("src/bad.ts"),
+                stderr,
+            )
+        });
+        assert_eq!(result.code, 1, "stderr:\n{stderr}");
+        assert!(!stderr.contains("pre-existing baselined"));
+    }
+
+    #[test]
+    fn checker_phase_eligibility_defaults_and_overrides() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+        let config = setup_repo(root);
+        assert!(checker_enabled_for_phase(
+            &config,
+            "diff-shape",
+            Phase::Commit
+        ));
+        assert!(checker_enabled_for_phase(&config, "diff-shape", Phase::Pr));
+        assert!(!checker_enabled_for_phase(
+            &config,
+            "diff-shape",
+            Phase::Edit
+        ));
+
+        let configured = test_config(
+            root,
+            r#"
+[checkers.diff-shape]
+phases = ["pr"]
+"#,
+        );
+        assert!(!checker_enabled_for_phase(
+            &configured,
+            "diff-shape",
+            Phase::Commit
+        ));
+        assert!(checker_enabled_for_phase(
+            &configured,
+            "diff-shape",
+            Phase::Pr
+        ));
     }
 
     #[test]

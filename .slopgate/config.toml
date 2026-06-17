@@ -1,0 +1,16 @@
+roots = ["crates/slopgate-core/src", "crates/slopgate-rs/src", "tools/leakscan/src"]
+exts = [".rs"]
+skipDirs = ["node_modules", "dist", "tests", ".worktrees"]
+baseline = ["no-stubs", "ts-suppress", "as-any"]
+rules = []
+astRules = "./rules/ast"
+astDisable = []
+suppressions = "./suppressions.json"
+fixtures = "./fixtures"
+
+[checkers.diff-shape]
+maxDirs = 5
+
+[gate]
+file = ["critical", "high"]
+staged = ["critical", "high"]

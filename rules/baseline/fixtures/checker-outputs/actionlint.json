@@ -1,0 +1,11 @@
+[
+  {
+    "message": "property \"platform\" is not defined in object type {os: string}",
+    "snippet": "          key: ${{ matrix.platform }}",
+    "kind": "expression",
+    "filepath": ".github/workflows/ci.yml",
+    "line": 21,
+    "column": 20,
+    "end_column": 35
+  }
+]

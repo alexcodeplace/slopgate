@@ -13,6 +13,18 @@
   × function bad(el: HTMLElement) { el.innerHTML = '<b>hi</b>'; }
   ✓ Build DOM via safe APIs or sanitize with isomorphic-dompurify.
 
+[HIGH] inner-html-assignment rules/baseline/fixtures/src/canary.tsx:15
+  × const _dangerous = <div dangerouslySetInnerHTML={{ __html: html }} />;
+  ✓ Build DOM via safe APIs or sanitize with isomorphic-dompurify.
+
+[CRITICAL] focused-test-only-tsx rules/baseline/fixtures/src/canary.tsx:17
+  × describe.only('focused suite canary', () => {});
+  ✓ Remove .only before committing so the full test suite runs.
+
+[CRITICAL] focused-test-shorthand-tsx rules/baseline/fixtures/src/canary.tsx:18
+  × fdescribe('focused suite shorthand canary', () => {});
+  ✓ Replace fit/fdescribe with test/it/describe before committing so the full test suite runs.
+
 ── regex ──
 [CRITICAL] no-stubs-placeholder rules/baseline/fixtures/src/canary.tsx:3
   × // placeholder for now
@@ -30,30 +42,30 @@
   × // @ts-ignore
   ✓ Fix the underlying type error; remove the suppression.
 
-[CRITICAL] live-secret-literal rules/baseline/fixtures/src/canary.tsx:16
+[CRITICAL] live-secret-literal rules/baseline/fixtures/src/canary.tsx:22
   × const _sk = "sk_live_aaaaaaaaaaaa";
   ✓ Move to a secret manager or environment variable; never commit live keys.
 
-[CRITICAL] eval-dynamic-code rules/baseline/fixtures/src/canary.tsx:18
+[CRITICAL] eval-dynamic-code rules/baseline/fixtures/src/canary.tsx:24
   × // eval(userCode);  — commented to avoid actual eval in fixture
   ✓ Eliminate eval(); use static dispatch tables or data-driven config.
 
-[CRITICAL] eval-dynamic-code rules/baseline/fixtures/src/canary.tsx:19
+[CRITICAL] eval-dynamic-code rules/baseline/fixtures/src/canary.tsx:25
   × const _evalStr = 'eval(userCode)';
   ✓ Eliminate eval(); use static dispatch tables or data-driven config.
 
-[HIGH] pii-in-logs rules/baseline/fixtures/src/canary.tsx:21
+[HIGH] pii-in-logs rules/baseline/fixtures/src/canary.tsx:27
   × console.log(user.phone, user.email);
   ✓ Remove log or redact sensitive fields before logging.
 
-[HIGH] weak-hash-algorithm rules/baseline/fixtures/src/canary.tsx:23
+[HIGH] weak-hash-algorithm rules/baseline/fixtures/src/canary.tsx:29
   × // createHash('md5') — weak hash
   ✓ Use SHA-256+ for integrity; bcrypt/argon2/scrypt for passwords.
 
-[HIGH] weak-hash-algorithm rules/baseline/fixtures/src/canary.tsx:24
+[HIGH] weak-hash-algorithm rules/baseline/fixtures/src/canary.tsx:30
   × const _wh = "createHash('md5').update(data)";
   ✓ Use SHA-256+ for integrity; bcrypt/argon2/scrypt for passwords.
 
-12 violation(s) in 1 file(s). Fix now while context is hot.
+15 violation(s) in 1 file(s). Fix now while context is hot.
 False positive? NEVER edit suppressions.json yourself — ask the user via AskUserQuestion.
 

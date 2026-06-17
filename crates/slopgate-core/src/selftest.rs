@@ -1,14 +1,17 @@
 //! Self-test orchestrator — port of `src/selftest.mjs` (`runSelfTest`).
 
 use crate::ast_engine::{run_ast_grep_scan, AstGrepScanOpts};
+use crate::checkers::actionlint::{parse_actionlint_json, ActionlintFinding};
 use crate::checkers::depcruise::parse_depcruise_output;
 use crate::checkers::depcruise::DepcruiseParsed;
 use crate::checkers::jscpd::parse_jscpd_report;
 use crate::checkers::jscpd::JscpdClone;
 use crate::checkers::knip::parse_knip_output;
 use crate::checkers::knip::KnipFinding;
+use crate::checkers::shellcheck::{parse_shellcheck_output, ShellcheckFinding};
 use crate::checkers::tsc::{parse_tsc_output, TscError};
 use crate::checkers::type_coverage::{parse_type_coverage_output, TypeCoverageEntry};
+use crate::checkers::typos::{parse_typos_json_lines, TyposFinding};
 use crate::config::ResolvedConfig;
 use crate::regex_engine::compile_line_regex;
 use serde_json::{json, Value};
@@ -113,6 +116,53 @@ fn stringify_type_coverage_output(entries: &[TypeCoverageEntry]) -> String {
     serde_json::to_string(&arr).unwrap_or_else(|_| "[]".into())
 }
 
+fn stringify_shellcheck_output(findings: &[ShellcheckFinding]) -> String {
+    let arr: Vec<Value> = findings
+        .iter()
+        .map(|f| {
+            json!({
+                "file": f.file,
+                "line": f.line,
+                "code": f.code,
+                "level": f.level,
+                "message": f.message,
+            })
+        })
+        .collect();
+    serde_json::to_string(&arr).unwrap_or_else(|_| "[]".into())
+}
+
+fn stringify_actionlint_output(findings: &[ActionlintFinding]) -> String {
+    let arr: Vec<Value> = findings
+        .iter()
+        .map(|f| {
+            json!({
+                "file": f.file,
+                "line": f.line,
+                "column": f.column,
+                "kind": f.kind,
+                "message": f.message,
+            })
+        })
+        .collect();
+    serde_json::to_string(&arr).unwrap_or_else(|_| "[]".into())
+}
+
+fn stringify_typos_output(findings: &[TyposFinding]) -> String {
+    let arr: Vec<Value> = findings
+        .iter()
+        .map(|f| {
+            json!({
+                "file": f.file,
+                "line": f.line,
+                "typo": f.typo,
+                "corrections": f.corrections,
+            })
+        })
+        .collect();
+    serde_json::to_string(&arr).unwrap_or_else(|_| "[]".into())
+}
+
 struct ParserFixture<'a> {
     id: &'a str,
     input: &'a str,
@@ -146,6 +196,20 @@ fn parse_type_coverage_fixture(text: &str) -> Result<String, String> {
     )))
 }
 
+fn parse_shellcheck_fixture(text: &str) -> Result<String, String> {
+    let j: Value = serde_json::from_str(text).map_err(|e| e.to_string())?;
+    Ok(stringify_shellcheck_output(&parse_shellcheck_output(&j)))
+}
+
+fn parse_actionlint_fixture(text: &str) -> Result<String, String> {
+    let j: Value = serde_json::from_str(text).map_err(|e| e.to_string())?;
+    Ok(stringify_actionlint_output(&parse_actionlint_json(&j)))
+}
+
+fn parse_typos_fixture(text: &str) -> Result<String, String> {
+    Ok(stringify_typos_output(&parse_typos_json_lines(text)?))
+}
+
 const PARSER_FIXTURES: &[ParserFixture<'_>] = &[
     ParserFixture {
         id: "tsc",
@@ -176,6 +240,24 @@ const PARSER_FIXTURES: &[ParserFixture<'_>] = &[
         input: "type-coverage.txt",
         expected: "type-coverage.expected.json",
         parse: parse_type_coverage_fixture,
+    },
+    ParserFixture {
+        id: "shellcheck",
+        input: "shellcheck.json",
+        expected: "shellcheck.expected.json",
+        parse: parse_shellcheck_fixture,
+    },
+    ParserFixture {
+        id: "actionlint",
+        input: "actionlint.json",
+        expected: "actionlint.expected.json",
+        parse: parse_actionlint_fixture,
+    },
+    ParserFixture {
+        id: "typos",
+        input: "typos.jsonl",
+        expected: "typos.expected.json",
+        parse: parse_typos_fixture,
     },
 ];
 
@@ -489,6 +571,8 @@ mod tests {
             patterns,
             ast_rule_dirs,
             checkers: BTreeMap::new(),
+            checker_phases: BTreeMap::new(),
+            phases: crate::config::default_phase_settings(),
             ast_disable: HashSet::new(),
             baseline_path: repo
                 .join(".slopgate/baseline.json")
@@ -512,6 +596,7 @@ mod tests {
                 .values()
                 .flat_map(|p| p.ast_ids.iter().cloned())
                 .collect(),
+            agent: crate::config::AgentConfig::default(),
         }
     }
 
@@ -584,6 +669,8 @@ mod tests {
             }],
             ast_rule_dirs: vec![],
             checkers: BTreeMap::new(),
+            checker_phases: BTreeMap::new(),
+            phases: crate::config::default_phase_settings(),
             ast_disable: HashSet::new(),
             baseline_path: String::new(),
             suppressions_path: String::new(),
@@ -595,6 +682,7 @@ mod tests {
             },
             ux_ast_severity: BTreeMap::new(),
             ux_ast_all: HashSet::new(),
+            agent: crate::config::AgentConfig::default(),
         };
         let code = run_self_test(&config);
         assert_eq!(code, 1, "broken canary must fail self-test");

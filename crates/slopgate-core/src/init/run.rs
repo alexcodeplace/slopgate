@@ -115,11 +115,12 @@ fn run_init_inner(
     let warned = roots_result.warned;
     let exts = detect_exts(target_dir, &roots);
     let skip_dirs = detect_skip_dirs(target_dir);
+    let engine = engine_root();
 
     fs::create_dir_all(base.join("rules/ast"))
         .map_err(|e| SlopError::Io(format!("mkdir {}: {e}", base.join("rules/ast").display())))?;
 
-    let checkers = detect_checkers(target_dir);
+    let checkers = detect_checkers(target_dir, &roots, &exts, &engine);
 
     if !config_exists {
         fs::create_dir_all(base.join("fixtures/src")).map_err(|e| {
@@ -146,7 +147,6 @@ fn run_init_inner(
             .map_err(|e| SlopError::Io(format!("write {}: {e}", depcruise_path.display())))?;
     }
 
-    let engine = engine_root();
     let engine_invocation = engine.join("bin/slopgate").to_string_lossy().into_owned();
     let node_path = resolve_node_path();
 

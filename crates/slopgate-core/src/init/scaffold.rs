@@ -36,14 +36,16 @@ impl SettingsAction {
     }
 }
 
-fn hook_paths(engine_root: &Path) -> (String, String, String) {
+fn hook_paths(engine_root: &Path) -> (String, String, String, String) {
     let commit = engine_root.join("hooks/commit-hook.sh");
     let edit = engine_root.join("hooks/edit-hook.sh");
     let session = engine_root.join("hooks/session-start.sh");
+    let baseline_guard = engine_root.join("hooks/baseline-guard.sh");
     (
         commit.to_string_lossy().into_owned(),
         edit.to_string_lossy().into_owned(),
         session.to_string_lossy().into_owned(),
+        baseline_guard.to_string_lossy().into_owned(),
     )
 }
 
@@ -185,9 +187,9 @@ pub fn merge_settings_json(
     engine_root: &Path,
     stderr: &mut dyn Write,
 ) -> Result<SettingsAction, SlopError> {
-    let (commit, edit, session) = {
-        let (commit, edit, session) = hook_paths(engine_root);
-        (commit, edit, session)
+    let (commit, edit, session, baseline_guard) = {
+        let (commit, edit, session, baseline_guard) = hook_paths(engine_root);
+        (commit, edit, session, baseline_guard)
     };
     let claude_dir = target_dir.join(".claude");
     let settings_path = claude_dir.join("settings.json");
@@ -200,6 +202,9 @@ pub fn merge_settings_json(
                 "PreToolUse": [{
                     "matcher": "Bash",
                     "hooks": [{ "type": "command", "command": commit }]
+                }, {
+                    "matcher": "Bash|Edit|Write",
+                    "hooks": [{ "type": "command", "command": baseline_guard }]
                 }],
                 "PostToolUse": [{
                     "matcher": "Edit|Write",
@@ -242,10 +247,16 @@ pub fn merge_settings_json(
     }
 
     let added_pre = ensure_hook_entry(&mut settings, "PreToolUse", Some("Bash"), &commit);
+    let added_guard = ensure_hook_entry(
+        &mut settings,
+        "PreToolUse",
+        Some("Bash|Edit|Write"),
+        &baseline_guard,
+    );
     let added_post = ensure_hook_entry(&mut settings, "PostToolUse", Some("Edit|Write"), &edit);
     let added_session = ensure_hook_entry(&mut settings, "SessionStart", None, &session);
 
-    if !added_pre && !added_post && !added_session {
+    if !added_pre && !added_guard && !added_post && !added_session {
         return Ok(SettingsAction::AlreadyPresent);
     }
 
@@ -323,11 +334,21 @@ mod tests {
         fs::write(engine.join("hooks/commit-hook.sh"), "").unwrap();
         fs::write(engine.join("hooks/edit-hook.sh"), "").unwrap();
         fs::write(engine.join("hooks/session-start.sh"), "").unwrap();
+        fs::write(engine.join("hooks/baseline-guard.sh"), "").unwrap();
 
         let mut stderr = Vec::new();
         let action = merge_settings_json(dir.path(), &engine, &mut stderr).unwrap();
         assert_eq!(action, SettingsAction::Created);
         assert!(dir.path().join(".claude/settings.json").is_file());
+        let settings: Value = serde_json::from_str(
+            &fs::read_to_string(dir.path().join(".claude/settings.json")).unwrap(),
+        )
+        .unwrap();
+        assert!(settings["hooks"]["PreToolUse"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|entry| entry["matcher"] == "Bash|Edit|Write"));
     }
 
     #[test]
@@ -338,6 +359,7 @@ mod tests {
         fs::write(engine.join("hooks/commit-hook.sh"), "").unwrap();
         fs::write(engine.join("hooks/edit-hook.sh"), "").unwrap();
         fs::write(engine.join("hooks/session-start.sh"), "").unwrap();
+        fs::write(engine.join("hooks/baseline-guard.sh"), "").unwrap();
         fs::create_dir_all(dir.path().join(".claude")).unwrap();
         fs::write(dir.path().join(".claude/settings.json"), "{ not json").unwrap();
 

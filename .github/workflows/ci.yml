@@ -5,16 +5,65 @@ on:
     branches: [master]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
-  test:
+  rust-quality:
+    name: Rust quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        run: rustup toolchain install stable --profile minimal --component rustfmt,clippy
+      - name: Check Rust formatting
+        run: cargo +stable fmt --all --check
+      - name: Lint Rust
+        run: cargo +stable clippy --workspace --all-targets -- -D warnings
+      - name: Test Rust workspace
+        run: cargo +stable test --workspace
+
+  package-smoke:
+    name: Package smoke (Node ${{ matrix.node }})
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         node: [18, 20, 22]
     steps:
       - uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        run: rustup toolchain install stable --profile minimal
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
-      - run: npm run self-test
-      - run: npm test
+      - name: Build launcher smoke binary
+        run: cargo +stable build --locked -p slopgate-rs
+      - name: Run package self-test through Node launcher
+        env:
+          SLOPGATE_BIN: target/debug/slopgate-rs
+        run: npm run self-test
+      - name: Check npm package contents
+        run: npm pack --dry-run --json
+
+  workflow-quality:
+    name: Workflow quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install actionlint
+        env:
+          ACTIONLINT_VERSION: 1.7.7
+        run: |
+          set -euo pipefail
+          curl -fsSLo actionlint.tar.gz "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          tar -xzf actionlint.tar.gz actionlint
+          ./actionlint -version
+      - name: Lint GitHub Actions workflows
+        run: ./actionlint
+      - name: Audit GitHub Actions workflows
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          python3 -m pip install --user zizmor
+          "$HOME/.local/bin/zizmor" --min-severity high .github/workflows

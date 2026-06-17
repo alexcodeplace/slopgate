@@ -1,0 +1,3 @@
+{"type":"typo","path":"./src/lib.rs","line_num":3,"byte_offset":8,"typo":"retrive","corrections":["retrieve"]}
+{"type":"binary-file","path":"assets/logo.png"}
+{"type":"typo","path":"docs/guide.md","line_num":9,"byte_offset":4,"typo":"succesfully","corrections":["successfully"]}

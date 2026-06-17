@@ -82,6 +82,27 @@ slopgate/
 
 ## Running Tests
 
+### Local CI Parity
+
+Before opening a PR, run the same checks that CI gates:
+
+```bash
+cargo fmt --all --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+cargo build --locked -p slopgate-rs
+SLOPGATE_BIN=target/debug/slopgate-rs npm run self-test
+npm pack --dry-run --json
+```
+
+CI also lints GitHub Actions workflows with `actionlint`. It runs `zizmor` for
+workflow security findings as a non-blocking advisory check so dependency and
+policy updates do not stop unrelated PRs.
+
+`cargo-deny` / `cargo audit` are intentionally deferred for now. They are good
+future additions, but need an agreed advisory/license policy and a validated
+low-noise config before becoming CI gates.
+
 ### Cargo Test Suite
 
 ```bash
@@ -248,7 +269,7 @@ cargo test -p slopgate-core config
 
 ## Submitting a PR
 
-- Run `npm run self-test` and ensure all tests pass
+- Run the local CI parity commands above and ensure all tests pass
 - Include a clear PR description explaining the change
 - Link to any related issues
 - If adding a new checker or rule, include test fixtures

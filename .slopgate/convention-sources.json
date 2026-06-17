@@ -1,0 +1,10 @@
+{
+  "agents": [],
+  "claude_md": [],
+  "commands": [],
+  "editor_rules": [],
+  "generated_hint": "inputs an agent should read to derive project-specific rule candidates",
+  "knowledge_docs": [],
+  "skills": [],
+  "version": 1
+}

@@ -252,6 +252,8 @@ mod tests {
             patterns: vec![],
             ast_rule_dirs: vec![],
             checkers: Default::default(),
+            checker_phases: Default::default(),
+            phases: crate::config::default_phase_settings(),
             ast_disable: Default::default(),
             baseline_path: String::new(),
             suppressions_path: String::new(),
@@ -263,6 +265,7 @@ mod tests {
             },
             ux_ast_severity: Default::default(),
             ux_ast_all: Default::default(),
+            agent: crate::config::AgentConfig::default(),
         };
         let det = detect(&config, &serde_json::json!({}));
         assert!(!det.available);
