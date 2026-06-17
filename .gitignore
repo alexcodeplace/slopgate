@@ -49,6 +49,7 @@
 bin/slopgate-rs
 .worktrees/
 .slopgate/cache/
+.slopgate/stats.jsonl
 
 # scratch / demo workspaces
 tmp/
