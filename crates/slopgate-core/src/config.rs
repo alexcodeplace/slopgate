@@ -1,9 +1,10 @@
 //! Native TOML config resolver — mirrors `src/config.mjs` `resolveConfig`.
 
+use crate::phase::{Phase, Tier};
 use crate::rules::packs::{self, Pattern, UxPack};
 use indexmap::IndexMap;
 use serde::Deserialize;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -11,6 +12,13 @@ use std::process::Command;
 pub struct GateAllow {
     pub file: HashSet<String>,
     pub staged: HashSet<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PhaseSettings {
+    pub tier: Tier,
+    pub baseline_filter: bool,
+    pub budget_seconds: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -24,6 +32,8 @@ pub struct ResolvedConfig {
     pub patterns: Vec<Pattern>,
     pub ast_rule_dirs: Vec<String>,
     pub checkers: BTreeMap<String, serde_json::Value>,
+    pub checker_phases: BTreeMap<String, BTreeSet<Phase>>,
+    pub phases: BTreeMap<Phase, PhaseSettings>,
     pub ast_disable: HashSet<String>,
     pub baseline_path: String,
     pub suppressions_path: String,
@@ -32,6 +42,15 @@ pub struct ResolvedConfig {
     pub gate: GateAllow,
     pub ux_ast_severity: BTreeMap<String, String>,
     pub ux_ast_all: HashSet<String>,
+}
+
+impl ResolvedConfig {
+    pub fn phase_settings(&self, phase: Phase) -> PhaseSettings {
+        self.phases
+            .get(&phase)
+            .copied()
+            .unwrap_or_else(|| default_phase_settings_for(phase))
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -52,12 +71,24 @@ struct RawConfig {
     ast_disable: Vec<String>,
     #[serde(default)]
     checkers: BTreeMap<String, toml::Value>,
+    #[serde(default)]
+    phases: BTreeMap<String, RawPhaseSettings>,
     gate: Option<RawGate>,
     suppressions: Option<String>,
     fixtures: Option<String>,
     checker_concurrency: Option<u32>,
     #[serde(default)]
     ux: BTreeMap<String, toml::Value>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RawPhaseSettings {
+    tier: Option<String>,
+    #[serde(alias = "baseline")]
+    baseline_filter: Option<bool>,
+    #[serde(alias = "budget")]
+    budget_seconds: Option<u32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -113,20 +144,138 @@ fn toml_to_json(v: toml::Value) -> serde_json::Value {
     }
 }
 
-fn process_checkers(raw: BTreeMap<String, toml::Value>) -> BTreeMap<String, serde_json::Value> {
+pub fn default_phase_settings_for(phase: Phase) -> PhaseSettings {
+    PhaseSettings {
+        tier: phase.default_tier(),
+        baseline_filter: phase.default_baseline_filter(),
+        budget_seconds: phase.default_budget_seconds(),
+    }
+}
+
+pub fn default_phase_settings() -> BTreeMap<Phase, PhaseSettings> {
+    Phase::ALL
+        .into_iter()
+        .map(|phase| (phase, default_phase_settings_for(phase)))
+        .collect()
+}
+
+pub fn default_checker_phases() -> BTreeSet<Phase> {
+    Phase::ALL
+        .into_iter()
+        .filter(|phase| phase.runs_checkers_by_default())
+        .collect()
+}
+
+fn parse_phase(raw: &str, context: &str) -> Result<Phase, String> {
+    Phase::parse(raw).ok_or_else(|| {
+        format!(
+            "slopgate: unknown phase \"{raw}\" in {context} (known: {})",
+            Phase::values().replace('|', ", ")
+        )
+    })
+}
+
+fn parse_tier(raw: &str, context: &str) -> Result<Tier, String> {
+    Tier::parse(raw).ok_or_else(|| {
+        format!("slopgate: {context} tier must be {}", Tier::values())
+    })
+}
+
+fn process_phases(
+    raw: BTreeMap<String, RawPhaseSettings>,
+) -> Result<BTreeMap<Phase, PhaseSettings>, String> {
+    let mut out = default_phase_settings();
+    for (name, cfg) in raw {
+        let phase = parse_phase(&name, "phases")?;
+        let mut settings = default_phase_settings_for(phase);
+        if let Some(tier) = cfg.tier {
+            settings.tier = parse_tier(&tier, &format!("phases.{name}"))?;
+        }
+        if let Some(baseline_filter) = cfg.baseline_filter {
+            settings.baseline_filter = baseline_filter;
+        }
+        if let Some(budget_seconds) = cfg.budget_seconds {
+            settings.budget_seconds = budget_seconds;
+        }
+        out.insert(phase, settings);
+    }
+    Ok(out)
+}
+
+fn parse_checker_phase_value(
+    value: &toml::Value,
+    context: &str,
+) -> Result<BTreeSet<Phase>, String> {
+    match value {
+        toml::Value::String(raw) => Ok([parse_phase(raw, context)?].into_iter().collect()),
+        toml::Value::Array(values) => {
+            let mut out = BTreeSet::new();
+            for value in values {
+                let Some(raw) = value.as_str() else {
+                    return Err(format!("slopgate: {context} must contain phase strings"));
+                };
+                out.insert(parse_phase(raw, context)?);
+            }
+            Ok(out)
+        }
+        _ => Err(format!(
+            "slopgate: {context} must be a phase string or array of phase strings"
+        )),
+    }
+}
+
+fn extract_checker_phases(
+    name: &str,
+    table: &toml::map::Map<String, toml::Value>,
+) -> Result<Option<BTreeSet<Phase>>, String> {
+    let phase = table.get("phase");
+    let phases = table.get("phases");
+    match (phase, phases) {
+        (Some(_), Some(_)) => Err(format!(
+            "slopgate: checkers.{name} cannot set both phase and phases"
+        )),
+        (Some(value), None) => {
+            parse_checker_phase_value(value, &format!("checkers.{name}.phase")).map(Some)
+        }
+        (None, Some(value)) => {
+            parse_checker_phase_value(value, &format!("checkers.{name}.phases")).map(Some)
+        }
+        (None, None) => Ok(None),
+    }
+}
+
+fn process_checkers(
+    raw: BTreeMap<String, toml::Value>,
+) -> Result<
+    (
+        BTreeMap<String, serde_json::Value>,
+        BTreeMap<String, BTreeSet<Phase>>,
+    ),
+    String,
+> {
     let mut out = BTreeMap::new();
+    let mut phase_out = BTreeMap::new();
     for (name, v) in raw {
         match &v {
             toml::Value::Boolean(false) => continue,
             toml::Value::Boolean(true) => {
                 out.insert(name, serde_json::json!({}));
             }
+            toml::Value::Table(table) => {
+                if let Some(phases) = extract_checker_phases(&name, table)? {
+                    phase_out.insert(name.clone(), phases);
+                }
+                let mut table = table.clone();
+                table.remove("phase");
+                table.remove("phases");
+                out.insert(name, toml_to_json(toml::Value::Table(table)));
+            }
             _ => {
                 out.insert(name, toml_to_json(v));
             }
         }
     }
-    out
+    Ok((out, phase_out))
 }
 
 fn resolve_ux_severity(value: &toml::Value, pack: &UxPack) -> Option<String> {
@@ -282,7 +431,8 @@ fn resolve_inner(
         ast_rule_dirs.push(repo_root.join("rules/ux/ast"));
     }
 
-    let checkers = process_checkers(raw.checkers);
+    let phases = process_phases(raw.phases)?;
+    let (checkers, checker_phases) = process_checkers(raw.checkers)?;
 
     let roots_rel = if raw.roots.is_empty() {
         vec!["src".to_string()]
@@ -340,6 +490,8 @@ fn resolve_inner(
         patterns,
         ast_rule_dirs: ast_rule_dirs.into_iter().map(path_to_string).collect(),
         checkers,
+        checker_phases,
+        phases,
         ast_disable: raw.ast_disable.into_iter().collect(),
         baseline_path,
         suppressions_path,
@@ -415,6 +567,14 @@ mod tests {
         assert!(c.skip_dirs.contains("node_modules"));
         assert!(c.gate.staged.contains("critical") && c.gate.staged.contains("high"));
         assert_eq!(c.checker_concurrency, 3);
+        assert_eq!(c.phases.len(), Phase::ALL.len());
+        assert_eq!(c.phase_settings(Phase::Edit).tier, Tier::Fast);
+        assert!(!c.phase_settings(Phase::Edit).baseline_filter);
+        assert_eq!(c.phase_settings(Phase::Commit).tier, Tier::Commit);
+        assert!(c.phase_settings(Phase::Commit).baseline_filter);
+        assert_eq!(c.phase_settings(Phase::Commit).budget_seconds, 30);
+        assert!(!c.phase_settings(Phase::Nightly).baseline_filter);
+        assert!(c.checker_phases.is_empty());
     }
 
     #[test]
@@ -457,6 +617,78 @@ mod tests {
     #[test]
     fn unknown_baseline_pack_errors() {
         assert!(resolve_config_str("baseline = [\"nope\"]\n").is_err());
+    }
+
+    #[test]
+    fn parses_phase_overrides_and_checker_phase_metadata() {
+        let c = resolve_config_str(
+            r#"
+[phases.push]
+tier = "commit"
+baseline = false
+budgetSeconds = 45
+
+[checkers.diff-shape]
+maxDirs = 2
+phases = ["push", "pr"]
+"#,
+        )
+        .unwrap();
+
+        let push = c.phase_settings(Phase::Push);
+        assert_eq!(push.tier, Tier::Commit);
+        assert!(!push.baseline_filter);
+        assert_eq!(push.budget_seconds, 45);
+
+        let phases = c.checker_phases.get("diff-shape").unwrap();
+        assert!(phases.contains(&Phase::Push));
+        assert!(phases.contains(&Phase::Pr));
+        assert!(!phases.contains(&Phase::Commit));
+        assert_eq!(
+            c.checkers["diff-shape"],
+            serde_json::json!({ "maxDirs": 2 })
+        );
+    }
+
+    #[test]
+    fn parses_single_checker_phase_metadata() {
+        let c = resolve_config_str(
+            r#"
+[checkers.diff-shape]
+phase = "ci"
+"#,
+        )
+        .unwrap();
+        let phases = c.checker_phases.get("diff-shape").unwrap();
+        assert_eq!(phases.iter().copied().collect::<Vec<_>>(), vec![Phase::Ci]);
+    }
+
+    #[test]
+    fn unknown_phase_errors() {
+        let err = resolve_config_str("[phases.deploy]\n").unwrap_err();
+        assert!(err.contains("unknown phase \"deploy\""));
+
+        let err = resolve_config_str(
+            r#"
+[checkers.diff-shape]
+phases = ["commit", "deploy"]
+"#,
+        )
+        .unwrap_err();
+        assert!(err.contains("checkers.diff-shape.phases"));
+        assert!(err.contains("unknown phase \"deploy\""));
+    }
+
+    #[test]
+    fn existing_fixture_config_resolves_with_phase_defaults() {
+        let c = resolve_config(&cfg_path()).unwrap();
+        assert!(c.checkers.contains_key("diff-shape"));
+        assert_eq!(
+            c.checkers["diff-shape"],
+            serde_json::json!({ "maxDirs": 5 })
+        );
+        assert!(c.checker_phases.is_empty());
+        assert_eq!(c.phase_settings(Phase::Push).budget_seconds, 60);
     }
 
     #[test]

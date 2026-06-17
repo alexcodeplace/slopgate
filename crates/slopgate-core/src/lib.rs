@@ -10,6 +10,7 @@ pub mod hash;
 pub mod help;
 pub mod init;
 pub mod install;
+pub mod phase;
 pub mod ratchet;
 pub mod regex_engine;
 pub mod report;
