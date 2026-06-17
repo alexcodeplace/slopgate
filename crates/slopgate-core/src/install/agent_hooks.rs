@@ -214,6 +214,80 @@ fn ensure_hook_entry(
     true
 }
 
+/// Remove slopgate hooks from a claude-format `root["hooks"]` object, in place.
+///
+/// A hook is removed when [`is_slopgate_cmd`] matches it (by script *identity*, so
+/// foreign-root and prior-version entries are caught) AND its command is not in
+/// `keep`. Pass `keep = &[]` to strip every slopgate hook; pass the canonical
+/// commands to strip only stale/duplicate ones while leaving the canonical entry
+/// untouched (so a no-op merge stays a no-op). Emptied hook arrays, matcher
+/// entries, events, and the `hooks` key itself are pruned. Non-slopgate hooks are
+/// always preserved. Returns true if anything changed.
+fn strip_slopgate_hooks(root: &mut Value, engine_root: &Path, keep: &[&str]) -> bool {
+    let Some(hooks_obj) = root.get_mut("hooks").and_then(|h| h.as_object_mut()) else {
+        return false;
+    };
+
+    let mut changed = false;
+    let event_keys: Vec<String> = hooks_obj.keys().cloned().collect();
+
+    for event in event_keys {
+        let Some(event_arr) = hooks_obj.get_mut(&event).and_then(|v| v.as_array_mut()) else {
+            continue;
+        };
+
+        let mut new_entries: Vec<Value> = Vec::new();
+        for entry in event_arr.drain(..) {
+            let Some(hooks_arr) = entry.get("hooks").and_then(|h| h.as_array()) else {
+                new_entries.push(entry);
+                continue;
+            };
+
+            let filtered: Vec<Value> = hooks_arr
+                .iter()
+                .filter(|h| {
+                    let cmd = h.get("command").and_then(|c| c.as_str());
+                    let is_stale = is_slopgate_cmd(cmd, engine_root)
+                        && !cmd.is_some_and(|c| keep.contains(&c));
+                    !is_stale
+                })
+                .cloned()
+                .collect();
+
+            if filtered.len() == hooks_arr.len() {
+                new_entries.push(entry);
+                continue;
+            }
+
+            changed = true;
+            if filtered.is_empty() {
+                continue;
+            }
+            let mut new_entry = entry;
+            if let Some(obj) = new_entry.as_object_mut() {
+                obj.insert("hooks".to_string(), Value::Array(filtered));
+            }
+            new_entries.push(new_entry);
+        }
+
+        if new_entries.is_empty() {
+            hooks_obj.remove(&event);
+            changed = true;
+        } else {
+            hooks_obj.insert(event, Value::Array(new_entries));
+        }
+    }
+
+    if hooks_obj.is_empty() {
+        if let Some(obj) = root.as_object_mut() {
+            obj.remove("hooks");
+            changed = true;
+        }
+    }
+
+    changed
+}
+
 fn write_json_pretty(path: &Path, root: &Value) -> Result<(), SlopError> {
     let rendered = format!(
         "{}\n",
@@ -247,11 +321,19 @@ pub fn merge_hooks(file_path: &Path, engine_root: &Path) -> Result<MergeResult, 
         root = json!({});
     }
 
+    // Self-heal: drop stale/foreign/duplicate slopgate hooks first (keeping the
+    // canonical commands for this engine_root so a no-op stays a no-op), then add
+    // any canonical entry that is missing. Without the prune, re-running init
+    // stacks a fresh entry beside every prior install root (dev checkout + npm),
+    // and the hooks double-fire forever (the dedup-by-exact-path weakness).
+    let keep = [commit.as_str(), edit.as_str(), session.as_str()];
+    let pruned = strip_slopgate_hooks(&mut root, engine_root, &keep);
+
     let added_session = ensure_hook_entry(&mut root, "SessionStart", None, &session);
     let added_pre = ensure_hook_entry(&mut root, "PreToolUse", Some("Bash"), &commit);
     let added_post = ensure_hook_entry(&mut root, "PostToolUse", Some("Edit|Write"), &edit);
 
-    if !added_session && !added_pre && !added_post {
+    if !pruned && !added_session && !added_pre && !added_post {
         return Ok(MergeResult {
             action: "already-present",
             path: file_path.to_path_buf(),
@@ -296,66 +378,7 @@ pub fn remove_hooks(file_path: &Path, engine_root: &Path) -> Result<RemoveResult
         }
     };
 
-    let Some(hooks_obj) = root.get_mut("hooks").and_then(|h| h.as_object_mut()) else {
-        return Ok(RemoveResult {
-            action: "not-present",
-            path: file_path.to_path_buf(),
-        });
-    };
-
-    let mut changed = false;
-    let event_keys: Vec<String> = hooks_obj.keys().cloned().collect();
-
-    for event in event_keys {
-        let Some(event_arr) = hooks_obj.get_mut(&event).and_then(|v| v.as_array_mut()) else {
-            continue;
-        };
-
-        let mut new_entries: Vec<Value> = Vec::new();
-        for entry in event_arr.drain(..) {
-            let Some(hooks_arr) = entry.get("hooks").and_then(|h| h.as_array()) else {
-                new_entries.push(entry);
-                continue;
-            };
-
-            let filtered: Vec<Value> = hooks_arr
-                .iter()
-                .filter(|h| {
-                    !is_slopgate_cmd(h.get("command").and_then(|c| c.as_str()), engine_root)
-                })
-                .cloned()
-                .collect();
-
-            if filtered.len() == hooks_arr.len() {
-                new_entries.push(entry);
-                continue;
-            }
-
-            changed = true;
-            if filtered.is_empty() {
-                continue;
-            }
-            let mut new_entry = entry;
-            if let Some(obj) = new_entry.as_object_mut() {
-                obj.insert("hooks".to_string(), Value::Array(filtered));
-            }
-            new_entries.push(new_entry);
-        }
-
-        if new_entries.is_empty() {
-            hooks_obj.remove(&event);
-            changed = true;
-        } else {
-            hooks_obj.insert(event, Value::Array(new_entries));
-        }
-    }
-
-    if hooks_obj.is_empty() {
-        if let Some(obj) = root.as_object_mut() {
-            obj.remove("hooks");
-            changed = true;
-        }
-    }
+    let changed = strip_slopgate_hooks(&mut root, engine_root, &[]);
 
     if !changed {
         return Ok(RemoveResult {
@@ -589,6 +612,61 @@ mod tests {
         let second = merge_hooks(&file, engine.path()).unwrap();
         assert_eq!(second.action, "already-present");
         assert_eq!(fs::read_to_string(&file).unwrap(), before);
+    }
+
+    #[test]
+    fn merge_collapses_stale_foreign_root_into_single_canonical() {
+        // A global settings.json double-stacked with a prior install root (a dev
+        // checkout) beside the current engine_root, plus an unrelated non-slopgate
+        // hook. Re-merge must prune the foreign-root slopgate entry, keep exactly
+        // one canonical entry per event, and preserve the unrelated hook.
+        let engine = setup_engine();
+        let (commit, _edit, session) = hook_cmds(engine.path());
+        let settings = tempfile::tempdir().unwrap();
+        let file = settings.path().join("settings.json");
+
+        let seeded = serde_json::json!({
+            "hooks": {
+                "PreToolUse": [
+                    { "matcher": "Bash", "hooks": [
+                        { "type": "command", "command": "/foreign/dev/checkout/hooks/commit-hook.sh" },
+                        { "type": "command", "command": commit },
+                        { "type": "command", "command": "/repo/scripts/code-quality/commit-hook.sh" }
+                    ] }
+                ],
+                "SessionStart": [
+                    { "hooks": [ { "type": "command", "command": "/foreign/dev/checkout/hooks/session-start.sh" } ] }
+                ]
+            }
+        });
+        fs::write(&file, format!("{}\n", serde_json::to_string_pretty(&seeded).unwrap())).unwrap();
+
+        let result = merge_hooks(&file, engine.path()).unwrap();
+        assert_eq!(result.action, "merged");
+
+        let root: Value = serde_json::from_str(&fs::read_to_string(&file).unwrap()).unwrap();
+        let pre = root["hooks"]["PreToolUse"].as_array().unwrap();
+        let bash = pre.iter().find(|e| e["matcher"] == "Bash").unwrap();
+        let cmds: Vec<&str> = bash["hooks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|h| h["command"].as_str().unwrap())
+            .collect();
+        // foreign-root slopgate commit hook pruned; canonical kept exactly once.
+        assert_eq!(cmds.iter().filter(|c| **c == commit).count(), 1);
+        assert!(!cmds.iter().any(|c| c.starts_with("/foreign")));
+        // non-slopgate project hook (code-quality/) preserved.
+        assert!(cmds.contains(&"/repo/scripts/code-quality/commit-hook.sh"));
+        // SessionStart foreign entry pruned, canonical present exactly once.
+        let sess = root["hooks"]["SessionStart"].as_array().unwrap();
+        let session_cmds: Vec<&str> = sess
+            .iter()
+            .flat_map(|e| e["hooks"].as_array().unwrap())
+            .map(|h| h["command"].as_str().unwrap())
+            .collect();
+        assert_eq!(session_cmds.iter().filter(|c| **c == session).count(), 1);
+        assert!(!session_cmds.iter().any(|c| c.starts_with("/foreign")));
     }
 
     #[test]

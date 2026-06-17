@@ -2,7 +2,6 @@
 
 use crate::error::SlopError;
 use serde_json::{json, Value};
-use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
@@ -16,35 +15,31 @@ module.exports = {
 };
 ";
 
-/// What happened when merging `.claude/settings.json`.
+/// What happened to the project `.claude/settings.json` during init.
+///
+/// Init does NOT write project-level slopgate agent hooks (see
+/// [`merge_settings_json`]); it only prunes any a prior version left behind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SettingsAction {
-    Created,
-    Merged,
-    AlreadyPresent,
+    /// Stale slopgate hook entries were found and removed.
+    Pruned,
+    /// File exists, carried no slopgate hooks — left untouched.
+    NotPresent,
+    /// No `.claude/settings.json` — nothing to do (the common, correct case).
+    Absent,
+    /// File is not valid JSON — left untouched.
     InvalidJson,
 }
 
 impl SettingsAction {
     pub fn as_str(self) -> &'static str {
         match self {
-            SettingsAction::Created => "created",
-            SettingsAction::Merged => "merged",
-            SettingsAction::AlreadyPresent => "already-present",
-            SettingsAction::InvalidJson => "invalid-json",
+            SettingsAction::Pruned => "pruned stale slopgate hooks",
+            SettingsAction::NotPresent => "no slopgate hooks (untouched)",
+            SettingsAction::Absent => "not written (global hooks enforce)",
+            SettingsAction::InvalidJson => "invalid-json (untouched)",
         }
     }
-}
-
-fn hook_paths(engine_root: &Path) -> (String, String, String) {
-    let commit = engine_root.join("hooks/commit-hook.sh");
-    let edit = engine_root.join("hooks/edit-hook.sh");
-    let session = engine_root.join("hooks/session-start.sh");
-    (
-        commit.to_string_lossy().into_owned(),
-        edit.to_string_lossy().into_owned(),
-        session.to_string_lossy().into_owned(),
-    )
 }
 
 fn json_array(values: &[String]) -> String {
@@ -107,69 +102,6 @@ pub struct DetectedConfig {
     pub checkers: Value,
 }
 
-fn ensure_hook_entry(
-    settings: &mut Value,
-    event: &str,
-    matcher: Option<&str>,
-    command: &str,
-) -> bool {
-    let hooks = settings.as_object_mut().and_then(|o| {
-        o.entry("hooks".to_string())
-            .or_insert_with(|| json!({}))
-            .as_object_mut()
-    });
-    let Some(hooks) = hooks else {
-        return false;
-    };
-
-    let event_arr = hooks.entry(event.to_string()).or_insert_with(|| json!([]));
-    let Some(entries) = event_arr.as_array_mut() else {
-        return false;
-    };
-
-    if matcher.is_none() {
-        let present = entries.iter().any(|e| {
-            e.get("hooks")
-                .and_then(|h| h.as_array())
-                .is_some_and(|arr| {
-                    arr.iter().any(|h| {
-                        h.get("type") == Some(&json!("command"))
-                            && h.get("command") == Some(&json!(command))
-                    })
-                })
-        });
-        if present {
-            return false;
-        }
-        entries.push(json!({ "hooks": [{ "type": "command", "command": command }] }));
-        return true;
-    }
-
-    let matcher = matcher.unwrap();
-    let entry = if let Some(idx) = entries
-        .iter()
-        .position(|e| e.get("matcher") == Some(&json!(matcher)))
-    {
-        &mut entries[idx]
-    } else {
-        entries.push(json!({ "matcher": matcher, "hooks": [] }));
-        entries.last_mut().unwrap()
-    };
-
-    if entry.get("hooks").and_then(|h| h.as_array()).is_none() {
-        entry["hooks"] = json!([]);
-    }
-    let hooks_arr = entry["hooks"].as_array_mut().unwrap();
-    let present = hooks_arr.iter().any(|h| {
-        h.get("type") == Some(&json!("command")) && h.get("command") == Some(&json!(command))
-    });
-    if present {
-        return false;
-    }
-    hooks_arr.push(json!({ "type": "command", "command": command }));
-    true
-}
-
 /// Idempotently merge slopgate hooks into a claude-format hooks JSON file.
 pub fn merge_agent_hooks_file(
     file_path: &Path,
@@ -179,90 +111,43 @@ pub fn merge_agent_hooks_file(
         .map(|r| (r.action.to_string(), r.path))
 }
 
-/// Merge slopgate agent hooks into `.claude/settings.json`.
+/// Prune any slopgate agent hooks from the PROJECT `.claude/settings.json`.
+///
+/// Init deliberately does NOT write project-level slopgate agent hooks. They are
+/// redundant with the per-user global agent hooks (installed by
+/// `install_agent_hooks`, which self-gate on `.slopgate/config.toml`) and with
+/// the native git pre-commit hook — and because every entry embeds an absolute
+/// engine path, a project entry leaks the author's local install path into any
+/// repo that *tracks* `.claude/settings.json`, breaking on every other machine
+/// and stacking stale/duplicate entries on each init (the dedup-by-exact-path
+/// weakness). So init self-heals: it removes any slopgate entry — matched by
+/// script *identity*, so foreign-root and prior-version entries are caught too —
+/// while preserving all non-slopgate hooks. Enforcement stays in the global
+/// hooks plus the git hook.
 pub fn merge_settings_json(
     target_dir: &Path,
     engine_root: &Path,
     stderr: &mut dyn Write,
 ) -> Result<SettingsAction, SlopError> {
-    let (commit, edit, session) = {
-        let (commit, edit, session) = hook_paths(engine_root);
-        (commit, edit, session)
-    };
-    let claude_dir = target_dir.join(".claude");
-    let settings_path = claude_dir.join("settings.json");
-    fs::create_dir_all(&claude_dir)
-        .map_err(|e| SlopError::Io(format!("mkdir {}: {e}", claude_dir.display())))?;
-
+    let settings_path = target_dir.join(".claude").join("settings.json");
     if !settings_path.is_file() {
-        let settings = json!({
-            "hooks": {
-                "PreToolUse": [{
-                    "matcher": "Bash",
-                    "hooks": [{ "type": "command", "command": commit }]
-                }],
-                "PostToolUse": [{
-                    "matcher": "Edit|Write",
-                    "hooks": [{ "type": "command", "command": edit }]
-                }],
-                "SessionStart": [{
-                    "hooks": [{ "type": "command", "command": session }]
-                }],
-            }
-        });
-        fs::write(
-            &settings_path,
-            format!(
-                "{}\n",
-                serde_json::to_string_pretty(&settings).map_err(|e| {
-                    SlopError::Parse(format!("serialize {}: {e}", settings_path.display()))
-                })?
-            ),
-        )
-        .map_err(|e| SlopError::Io(format!("write {}: {e}", settings_path.display())))?;
-        return Ok(SettingsAction::Created);
+        return Ok(SettingsAction::Absent);
     }
 
-    let raw = fs::read_to_string(&settings_path)
-        .map_err(|e| SlopError::Io(format!("read {}: {e}", settings_path.display())))?;
-    let mut settings: Value = match serde_json::from_str(&raw) {
-        Ok(v) => v,
-        Err(_) => {
+    let result = crate::install::agent_hooks::remove_hooks(&settings_path, engine_root)?;
+    Ok(match result.action {
+        "removed" => SettingsAction::Pruned,
+        "invalid-json" => {
             let _ = writeln!(
                 stderr,
-                "slopgate: {} is not valid JSON — left untouched; add hooks manually",
+                "slopgate: {} is not valid JSON — left untouched",
                 settings_path.display()
             );
-            return Ok(SettingsAction::InvalidJson);
+            SettingsAction::InvalidJson
         }
-    };
-
-    if !settings.is_object() {
-        settings = json!({});
-    }
-
-    let added_pre = ensure_hook_entry(&mut settings, "PreToolUse", Some("Bash"), &commit);
-    let added_post = ensure_hook_entry(&mut settings, "PostToolUse", Some("Edit|Write"), &edit);
-    let added_session = ensure_hook_entry(&mut settings, "SessionStart", None, &session);
-
-    if !added_pre && !added_post && !added_session {
-        return Ok(SettingsAction::AlreadyPresent);
-    }
-
-    let bak = format!("{}.bak", settings_path.display());
-    fs::copy(&settings_path, &bak)
-        .map_err(|e| SlopError::Io(format!("copy {} -> {bak}: {e}", settings_path.display())))?;
-    fs::write(
-        &settings_path,
-        format!(
-            "{}\n",
-            serde_json::to_string_pretty(&settings).map_err(|e| {
-                SlopError::Parse(format!("serialize {}: {e}", settings_path.display()))
-            })?
-        ),
-    )
-    .map_err(|e| SlopError::Io(format!("write {}: {e}", settings_path.display())))?;
-    Ok(SettingsAction::Merged)
+        // "not-found" | "not-present"
+        _ => SettingsAction::NotPresent,
+    })
 }
 
 pub fn format_suppressions_json() -> String {
@@ -292,6 +177,7 @@ pub fn convention_sources_json(sources: &crate::init::detect_stack::ConventionSo
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
     use serde_json::json;
     use tempfile::TempDir;
 
@@ -316,28 +202,21 @@ mod tests {
     }
 
     #[test]
-    fn merge_settings_json_creates_fresh_file() {
+    fn merge_settings_json_does_not_create_file() {
+        // No project settings.json → init must NOT write project agent hooks.
         let dir = TempDir::new().unwrap();
         let engine = dir.path().join("engine");
-        fs::create_dir_all(engine.join("hooks")).unwrap();
-        fs::write(engine.join("hooks/commit-hook.sh"), "").unwrap();
-        fs::write(engine.join("hooks/edit-hook.sh"), "").unwrap();
-        fs::write(engine.join("hooks/session-start.sh"), "").unwrap();
 
         let mut stderr = Vec::new();
         let action = merge_settings_json(dir.path(), &engine, &mut stderr).unwrap();
-        assert_eq!(action, SettingsAction::Created);
-        assert!(dir.path().join(".claude/settings.json").is_file());
+        assert_eq!(action, SettingsAction::Absent);
+        assert!(!dir.path().join(".claude/settings.json").exists());
     }
 
     #[test]
     fn merge_settings_json_invalid_json_left_untouched() {
         let dir = TempDir::new().unwrap();
         let engine = dir.path().join("engine");
-        fs::create_dir_all(engine.join("hooks")).unwrap();
-        fs::write(engine.join("hooks/commit-hook.sh"), "").unwrap();
-        fs::write(engine.join("hooks/edit-hook.sh"), "").unwrap();
-        fs::write(engine.join("hooks/session-start.sh"), "").unwrap();
         fs::create_dir_all(dir.path().join(".claude")).unwrap();
         fs::write(dir.path().join(".claude/settings.json"), "{ not json").unwrap();
 
@@ -350,5 +229,41 @@ mod tests {
             fs::read_to_string(dir.path().join(".claude/settings.json")).unwrap(),
             "{ not json"
         );
+    }
+
+    #[test]
+    fn merge_settings_json_prunes_stale_slopgate_hooks_keeps_foreign() {
+        // A repo whose tracked .claude/settings.json carries a STALE slopgate
+        // hook from a foreign install root (the /home/runner poison) plus an
+        // unrelated project hook. Init must remove the slopgate entry by
+        // identity and preserve the unrelated hook.
+        let dir = TempDir::new().unwrap();
+        let engine = dir.path().join("engine"); // current root — irrelevant to the stale path
+        fs::create_dir_all(dir.path().join(".claude")).unwrap();
+        let poisoned = r#"{
+  "hooks": {
+    "PreToolUse": [
+      { "matcher": "Bash", "hooks": [
+        { "type": "command", "command": "/home/runner/work/slopgate/slopgate/hooks/commit-hook.sh" },
+        { "type": "command", "command": "apps/web/scripts/code-quality/edit-hook.sh" }
+      ] }
+    ],
+    "SessionStart": [
+      { "hooks": [ { "type": "command", "command": "/foreign/root/hooks/session-start.sh" } ] }
+    ]
+  }
+}"#;
+        fs::write(dir.path().join(".claude/settings.json"), poisoned).unwrap();
+
+        let mut stderr = Vec::new();
+        let action = merge_settings_json(dir.path(), &engine, &mut stderr).unwrap();
+        assert_eq!(action, SettingsAction::Pruned);
+
+        let after = fs::read_to_string(dir.path().join(".claude/settings.json")).unwrap();
+        // Stale slopgate hooks gone (foreign roots matched by identity).
+        assert!(!after.contains("commit-hook.sh"));
+        assert!(!after.contains("session-start.sh"));
+        // Non-slopgate project hook preserved — its suffix is NOT a slopgate suffix.
+        assert!(after.contains("code-quality/edit-hook.sh"));
     }
 }
