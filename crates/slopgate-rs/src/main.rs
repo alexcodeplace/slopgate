@@ -21,7 +21,6 @@ use slopgate_core::stats::store::{global_stats_path_in, project_stats_path, read
 use std::collections::{HashMap, HashSet};
 use std::io::Write;
 use std::path::Path;
-use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 fn has(args: &[String], flag: &str) -> bool {
@@ -79,18 +78,6 @@ fn cwd_string() -> String {
     std::env::current_dir()
         .map(|p| p.to_string_lossy().into_owned())
         .unwrap_or_else(|_| ".".to_string())
-}
-
-fn resolve_node_path() -> String {
-    Command::new("which")
-        .arg("node")
-        .output()
-        .ok()
-        .filter(|o| o.status.success())
-        .and_then(|o| String::from_utf8(o.stdout).ok())
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| "node".to_string())
 }
 
 fn iso_timestamp_now() -> String {
@@ -264,12 +251,8 @@ fn dispatch(
             ConfigResult::Ok(c) => c,
             ConfigResult::Exit(code) => return Ok(code),
         };
-        let engine = engine_root();
-        let engine_invocation = engine.join("bin/slopgate").to_string_lossy().into_owned();
-        let node_path = resolve_node_path();
-        let result =
-            install_pre_commit_hook(Path::new(&config.repo_root), &engine_invocation, &node_path)
-                .map_err(|e| e.to_string())?;
+        let result = install_pre_commit_hook(Path::new(&config.repo_root))
+            .map_err(|e| e.to_string())?;
         writeln_stdout(
             stdout,
             &format!(

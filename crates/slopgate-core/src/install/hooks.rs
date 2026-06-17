@@ -28,19 +28,21 @@ pub struct HookInstallResult {
     pub path: PathBuf,
 }
 
-fn hook_block(engine_invocation: &str, node_path: &str) -> String {
+fn hook_block() -> String {
+    // Fail-closed, PATH-resolved. No build-time path is ever baked into the hook
+    // (that was the CARGO_MANIFEST_DIR / dead-CI-path class of breakage). The engine
+    // is located at commit time via $SLOPGATE_BIN override or PATH; if neither
+    // resolves, the commit is BLOCKED rather than silently passing ungated.
     [
         MARKER_BEGIN,
         "SLOPGATE_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)",
-        &format!("SLOPGATE_ENGINE=\"{engine_invocation}\""),
-        &format!("SLOPGATE_NODE=\"{node_path}\""),
-        "[ -x \"$SLOPGATE_NODE\" ] || SLOPGATE_NODE=node",
         "if [ -n \"$SLOPGATE_ROOT\" ] && [ -f \"$SLOPGATE_ROOT/.slopgate/config.toml\" ]; then",
-        "  if [ -f \"$SLOPGATE_ENGINE\" ]; then",
-        "    \"$SLOPGATE_NODE\" \"$SLOPGATE_ENGINE\" --staged --config \"$SLOPGATE_ROOT/.slopgate/config.toml\" || exit 1",
-        "  else",
-        "    echo \"slopgate: engine missing at $SLOPGATE_ENGINE — gate SKIPPED\" >&2",
+        "  SLOPGATE_ENGINE=\"${SLOPGATE_BIN:-$(command -v slopgate)}\"",
+        "  if [ -z \"$SLOPGATE_ENGINE\" ]; then",
+        "    echo \"slopgate: engine not found on PATH (install slopgate or set SLOPGATE_BIN) — commit BLOCKED\" >&2",
+        "    exit 1",
         "  fi",
+        "  \"$SLOPGATE_ENGINE\" --staged --config \"$SLOPGATE_ROOT/.slopgate/config.toml\" || exit 1",
         "fi",
         MARKER_END,
     ]
@@ -49,8 +51,8 @@ fn hook_block(engine_invocation: &str, node_path: &str) -> String {
 
 /// Render pre-commit hook file content. Idempotent: a second call on its own output
 /// returns the same string (markers are not duplicated).
-pub fn render_hook_content(existing: &str, engine_invocation: &str, node_path: &str) -> String {
-    let block = hook_block(engine_invocation, node_path);
+pub fn render_hook_content(existing: &str) -> String {
+    let block = hook_block();
 
     if existing.is_empty() {
         return format!("#!/usr/bin/env bash\n{block}\n");
@@ -145,14 +147,10 @@ fn classify_action(existing: Option<&str>, rendered: &str) -> HookInstallAction 
 
 /// Install or refresh the native pre-commit hook under `repo_root`.
 ///
-/// `engine_invocation` is the absolute path to the slopgate engine entrypoint
-/// (JS: `${ENGINE_ROOT}/bin/slopgate`). `node_path` is the Node binary used to
-/// invoke it (JS: `process.execPath`).
-pub fn install_pre_commit_hook(
-    repo_root: &Path,
-    engine_invocation: &str,
-    node_path: &str,
-) -> Result<HookInstallResult, SlopError> {
+/// The hook resolves the slopgate engine at commit time from `$SLOPGATE_BIN` or
+/// PATH — no install-time path is baked in. If the engine cannot be resolved the
+/// hook fails closed (blocks the commit) rather than skipping the gate.
+pub fn install_pre_commit_hook(repo_root: &Path) -> Result<HookInstallResult, SlopError> {
     let hooks_dir = resolve_hooks_dir(repo_root)?;
     fs::create_dir_all(&hooks_dir)
         .map_err(|e| SlopError::Io(format!("create hooks dir {}: {e}", hooks_dir.display())))?;
@@ -167,11 +165,7 @@ pub fn install_pre_commit_hook(
         None
     };
 
-    let rendered = render_hook_content(
-        existing.as_deref().unwrap_or(""),
-        engine_invocation,
-        node_path,
-    );
+    let rendered = render_hook_content(existing.as_deref().unwrap_or(""));
     let action = classify_action(existing.as_deref(), &rendered);
 
     if action != HookInstallAction::Unchanged {
@@ -208,27 +202,40 @@ mod tests {
     use std::fs;
     use std::process::Command;
 
-    const ENGINE: &str = "/opt/slopgate/bin/slopgate";
-    const NODE: &str = "/usr/bin/node";
-
     fn marker_count(content: &str, marker: &str) -> usize {
         content.matches(marker).count()
     }
 
+    /// The hook must resolve the engine from PATH/$SLOPGATE_BIN and fail closed —
+    /// never bake an install-time path, never skip the gate when the engine is missing.
+    fn assert_fail_closed(content: &str) {
+        assert!(
+            content.contains("${SLOPGATE_BIN:-$(command -v slopgate)}"),
+            "engine must be PATH-resolved, not baked"
+        );
+        assert!(
+            content.contains("commit BLOCKED") && content.contains("exit 1"),
+            "missing engine must block the commit (fail closed)"
+        );
+        assert!(
+            !content.contains("gate SKIPPED"),
+            "hook must never fail open"
+        );
+    }
+
     #[test]
     fn render_empty_has_both_markers_exactly_once() {
-        let content = render_hook_content("", ENGINE, NODE);
+        let content = render_hook_content("");
         assert!(content.starts_with("#!/usr/bin/env bash\n"));
         assert_eq!(marker_count(&content, MARKER_BEGIN), 1);
         assert_eq!(marker_count(&content, MARKER_END), 1);
-        assert!(content.contains(ENGINE));
-        assert!(content.contains(NODE));
+        assert_fail_closed(&content);
     }
 
     #[test]
     fn render_is_idempotent_on_own_output() {
-        let first = render_hook_content("", ENGINE, NODE);
-        let second = render_hook_content(&first, ENGINE, NODE);
+        let first = render_hook_content("");
+        let second = render_hook_content(&first);
         assert_eq!(first, second, "second pass must not duplicate markers");
         assert_eq!(marker_count(&second, MARKER_BEGIN), 1);
         assert_eq!(marker_count(&second, MARKER_END), 1);
@@ -244,14 +251,14 @@ mod tests {
              {MARKER_END}\n\
              echo after\n"
         );
-        let rendered = render_hook_content(&existing, ENGINE, NODE);
+        let rendered = render_hook_content(&existing);
         assert!(rendered.starts_with("#!/usr/bin/env bash\n"));
         assert!(rendered.contains("echo before\n"));
         assert!(rendered.contains("echo after\n"));
         assert!(!rendered.contains("old slopgate block"));
         assert_eq!(marker_count(&rendered, MARKER_BEGIN), 1);
         assert_eq!(marker_count(&rendered, MARKER_END), 1);
-        assert!(rendered.contains(ENGINE));
+        assert_fail_closed(&rendered);
     }
 
     #[test]
@@ -259,7 +266,7 @@ mod tests {
         let existing = "#!/usr/bin/env bash\n\
             echo setup\n\
             exec \"$@\"\n";
-        let rendered = render_hook_content(existing, ENGINE, NODE);
+        let rendered = render_hook_content(existing);
         let exec_pos = rendered.find("exec \"$@\"").expect("exec line");
         let begin_pos = rendered.find(MARKER_BEGIN).expect("marker begin");
         assert!(begin_pos < exec_pos);
@@ -270,7 +277,7 @@ mod tests {
     fn render_appends_when_no_exec_line() {
         let existing = "#!/usr/bin/env bash\n\
             echo only\n";
-        let rendered = render_hook_content(existing, ENGINE, NODE);
+        let rendered = render_hook_content(existing);
         assert!(rendered.starts_with(existing.trim_end()));
         assert!(rendered.ends_with('\n'));
         assert!(rendered.contains(MARKER_BEGIN));
@@ -280,7 +287,7 @@ mod tests {
     #[test]
     fn render_unhappy_marker_begin_without_end_replaces_from_begin() {
         let existing = format!("preamble\n{MARKER_BEGIN}\norphan\n");
-        let rendered = render_hook_content(&existing, ENGINE, NODE);
+        let rendered = render_hook_content(&existing);
         assert!(rendered.starts_with("preamble\n"));
         assert_eq!(marker_count(&rendered, MARKER_BEGIN), 1);
         assert_eq!(marker_count(&rendered, MARKER_END), 1);
@@ -291,13 +298,12 @@ mod tests {
     fn render_corrupt_hook_typo_marker_splices_without_panic() {
         // Truncated marker (typo) — not our block; must splice before exec, not panic.
         let corrupt = "#!/bin/bash\n# slopgate-hook v1 BEGAN\necho setup\nexec \"$@\"\n";
-        let rendered = render_hook_content(corrupt, ENGINE, NODE);
+        let rendered = render_hook_content(corrupt);
         assert_eq!(marker_count(&rendered, MARKER_BEGIN), 1);
         assert_eq!(marker_count(&rendered, MARKER_END), 1);
         assert!(rendered.contains("echo setup"));
-        assert!(rendered.contains(ENGINE));
-        assert!(rendered.contains(NODE));
-        let again = render_hook_content(&rendered, ENGINE, NODE);
+        assert_fail_closed(&rendered);
+        let again = render_hook_content(&rendered);
         assert_eq!(rendered, again, "second pass must not duplicate markers");
     }
 
@@ -355,14 +361,13 @@ mod tests {
     fn install_pre_commit_hook_creates_executable_hook() {
         let dir = tempfile::tempdir().unwrap();
         init_git_repo(dir.path());
-        let result = install_pre_commit_hook(dir.path(), ENGINE, NODE).unwrap();
+        let result = install_pre_commit_hook(dir.path()).unwrap();
         assert_eq!(result.action, HookInstallAction::Created);
         assert!(result.path.is_file());
         let content = fs::read_to_string(&result.path).unwrap();
         assert_eq!(marker_count(&content, MARKER_BEGIN), 1);
         assert_eq!(marker_count(&content, MARKER_END), 1);
-        assert!(content.contains(ENGINE));
-        assert!(content.contains(NODE));
+        assert_fail_closed(&content);
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -375,9 +380,9 @@ mod tests {
     fn install_pre_commit_hook_unchanged_on_second_run() {
         let dir = tempfile::tempdir().unwrap();
         init_git_repo(dir.path());
-        let first = install_pre_commit_hook(dir.path(), ENGINE, NODE).unwrap();
+        let first = install_pre_commit_hook(dir.path()).unwrap();
         assert_eq!(first.action, HookInstallAction::Created);
-        let second = install_pre_commit_hook(dir.path(), ENGINE, NODE).unwrap();
+        let second = install_pre_commit_hook(dir.path()).unwrap();
         assert_eq!(second.action, HookInstallAction::Unchanged);
         assert_eq!(first.path, second.path);
     }
@@ -385,7 +390,7 @@ mod tests {
     #[test]
     fn install_pre_commit_hook_unhappy_non_git_repo() {
         let dir = tempfile::tempdir().unwrap();
-        let err = install_pre_commit_hook(dir.path(), ENGINE, NODE).unwrap_err();
+        let err = install_pre_commit_hook(dir.path()).unwrap_err();
         assert!(matches!(err, SlopError::Tool(_)));
     }
 }

@@ -14,7 +14,6 @@ use crate::install::skills::{default_skills_dest_in, install_skills};
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 /// One agent-hooks row in the init summary.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -52,18 +51,6 @@ pub fn engine_root() -> PathBuf {
         .join("../..")
         .canonicalize()
         .unwrap_or_else(|_| Path::new(env!("CARGO_MANIFEST_DIR")).join("../.."))
-}
-
-fn resolve_node_path() -> String {
-    Command::new("which")
-        .arg("node")
-        .output()
-        .ok()
-        .filter(|o| o.status.success())
-        .and_then(|o| String::from_utf8(o.stdout).ok())
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| "node".to_string())
 }
 
 fn hook_action_label(action: HookInstallAction) -> &'static str {
@@ -170,10 +157,8 @@ fn run_init_inner(
     }
 
     let engine = engine_root();
-    let engine_invocation = engine.join("bin/slopgate").to_string_lossy().into_owned();
-    let node_path = resolve_node_path();
 
-    let hook_action = match install_pre_commit_hook(target_dir, &engine_invocation, &node_path) {
+    let hook_action = match install_pre_commit_hook(target_dir) {
         Ok(result) => hook_action_label(result.action).to_string(),
         Err(_) => "skipped (not a git repo)".to_string(),
     };
