@@ -9,6 +9,20 @@ description: Mine a project's institutional memory (skills, agents, commands, CL
 
 Scope / focus area (optional): $ARGUMENTS — blank = all sources.
 
+## Step 0 — Ensure gate initialized (run FIRST)
+
+A `/slopgate-*` skill MUST NOT operate on an un-gated repo. Verify the gate; init if absent. Idempotent — `slopgate init` preserves an existing config and only fills what is missing (it also installs the fail-closed pre-commit hook). Single source of truth = the CLI's own idempotency; this step just calls it.
+
+```bash
+ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || { echo "slopgate: not a git repo — cannot init gate"; exit 1; }
+if [ ! -f "$ROOT/.slopgate/config.toml" ]; then
+  echo "slopgate: gate not initialized — running 'slopgate init' first"
+  ( cd "$ROOT" && slopgate init ) || { echo "slopgate: init failed"; exit 1; }
+fi
+```
+
+`config.toml` present → proceed. For richer project-specific rule mining on a fresh repo, run `/slopgate-init` separately.
+
 ## Rule tier model
 
 | Tier | Pack location | Who opts in |

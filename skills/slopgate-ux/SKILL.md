@@ -14,6 +14,20 @@ answer is NO, revise before emitting.
 > Mission: generate human-centric, intuitive, **complete** interfaces. Avoid "UX slop": lazy, incomplete,
 > or cognitively overwhelming designs optimized only for the happy path.
 
+## Step 0 — Ensure gate initialized (run FIRST)
+
+A `/slopgate-*` skill MUST NOT operate on an un-gated repo. Verify the gate; init if absent, so the `ux:{}` static module backs these prompt-time directives. Idempotent — `slopgate init` preserves an existing config and only fills what is missing (it also installs the fail-closed pre-commit hook). Single source of truth = the CLI's own idempotency; this step just calls it.
+
+```bash
+ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || { echo "slopgate: not a git repo — cannot init gate"; exit 1; }
+if [ ! -f "$ROOT/.slopgate/config.toml" ]; then
+  echo "slopgate: gate not initialized — running 'slopgate init' first"
+  ( cd "$ROOT" && slopgate init ) || { echo "slopgate: init failed"; exit 1; }
+fi
+```
+
+`config.toml` present → proceed with the checklist below.
+
 ## 0. Generic-AI-slop alarm bells — reject on sight
 Centered hero + two stacked CTAs over a gradient · "Trusted by" logo strip under the hero · bento-box
 grids (3–4 icon/heading/paragraph cards) · emoji as bullets/section markers/icons · decorative
