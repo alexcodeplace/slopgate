@@ -144,6 +144,7 @@ mod tests {
         let path = dir.path().join("missing.json");
         let err = load_project_pack(&path).unwrap_err();
         assert!(err.contains("cannot read project rule pack"));
+        assert!(err.contains(&path.display().to_string()));
     }
 
     #[test]
@@ -153,5 +154,6 @@ mod tests {
         fs::write(&path, "{not json").unwrap();
         let err = load_project_pack(&path).unwrap_err();
         assert!(err.contains("invalid project rule pack"));
+        assert!(err.contains(&path.display().to_string()));
     }
 }
