@@ -232,7 +232,8 @@ fn resolve_inner(
         let pack = packs::load_project_pack(&abs)?;
         for (pack_name, patterns_in) in &pack {
             for p in patterns_in {
-                validate_pattern(p).map_err(|e| format!("{e} (from project:{pack_name})"))?;
+                validate_pattern(p)
+                    .map_err(|e| format!("{e} (from project:{pack_name} in {})", abs.display()))?;
                 patterns.push(p.clone());
             }
         }
@@ -559,7 +560,8 @@ mod tests {
             r#"rules = ["./rules/proj.json"]"#,
         );
         let err = resolve_config(&config_dir.join("config.toml").to_string_lossy()).unwrap_err();
-        assert!(err.contains("(from project:proj)"));
+        assert!(err.contains("(from project:proj in"), "err={err}");
+        assert!(err.contains("proj.json"), "err={err}");
     }
 
     #[test]
@@ -572,7 +574,7 @@ mod tests {
         );
         let err = resolve_config(&config_dir.join("config.toml").to_string_lossy()).unwrap_err();
         assert!(
-            err.contains("cannot read project rule pack") || err.contains("nope.json"),
+            err.contains("cannot read project rule pack") && err.contains("nope.json"),
             "err={err}"
         );
     }
@@ -614,7 +616,7 @@ mod tests {
         );
         let err = resolve_config(&config_dir.join("config.toml").to_string_lossy()).unwrap_err();
         assert!(
-            err.contains("cannot read project rule pack") || err.contains("b.json"),
+            err.contains("cannot read project rule pack") && err.contains("b.json"),
             "err={err}"
         );
     }
@@ -638,6 +640,18 @@ mod tests {
     fn project_rule_pack_overrides_colliding_baseline_id() {
         let dir = tempfile::tempdir().unwrap();
         let config_dir = dir.path();
+        let r_baseline = {
+            write_temp_file(&config_dir.join("config.toml"), r#"baseline = ["raw-hex"]"#);
+            let cfg = resolve_config(&config_dir.join("config.toml").to_string_lossy()).unwrap();
+            let baseline_rule = cfg
+                .patterns
+                .iter()
+                .find(|p| p.id == "raw-hex-color")
+                .expect("raw-hex-color from baseline");
+            baseline_rule.resolution.clone()
+        };
+        let r_project = "PROJECT override resolution";
+        assert_ne!(r_project, r_baseline);
         write_temp_file(
             &config_dir.join("rules/proj.json"),
             r##"{"proj":[{"id":"raw-hex-color","severity":"high","pattern":"#PROJECT","resolution":"PROJECT override resolution","canary":"#abc"}]}"##,
@@ -654,7 +668,7 @@ rules = ["./rules/proj.json"]"#,
             .filter(|p| p.id == "raw-hex-color")
             .collect();
         assert_eq!(matches.len(), 1);
-        assert_eq!(matches[0].resolution, "PROJECT override resolution");
+        assert_eq!(matches[0].resolution, r_project);
     }
 
     fn sorted_id_sev(v: &Value) -> Vec<String> {
