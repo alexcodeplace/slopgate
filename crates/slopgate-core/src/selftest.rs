@@ -557,9 +557,9 @@ mod tests {
 
     fn write_temp_file(path: &Path, contents: &str) {
         if let Some(parent) = path.parent() {
-            let _ = fs::create_dir_all(parent);
+            fs::create_dir_all(parent).unwrap();
         }
-        let _ = fs::write(path, contents);
+        fs::write(path, contents).unwrap();
     }
 
     /// Resolve a project pack via `config.toml`, then isolate the self-test surface:
@@ -620,6 +620,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let proj_json = r#"{"proj":[{"id":"proj-selftest","severity":"high","pattern":"FORBIDDEN_TOKEN","resolution":"remove it","canary":"this is clean text"}]}"#;
         let config = build_project_pack_selftest_config(dir.path(), proj_json);
+        assert!(
+            config.patterns.iter().any(|p| p.id == "proj-selftest"),
+            "project pattern must flow through resolve into config.patterns"
+        );
         let code = run_self_test(&config);
         assert_ne!(code, 0, "non-matching project canary must fail self-test");
     }
