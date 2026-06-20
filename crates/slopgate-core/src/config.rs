@@ -578,6 +578,63 @@ mod tests {
     }
 
     #[test]
+    fn resolves_two_project_rule_packs() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_dir = dir.path();
+        write_temp_file(
+            &config_dir.join("rules/a.json"),
+            r#"{"pack-a":[{"id":"proj-a","severity":"high","pattern":"TOKEN_A","resolution":"remove a","canary":"TOKEN_A"}]}"#,
+        );
+        write_temp_file(
+            &config_dir.join("rules/b.json"),
+            r#"{"pack-b":[{"id":"proj-b","severity":"medium","pattern":"TOKEN_B","resolution":"remove b","canary":"TOKEN_B"}]}"#,
+        );
+        write_temp_file(
+            &config_dir.join("config.toml"),
+            r#"rules = ["./rules/a.json", "./rules/b.json"]"#,
+        );
+        let cfg = resolve_config(&config_dir.join("config.toml").to_string_lossy()).unwrap();
+        let ids: std::collections::HashSet<_> =
+            cfg.patterns.iter().map(|p| p.id.as_str()).collect();
+        assert!(ids.contains("proj-a"));
+        assert!(ids.contains("proj-b"));
+    }
+
+    #[test]
+    fn project_rule_pack_second_path_missing_fails_closed() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_dir = dir.path();
+        write_temp_file(
+            &config_dir.join("rules/a.json"),
+            r#"{"pack-a":[{"id":"proj-a","severity":"high","pattern":"TOKEN_A","resolution":"remove a","canary":"TOKEN_A"}]}"#,
+        );
+        write_temp_file(
+            &config_dir.join("config.toml"),
+            r#"rules = ["./rules/a.json", "./rules/b.json"]"#,
+        );
+        let err = resolve_config(&config_dir.join("config.toml").to_string_lossy()).unwrap_err();
+        assert!(
+            err.contains("cannot read project rule pack") || err.contains("b.json"),
+            "err={err}"
+        );
+    }
+
+    #[test]
+    fn project_rule_pack_malformed_json_errors_at_resolve_boundary() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_dir = dir.path();
+        let pack_path = config_dir.join("rules/bad.json");
+        write_temp_file(&pack_path, "{not json");
+        write_temp_file(
+            &config_dir.join("config.toml"),
+            r#"rules = ["./rules/bad.json"]"#,
+        );
+        let err = resolve_config(&config_dir.join("config.toml").to_string_lossy()).unwrap_err();
+        assert!(err.contains("invalid project rule pack"), "err={err}");
+        assert!(err.contains("bad.json"), "err={err}");
+    }
+
+    #[test]
     fn project_rule_pack_overrides_colliding_baseline_id() {
         let dir = tempfile::tempdir().unwrap();
         let config_dir = dir.path();
