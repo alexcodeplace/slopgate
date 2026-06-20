@@ -227,11 +227,15 @@ fn resolve_inner(
         }
     }
 
-    // PHASE-2: project rule packs
-    if let Some(rel_path) = raw.rules.first() {
-        return Err(format!(
-            "slopgate: project rule pack \"{rel_path}\" cannot be loaded by the native TOML resolver (PHASE-2: project rule packs)"
-        ));
+    for rel_path in &raw.rules {
+        let abs = resolve_path(&config_dir, rel_path);
+        let pack = packs::load_project_pack(&abs)?;
+        for (pack_name, patterns_in) in &pack {
+            for p in patterns_in {
+                validate_pattern(p).map_err(|e| format!("{e} (from project:{pack_name})"))?;
+                patterns.push(p.clone());
+            }
+        }
     }
 
     let mut ux_ast_severity: BTreeMap<String, String> = BTreeMap::new();
@@ -450,6 +454,7 @@ pub fn resolve_config_str(toml_src: &str) -> Result<ResolvedConfig, String> {
 mod tests {
     use super::*;
     use serde_json::Value;
+    use std::path::Path;
 
     fn cfg_path() -> String {
         format!("{}/tests/fixtures/config.toml", env!("CARGO_MANIFEST_DIR"))
@@ -512,10 +517,87 @@ mod tests {
         assert!(resolve_config_str("baseline = [\"nope\"]\n").is_err());
     }
 
+    fn write_temp_file(path: &Path, contents: &str) {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).unwrap();
+        }
+        std::fs::write(path, contents).unwrap();
+    }
+
     #[test]
-    fn project_rule_pack_is_typed_error() {
-        let err = resolve_config_str("rules = [\"./my-pack.mjs\"]\n").unwrap_err();
-        assert!(err.contains("my-pack.mjs"));
+    fn resolves_project_rule_pack() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_dir = dir.path();
+        write_temp_file(
+            &config_dir.join("rules/proj.json"),
+            r#"{"proj":[{"id":"proj-x","severity":"high","pattern":"FORBIDDEN_TOKEN","resolution":"remove it","canary":"FORBIDDEN_TOKEN","excludeGlobs":["**/*.md"]}]}"#,
+        );
+        write_temp_file(
+            &config_dir.join("config.toml"),
+            r#"rules = ["./rules/proj.json"]"#,
+        );
+        let cfg = resolve_config(&config_dir.join("config.toml").to_string_lossy()).unwrap();
+        let proj = cfg
+            .patterns
+            .iter()
+            .find(|p| p.id == "proj-x")
+            .expect("proj-x pattern");
+        assert_eq!(proj.resolution, "remove it");
+        assert_eq!(proj.exclude_globs, Some(vec!["**/*.md".to_string()]));
+    }
+
+    #[test]
+    fn project_rule_pack_bad_regex_errors_with_pack_tag() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_dir = dir.path();
+        write_temp_file(
+            &config_dir.join("rules/proj.json"),
+            r#"{"proj":[{"id":"bad","severity":"high","pattern":"(","resolution":"fix it"}]}"#,
+        );
+        write_temp_file(
+            &config_dir.join("config.toml"),
+            r#"rules = ["./rules/proj.json"]"#,
+        );
+        let err = resolve_config(&config_dir.join("config.toml").to_string_lossy()).unwrap_err();
+        assert!(err.contains("(from project:proj)"));
+    }
+
+    #[test]
+    fn project_rule_pack_missing_file_errors() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_dir = dir.path();
+        write_temp_file(
+            &config_dir.join("config.toml"),
+            r#"rules = ["./rules/nope.json"]"#,
+        );
+        let err = resolve_config(&config_dir.join("config.toml").to_string_lossy()).unwrap_err();
+        assert!(
+            err.contains("cannot read project rule pack") || err.contains("nope.json"),
+            "err={err}"
+        );
+    }
+
+    #[test]
+    fn project_rule_pack_overrides_colliding_baseline_id() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_dir = dir.path();
+        write_temp_file(
+            &config_dir.join("rules/proj.json"),
+            r##"{"proj":[{"id":"raw-hex-color","severity":"high","pattern":"#PROJECT","resolution":"PROJECT override resolution","canary":"#abc"}]}"##,
+        );
+        write_temp_file(
+            &config_dir.join("config.toml"),
+            r#"baseline = ["raw-hex"]
+rules = ["./rules/proj.json"]"#,
+        );
+        let cfg = resolve_config(&config_dir.join("config.toml").to_string_lossy()).unwrap();
+        let matches: Vec<_> = cfg
+            .patterns
+            .iter()
+            .filter(|p| p.id == "raw-hex-color")
+            .collect();
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].resolution, "PROJECT override resolution");
     }
 
     fn sorted_id_sev(v: &Value) -> Vec<String> {
