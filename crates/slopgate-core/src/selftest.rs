@@ -563,22 +563,22 @@ mod tests {
     }
 
     /// Resolve a project pack via `config.toml`, then isolate the self-test surface:
-    /// only resolved project pattern(s), no scan roots, and engine-repo fixture paths so
+    /// only resolved project pattern(s), no scan roots, and copied engine fixture paths so
     /// unrelated self-test phases (ast/parser) stay green while canary pass/fail is
     /// attributable to the project rule.
     fn build_project_pack_selftest_config(dir: &Path, proj_json: &str) -> ResolvedConfig {
         use crate::config::resolve_config;
 
+        sync_repo_tree(dir);
         write_temp_file(&dir.join("rules/proj.json"), proj_json);
         write_temp_file(&dir.join("config.toml"), r#"rules = ["./rules/proj.json"]"#);
         let resolved = resolve_config(&dir.join("config.toml").to_string_lossy()).unwrap();
 
-        let repo = slopgate_repo_with_fixtures();
-        let fixtures = repo.join("rules/baseline/fixtures");
-        let ast_dir = repo.join("rules/baseline/ast");
+        let fixtures = dir.join("rules/baseline/fixtures");
+        let ast_dir = dir.join("rules/baseline/ast");
 
         ResolvedConfig {
-            repo_root: repo.to_string_lossy().into_owned(),
+            repo_root: dir.to_string_lossy().into_owned(),
             config_dir: resolved.config_dir,
             roots: vec![],
             roots_rel: vec![],
@@ -602,6 +602,10 @@ mod tests {
 
     #[test]
     fn project_pack_canary_exercised_by_self_test() {
+        if !ast_grep_available() {
+            eprintln!("SKIP project_pack_canary_exercised_by_self_test: ast-grep not available");
+            return;
+        }
         let dir = tempfile::tempdir().unwrap();
         let config = build_project_pack_selftest_config(dir.path(), PROJ_SELFTEST_JSON);
         assert!(
@@ -617,6 +621,10 @@ mod tests {
 
     #[test]
     fn project_pack_broken_canary_fails_self_test() {
+        if !ast_grep_available() {
+            eprintln!("SKIP project_pack_broken_canary_fails_self_test: ast-grep not available");
+            return;
+        }
         let dir = tempfile::tempdir().unwrap();
         let proj_json = r#"{"proj":[{"id":"proj-selftest","severity":"high","pattern":"FORBIDDEN_TOKEN","resolution":"remove it","canary":"this is clean text"}]}"#;
         let config = build_project_pack_selftest_config(dir.path(), proj_json);
@@ -624,8 +632,11 @@ mod tests {
             config.patterns.iter().any(|p| p.id == "proj-selftest"),
             "project pattern must flow through resolve into config.patterns"
         );
-        let code = run_self_test(&config);
-        assert_ne!(code, 0, "non-matching project canary must fail self-test");
+        assert_eq!(
+            run_self_test(&config),
+            1,
+            "only the project canary should fail; ancillary phases stay green"
+        );
     }
 
     #[test]
