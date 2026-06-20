@@ -4,6 +4,7 @@ use crate::error::SlopError;
 use crate::init::detect_stack::{
     build_convention_sources, detect_checkers, detect_exts, detect_roots, detect_skip_dirs,
 };
+use crate::init::migrate::{migrate_legacy_config, MigrateOutcome};
 use crate::init::scaffold::{
     convention_sources_json, format_config_toml, format_suppressions_json, merge_settings_json,
     DetectedConfig, DEPCRUISE_STARTER,
@@ -134,7 +135,19 @@ fn run_init_inner(
     let target_dir = Path::new(dir);
     let base = target_dir.join(".slopgate");
     let config_path = base.join("config.toml");
-    let config_exists = config_path.is_file();
+    let preexisting_toml = config_path.is_file();
+
+    // Migrate a legacy JS config (`.slopgate/config.mjs` or pre-rename
+    // `.slop-gate/config.mjs`) BEFORE scaffolding a fresh one — otherwise a fresh
+    // scaffold would silently discard the project's existing opt-ins. On failure
+    // we fall back to a fresh scaffold (never leave the project ungated).
+    let migrate_outcome = if preexisting_toml {
+        MigrateOutcome::NoLegacy
+    } else {
+        migrate_legacy_config(target_dir)
+    };
+    let migrated = matches!(migrate_outcome, MigrateOutcome::Migrated { .. });
+    let config_exists = preexisting_toml || migrated;
 
     let roots_result = detect_roots(target_dir);
     let roots = roots_result.roots;
@@ -148,12 +161,6 @@ fn run_init_inner(
     let checkers = detect_checkers(target_dir);
 
     if !config_exists {
-        fs::create_dir_all(base.join("fixtures/src")).map_err(|e| {
-            SlopError::Io(format!(
-                "mkdir {}: {e}",
-                base.join("fixtures/src").display()
-            ))
-        })?;
         let detected = DetectedConfig {
             roots: roots.clone(),
             exts: exts.clone(),
@@ -162,6 +169,18 @@ fn run_init_inner(
         };
         fs::write(&config_path, format_config_toml(&detected))
             .map_err(|e| SlopError::Io(format!("write {}: {e}", config_path.display())))?;
+    }
+
+    // Ensure config companions exist — fresh scaffold, a just-migrated config, or a
+    // pre-existing one missing them (self-heal). The migrated config references
+    // `./suppressions.json` and `./fixtures`.
+    fs::create_dir_all(base.join("fixtures/src")).map_err(|e| {
+        SlopError::Io(format!(
+            "mkdir {}: {e}",
+            base.join("fixtures/src").display()
+        ))
+    })?;
+    if !base.join("suppressions.json").is_file() {
         fs::write(base.join("suppressions.json"), format_suppressions_json())
             .map_err(|e| SlopError::Io(format!("write suppressions.json: {e}")))?;
     }
@@ -194,14 +213,52 @@ fn run_init_inner(
     let settings_action = merge_settings_json(target_dir, &engine, stderr)?;
 
     if !quiet {
-        if config_exists {
-            let _ = writeln!(
-                stderr,
-                "slopgate: {} already exists — preserved (not overwritten)",
-                config_path.display()
-            );
-        } else {
-            let _ = writeln!(stdout, "slopgate: scaffolded {}/", base.display());
+        match &migrate_outcome {
+            MigrateOutcome::Migrated {
+                from,
+                to,
+                dropped_rules,
+            } => {
+                let _ = writeln!(
+                    stdout,
+                    "slopgate: migrated legacy JS config {} → {}",
+                    from.display(),
+                    to.display()
+                );
+                if !dropped_rules.is_empty() {
+                    let _ = writeln!(
+                        stderr,
+                        "slopgate: WARNING — dropped {} project rule pack(s) the native engine cannot load: {} — re-author them as ast-grep YAML in .slopgate/rules/ast/",
+                        dropped_rules.len(),
+                        dropped_rules.join(", ")
+                    );
+                }
+                let _ = writeln!(
+                    stderr,
+                    "slopgate: legacy {} is now unused — delete it (the pre-commit hook was rewritten to read config.toml)",
+                    from.display()
+                );
+            }
+            MigrateOutcome::Failed { from, reason } => {
+                let _ = writeln!(
+                    stderr,
+                    "slopgate: WARNING — found legacy config {} but could not migrate it: {} — scaffolded a fresh config instead; reconcile your old settings manually",
+                    from.display(),
+                    reason
+                );
+                let _ = writeln!(stdout, "slopgate: scaffolded {}/", base.display());
+            }
+            MigrateOutcome::NoLegacy => {
+                if preexisting_toml {
+                    let _ = writeln!(
+                        stderr,
+                        "slopgate: {} already exists — preserved (not overwritten)",
+                        config_path.display()
+                    );
+                } else {
+                    let _ = writeln!(stdout, "slopgate: scaffolded {}/", base.display());
+                }
+            }
         }
         if warned {
             let _ = writeln!(

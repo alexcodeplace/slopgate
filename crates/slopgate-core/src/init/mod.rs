@@ -1,4 +1,5 @@
 pub mod detect_stack;
+pub mod migrate;
 pub mod run;
 pub mod scaffold;
 

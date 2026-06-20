@@ -378,9 +378,62 @@ pub fn resolve_config(path: &str) -> Result<ResolvedConfig, String> {
 
     let contents = std::fs::read_to_string(&abs_config)
         .map_err(|e| format!("slopgate: read config {}: {e}", abs_config.display()))?;
-    let raw: RawConfig = toml::from_str(&contents)
-        .map_err(|e| format!("slopgate: parse config {}: {e}", abs_config.display()))?;
+    if let Some(msg) = legacy_js_config_error(&abs_config, &contents) {
+        return Err(msg);
+    }
+    let raw: RawConfig = toml::from_str(&contents).map_err(|e| {
+        if let Some(msg) = legacy_js_config_error_on_parse_failure(&abs_config, &contents) {
+            msg
+        } else {
+            format!("slopgate: parse config {}: {e}", abs_config.display())
+        }
+    })?;
     resolve_inner(raw, config_dir, repo_root)
+}
+
+/// True when `contents` reads as a JavaScript module rather than TOML — the
+/// signature of a pre-TOML legacy `config.mjs` (`export default {…}` /
+/// `module.exports = {…}`). Used to turn a cryptic TOML parse error into an
+/// actionable migration message.
+fn looks_like_js_config(contents: &str) -> bool {
+    contents.contains("export default") || contents.contains("module.exports")
+}
+
+/// Actionable error when the config path is a legacy JavaScript config (by
+/// extension). The engine reads TOML only; a `.mjs`/`.cjs`/`.js` config is the
+/// pre-rebrand format and a stale pre-commit hook can still point a TOML engine
+/// at it (the "parsed as TOML and aborts" failure). Returns `None` for `.toml`.
+fn legacy_js_config_error(abs_config: &Path, contents: &str) -> Option<String> {
+    let ext = abs_config
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    let is_js_ext = matches!(ext.as_str(), "mjs" | "cjs" | "js");
+    if is_js_ext || (ext != "toml" && looks_like_js_config(contents)) {
+        return Some(legacy_migration_message(abs_config));
+    }
+    None
+}
+
+/// Fallback for a `.toml`-named file whose body is actually JavaScript (a stale
+/// hook renamed the path but the file was never migrated). Only fires when the
+/// TOML parse already failed.
+fn legacy_js_config_error_on_parse_failure(abs_config: &Path, contents: &str) -> Option<String> {
+    if looks_like_js_config(contents) {
+        Some(legacy_migration_message(abs_config))
+    } else {
+        None
+    }
+}
+
+fn legacy_migration_message(abs_config: &Path) -> String {
+    format!(
+        "slopgate: {} is a legacy JavaScript config; the engine reads TOML.\n  \
+         Run `slopgate init` in the repo to migrate it to .slopgate/config.toml, \
+         then remove the stale pre-commit hook block (re-run `slopgate init` rewrites it).",
+        abs_config.display()
+    )
 }
 
 /// Resolve inline TOML (unit tests). Uses `.` as `config_dir` and git/cwd for `repo_root`.
