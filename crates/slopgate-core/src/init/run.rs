@@ -228,7 +228,7 @@ fn run_init_inner(
                 if !dropped_rules.is_empty() {
                     let _ = writeln!(
                         stderr,
-                        "slopgate: WARNING — dropped {} project rule pack(s) the native engine cannot load: {} — re-author them as ast-grep YAML in .slopgate/rules/ast/",
+                        "slopgate: WARNING — dropped {} legacy JS rule pack(s) the native engine cannot execute: {} — re-author each as a JSON regex rule pack and list it in `rules = [...]` in config.toml",
                         dropped_rules.len(),
                         dropped_rules.join(", ")
                     );
@@ -311,7 +311,7 @@ fn run_init_inner(
         );
         let _ = writeln!(
             stdout,
-            "  2. Author project rules as ast-grep YAML in .slopgate/rules/ast/"
+            "  2. Author regex rules as JSON rule packs listed in `rules = [...]`; structural AST rules go in .slopgate/rules/ast/ as ast-grep YAML"
         );
         let _ = writeln!(
             stdout,

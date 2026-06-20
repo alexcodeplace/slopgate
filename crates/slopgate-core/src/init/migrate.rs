@@ -11,7 +11,7 @@
 //! a canonical-ordered `config.toml`. Project-owned JS rule packs (`rules: [...]`
 //! ending in `.mjs`/`.cjs`/`.js`) cannot be loaded by the native engine; they are
 //! dropped from the migrated config and reported so the author re-authors them as
-//! ast-grep YAML.
+//! JSON regex rule packs (listed in `rules = [...]`).
 
 use serde_json::Value;
 use std::path::{Path, PathBuf};
@@ -21,9 +21,9 @@ use std::process::Command;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MigrateOutcome {
     /// A legacy config was found and written to `to` as TOML. `dropped_rules`
-    /// lists any `rules:` entries (project JS rule packs) that the native engine
-    /// cannot load — they are emptied from the migrated config and reported so the
-    /// author re-authors them as ast-grep YAML.
+    /// lists any `rules:` entries (legacy JS rule packs) that the native engine
+    /// cannot execute — they are emptied from the migrated config and reported so
+    /// the author re-authors them as JSON regex rule packs (listed in `rules = [...]`).
     Migrated {
         from: PathBuf,
         to: PathBuf,
@@ -151,9 +151,10 @@ pub fn legacy_json_to_toml(export: &Value) -> Result<(String, Vec<String>), Stri
         }
     }
 
-    // rules — project JS rule packs. The native engine has no equivalent loader
-    // (it uses ast-grep YAML via `astRules`), so a non-empty `rules` is a hard
-    // resolver error. Always emit empty and report every entry for re-authoring.
+    // rules — legacy project JS rule packs (.mjs/.cjs/.js). The native loader
+    // reads JSON regex rule packs, not executable JS, so these legacy entries
+    // cannot be carried over. Always emit empty and report every entry for
+    // re-authoring as JSON packs.
     let dropped_rules = str_array_field(export, "rules").unwrap_or_default();
     out.push_str("rules = []\n");
 
