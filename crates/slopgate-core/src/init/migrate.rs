@@ -271,6 +271,19 @@ pub fn migrate_legacy_config(target_dir: &Path) -> MigrateOutcome {
         Err(reason) => return MigrateOutcome::Failed { from: legacy, reason },
     };
 
+    // Prove the migrated TOML actually resolves before writing it. The legacy
+    // config may name a baseline/stack pack the native engine doesn't ship, or a
+    // field that no longer maps — writing it blindly would leave the project
+    // bricked (now loudly). On failure, surface the resolver's message (it names
+    // the offending field) and fall back to a fresh scaffold rather than persist a
+    // broken config.
+    if let Err(e) = crate::config::resolve_config_str(&toml_src) {
+        return MigrateOutcome::Failed {
+            from: legacy,
+            reason: format!("migrated config did not resolve ({e})"),
+        };
+    }
+
     if let Some(parent) = toml_path.parent() {
         if let Err(e) = std::fs::create_dir_all(parent) {
             return MigrateOutcome::Failed {

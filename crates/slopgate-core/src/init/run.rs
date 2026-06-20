@@ -422,6 +422,58 @@ mod tests {
         assert!(stderr.contains("WARNING — no source roots detected"));
     }
 
+    fn node_available() -> bool {
+        std::process::Command::new("node")
+            .arg("--version")
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+    }
+
+    #[test]
+    fn migrates_pre_rebrand_legacy_mjs_config_end_to_end() {
+        if !node_available() {
+            eprintln!("skipping: node not available");
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        write_file(&root.join("src/index.ts"), "export const x = 1;\n");
+        // Reproduce zync's exact state: pre-rebrand JS config the TOML engine
+        // can't parse, living under the old `.slop-gate/` dir.
+        write_file(
+            &root.join(".slop-gate/config.mjs"),
+            "export default {\n  roots: ['src'],\n  exts: ['.ts'],\n  skipDirs: ['node_modules'],\n};\n",
+        );
+
+        let (code, stdout, stderr) = capture_init(root);
+        assert_eq!(code, 0, "stderr={stderr}");
+
+        // Migration ran (not a fresh scaffold) and reported it.
+        assert!(
+            stdout.contains("migrated legacy JS config"),
+            "stdout={stdout}"
+        );
+        assert!(!stdout.contains("slopgate: scaffolded"), "stdout={stdout}");
+        assert!(
+            stderr.contains("is now unused — delete it"),
+            "stderr={stderr}"
+        );
+
+        // The migrated config exists, resolves, and preserved opt-ins.
+        let base = root.join(".slopgate");
+        let cfg_path = base.join("config.toml");
+        assert!(cfg_path.is_file());
+        let cfg = resolve_config(&cfg_path.to_string_lossy()).unwrap();
+        assert!(cfg.roots_rel.iter().any(|r| r == "src"));
+        assert!(cfg.exts.contains(".ts"));
+
+        // Companions self-healed; the legacy file is left in place for the user.
+        assert!(base.join("suppressions.json").is_file());
+        assert!(base.join("fixtures/src").is_dir());
+        assert!(root.join(".slop-gate/config.mjs").is_file());
+    }
+
     #[test]
     fn depcruise_starter_written_when_checker_present() {
         let dir = tempfile::tempdir().unwrap();
