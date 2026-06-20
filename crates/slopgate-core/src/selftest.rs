@@ -555,6 +555,75 @@ mod tests {
         assert_eq!(run_self_test(&config), 0, "self-test should pass");
     }
 
+    fn write_temp_file(path: &Path, contents: &str) {
+        if let Some(parent) = path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        let _ = fs::write(path, contents);
+    }
+
+    /// Resolve a project pack via `config.toml`, then isolate the self-test surface:
+    /// only resolved project pattern(s), no scan roots, and engine-repo fixture paths so
+    /// unrelated self-test phases (ast/parser) stay green while canary pass/fail is
+    /// attributable to the project rule.
+    fn build_project_pack_selftest_config(dir: &Path, proj_json: &str) -> ResolvedConfig {
+        use crate::config::resolve_config;
+
+        write_temp_file(&dir.join("rules/proj.json"), proj_json);
+        write_temp_file(&dir.join("config.toml"), r#"rules = ["./rules/proj.json"]"#);
+        let resolved = resolve_config(&dir.join("config.toml").to_string_lossy()).unwrap();
+
+        let repo = slopgate_repo_with_fixtures();
+        let fixtures = repo.join("rules/baseline/fixtures");
+        let ast_dir = repo.join("rules/baseline/ast");
+
+        ResolvedConfig {
+            repo_root: repo.to_string_lossy().into_owned(),
+            config_dir: resolved.config_dir,
+            roots: vec![],
+            roots_rel: vec![],
+            exts: resolved.exts,
+            skip_dirs: resolved.skip_dirs,
+            patterns: resolved.patterns,
+            ast_rule_dirs: vec![ast_dir.to_string_lossy().into_owned()],
+            checkers: resolved.checkers,
+            ast_disable: resolved.ast_disable,
+            baseline_path: resolved.baseline_path,
+            suppressions_path: resolved.suppressions_path,
+            fixtures_dirs: vec![fixtures.to_string_lossy().into_owned()],
+            checker_concurrency: resolved.checker_concurrency,
+            gate: resolved.gate,
+            ux_ast_severity: resolved.ux_ast_severity,
+            ux_ast_all: resolved.ux_ast_all,
+        }
+    }
+
+    const PROJ_SELFTEST_JSON: &str = r#"{"proj":[{"id":"proj-selftest","severity":"high","pattern":"FORBIDDEN_TOKEN","resolution":"remove it","canary":"contains FORBIDDEN_TOKEN here"}]}"#;
+
+    #[test]
+    fn project_pack_canary_exercised_by_self_test() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = build_project_pack_selftest_config(dir.path(), PROJ_SELFTEST_JSON);
+        assert!(
+            config.patterns.iter().any(|p| p.id == "proj-selftest"),
+            "project pattern must flow through resolve into config.patterns"
+        );
+        assert_eq!(
+            run_self_test(&config),
+            0,
+            "matching project canary must pass self-test"
+        );
+    }
+
+    #[test]
+    fn project_pack_broken_canary_fails_self_test() {
+        let dir = tempfile::tempdir().unwrap();
+        let proj_json = r#"{"proj":[{"id":"proj-selftest","severity":"high","pattern":"FORBIDDEN_TOKEN","resolution":"remove it","canary":"this is clean text"}]}"#;
+        let config = build_project_pack_selftest_config(dir.path(), proj_json);
+        let code = run_self_test(&config);
+        assert_ne!(code, 0, "non-matching project canary must fail self-test");
+    }
+
     #[test]
     fn broken_canary_fails() {
         let tmp = tempfile::tempdir().unwrap();
