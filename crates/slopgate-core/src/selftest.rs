@@ -422,6 +422,7 @@ mod tests {
             "no-stubs",
             "ts-suppress",
             "as-any",
+            "no-narration-comments",
             "raw-hex",
             "kv-ban",
             "live-secrets",
