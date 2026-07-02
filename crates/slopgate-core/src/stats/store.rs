@@ -31,10 +31,7 @@ pub fn append_row(path: &Path, obj: &Value) -> std::io::Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    let mut file = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(path)?;
+    let mut file = OpenOptions::new().create(true).append(true).open(path)?;
     let line = serde_json::to_string(obj).map_err(std::io::Error::other)? + "\n";
     file.write_all(line.as_bytes())?;
     Ok(())
@@ -89,10 +86,7 @@ mod tests {
         let cfg = TestConfig {
             config_dir: dir.path().join(".slopgate"),
         };
-        assert_eq!(
-            project_stats_path(&cfg),
-            cfg.config_dir.join("stats.jsonl")
-        );
+        assert_eq!(project_stats_path(&cfg), cfg.config_dir.join("stats.jsonl"));
     }
 
     #[test]

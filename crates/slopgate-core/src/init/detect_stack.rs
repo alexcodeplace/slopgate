@@ -14,11 +14,14 @@ const EXCLUDE_SCAN: &[&str] = &[
     ".worktrees",
 ];
 const SCAN_BASES: &[&str] = &["", "apps", "packages", "workers"];
-const EXT_CANDIDATES: &[&str] = &[
-    ".ts", ".tsx", ".astro", ".js", ".jsx", ".vue", ".svelte",
-];
+const EXT_CANDIDATES: &[&str] = &[".ts", ".tsx", ".astro", ".js", ".jsx", ".vue", ".svelte"];
 const OPTIONAL_SKIP: &[&str] = &[
-    ".next", ".open-next", ".astro", "build", ".turbo", "coverage",
+    ".next",
+    ".open-next",
+    ".astro",
+    "build",
+    ".turbo",
+    "coverage",
 ];
 const BASE_SKIP: &[&str] = &["node_modules", "dist", "tests", ".worktrees"];
 
@@ -258,7 +261,8 @@ fn walk_ext_counts(dir: &Path, counts: &mut HashMap<&'static str, u32>) {
 
 /// Detect file extensions present under the given source roots.
 pub fn detect_exts(target_dir: &Path, roots: &[String]) -> Vec<String> {
-    let mut counts: HashMap<&'static str, u32> = EXT_CANDIDATES.iter().copied().map(|e| (e, 0)).collect();
+    let mut counts: HashMap<&'static str, u32> =
+        EXT_CANDIDATES.iter().copied().map(|e| (e, 0)).collect();
 
     for root in roots {
         walk_ext_counts(&target_dir.join(root), &mut counts);
@@ -311,10 +315,7 @@ pub fn detect_checkers(target_dir: &Path) -> Value {
     if bin_exists(target_dir, "type-coverage") {
         checkers.insert("type-coverage".to_string(), json!(true));
     }
-    checkers.insert(
-        "diff-shape".to_string(),
-        json!({ "maxDirs": 5 }),
-    );
+    checkers.insert("diff-shape".to_string(), json!({ "maxDirs": 5 }));
 
     Value::Object(checkers)
 }
@@ -389,7 +390,11 @@ pub fn build_convention_sources(target_dir: &Path) -> ConventionSources {
     collect_dir_files(&target_dir.join(".claude/agents"), target_dir, &mut agents);
 
     let mut commands = Vec::new();
-    collect_dir_files(&target_dir.join(".claude/commands"), target_dir, &mut commands);
+    collect_dir_files(
+        &target_dir.join(".claude/commands"),
+        target_dir,
+        &mut commands,
+    );
 
     let mut editor_rules = Vec::new();
     for f in [".cursorrules", ".windsurfrules", ".clinerules"] {
@@ -450,7 +455,10 @@ mod tests {
   "dependencies": { "typescript": "^5.0.0", "knip": "^3.0.0" }
 }"#,
         );
-        write_file(&root.join("tsconfig.json"), r#"{ "compilerOptions": { "strict": true } }"#);
+        write_file(
+            &root.join("tsconfig.json"),
+            r#"{ "compilerOptions": { "strict": true } }"#,
+        );
         write_file(
             &root.join("packages/pkg-a/src/index.ts"),
             "export const a = 1;\n",
@@ -460,7 +468,10 @@ mod tests {
             "export const B = () => null;\n",
         );
         write_file(&root.join("node_modules/.bin/tsc"), "#!/usr/bin/env node\n");
-        write_file(&root.join("node_modules/.bin/knip"), "#!/usr/bin/env node\n");
+        write_file(
+            &root.join("node_modules/.bin/knip"),
+            "#!/usr/bin/env node\n",
+        );
     }
 
     #[test]
@@ -514,10 +525,7 @@ mod tests {
         let checkers = detect_checkers(tmp.path());
         assert_eq!(checkers.get("tsc"), Some(&json!(true)));
         assert_eq!(checkers.get("knip"), Some(&json!(true)));
-        assert_eq!(
-            checkers.get("diff-shape"),
-            Some(&json!({ "maxDirs": 5 }))
-        );
+        assert_eq!(checkers.get("diff-shape"), Some(&json!({ "maxDirs": 5 })));
     }
 
     #[test]
@@ -528,10 +536,7 @@ mod tests {
 
         let checkers = detect_checkers(tmp.path());
         assert!(checkers.get("tsc").is_none());
-        assert_eq!(
-            checkers.get("diff-shape"),
-            Some(&json!({ "maxDirs": 5 }))
-        );
+        assert_eq!(checkers.get("diff-shape"), Some(&json!({ "maxDirs": 5 })));
     }
 
     #[test]
@@ -567,19 +572,13 @@ mod tests {
     fn build_convention_sources_collects_files() {
         let tmp = TempDir::new().unwrap();
         write_file(&tmp.path().join("CLAUDE.md"), "# project\n");
-        write_file(
-            &tmp.path().join(".claude/skills/foo/SKILL.md"),
-            "# skill\n",
-        );
+        write_file(&tmp.path().join(".claude/skills/foo/SKILL.md"), "# skill\n");
         write_file(&tmp.path().join("AGENTS.md"), "# agents\n");
 
         let sources = build_convention_sources(tmp.path());
         assert_eq!(sources.version, 1);
         assert!(sources.claude_md.contains(&"CLAUDE.md".to_string()));
-        assert!(sources
-            .skills
-            .iter()
-            .any(|p| p.contains(".claude/skills")));
+        assert!(sources.skills.iter().any(|p| p.contains(".claude/skills")));
         assert!(sources.knowledge_docs.contains(&"AGENTS.md".to_string()));
     }
 

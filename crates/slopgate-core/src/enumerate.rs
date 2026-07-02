@@ -136,9 +136,7 @@ fn list_walk(ctx: &EnumerateCtx) -> Vec<String> {
 fn resolve_rel(ctx: &EnumerateCtx, file: &str) -> Option<String> {
     let path = Path::new(file);
     if path.is_absolute() {
-        path.strip_prefix(&ctx.repo_root)
-            .ok()
-            .map(path_to_posix)
+        path.strip_prefix(&ctx.repo_root).ok().map(path_to_posix)
     } else {
         Some(file.replace('\\', "/"))
     }
@@ -205,7 +203,10 @@ mod tests {
 
         let files = list_source_files(&ctx, EnumerateMode::Walk);
 
-        assert_eq!(files, vec!["src/a/foo.ts".to_string(), "src/b.tsx".to_string()]);
+        assert_eq!(
+            files,
+            vec!["src/a/foo.ts".to_string(), "src/b.tsx".to_string()]
+        );
     }
 
     #[test]

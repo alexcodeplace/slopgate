@@ -62,7 +62,11 @@ mod tests {
     fn line_hash_matches_js_oracle() {
         for case in vectors("line_hash.json").as_array().unwrap() {
             let line = case["line"].as_str().unwrap();
-            assert_eq!(line_hash(line), case["hash"].as_str().unwrap(), "line={line:?}");
+            assert_eq!(
+                line_hash(line),
+                case["hash"].as_str().unwrap(),
+                "line={line:?}"
+            );
         }
     }
 
