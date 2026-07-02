@@ -5,8 +5,10 @@ members = ["crates/slopgate-core", "crates/slopgate-rs", "tools/leakscan"]
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+toml = "0.8"
 sha1 = "0.10"
 sha2 = "0.10"
 regex = "1"
+fancy-regex = "0.18"
 walkdir = "2"
 tempfile = "3"
