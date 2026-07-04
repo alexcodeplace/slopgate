@@ -204,6 +204,9 @@ pub fn scan_regex(config: &ResolvedConfig, files: &[String], file_mode: bool) ->
 
         for cp in &compiled {
             let p = cp.pattern;
+            if crate::enumerate::is_test_file(file) && !p.scan_test_files.unwrap_or(false) {
+                continue;
+            }
             let include = p.include_globs.as_deref().unwrap_or(&[]);
             if !include.is_empty() && !path_matches_globs(file, include) {
                 continue;
@@ -408,6 +411,7 @@ staged = ["critical"]
             include_globs: None,
             exclude_globs: None,
             min_files: Some(2),
+            scan_test_files: None,
         });
 
         let files = vec!["src/a.ts".to_string()];
@@ -451,6 +455,7 @@ staged = ["high"]
             include_globs: None,
             exclude_globs: Some(vec!["**/tokens/**".into()]),
             min_files: None,
+            scan_test_files: None,
         });
 
         let files = vec!["src/a.ts".to_string(), "tokens/a.ts".to_string()];

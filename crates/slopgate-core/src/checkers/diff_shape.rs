@@ -5,6 +5,7 @@
 
 use crate::checkers::index::{CheckerRunOpts, CheckerRunResult, DetectResult};
 use crate::config::ResolvedConfig;
+use crate::enumerate::is_test_file;
 use crate::report::Violation;
 use serde_json::Value;
 use std::collections::HashSet;
@@ -13,6 +14,9 @@ use std::collections::HashSet;
 pub fn concern_groups(files: &[String], roots_rel: &[String]) -> HashSet<String> {
     let mut groups = HashSet::new();
     for f in files {
+        if is_test_file(f) {
+            continue;
+        }
         let Some(root) = roots_rel
             .iter()
             .find(|r| *f == **r || f.starts_with(&format!("{}/", r)))
@@ -117,6 +121,21 @@ mod tests {
         let files: Vec<String> = (0..7).map(|i| format!("src/d{i}/f.ts")).collect();
         assert!(exceeds(&files, &["src".into()], 5)); // 7 groups > 5
         assert!(!exceeds(&["src/a/f.ts".into()], &["src".into()], 5));
+    }
+
+    #[test]
+    fn test_files_do_not_contribute_to_concern_groups() {
+        let files = vec![
+            "src/a/f.ts".into(),
+            "src/b/f.ts".into(),
+            "src/specs/a.test.ts".into(),
+            "src/specs/b.test.tsx".into(),
+        ];
+        let groups = concern_groups(&files, &["src".into()]);
+        assert_eq!(groups.len(), 2);
+        assert!(groups.contains("src/a"));
+        assert!(groups.contains("src/b"));
+        assert!(!groups.contains("src/specs"));
     }
 
     #[test]
