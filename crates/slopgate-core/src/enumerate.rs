@@ -23,7 +23,7 @@ pub struct EnumerateCtx {
 
 /// How to list source files.
 pub enum EnumerateMode<'a> {
-    /// Single file: resolve path, apply root/ext/test/exists filters.
+    /// Single file: resolve path, apply root/ext/exists filters.
     File(&'a str),
     /// Staged paths from `git diff --cached --name-only`.
     Staged,
@@ -50,9 +50,6 @@ fn list_single_file(ctx: &EnumerateCtx, file: &str) -> Vec<String> {
     }
     let ext = ext_with_dot(Path::new(&rel));
     if !ext.as_ref().is_some_and(|e| ctx.exts.contains(e)) {
-        return vec![];
-    }
-    if is_test_file(&rel) {
         return vec![];
     }
     if !ctx.repo_root.join(&rel).exists() {
@@ -82,7 +79,6 @@ fn list_staged(ctx: &EnumerateCtx) -> Vec<String> {
                 && ext_with_dot(Path::new(f))
                     .as_ref()
                     .is_some_and(|e| ctx.exts.contains(e))
-                && !is_test_file(f)
         })
         .map(str::to_string)
         .collect()
@@ -122,9 +118,6 @@ fn list_walk(ctx: &EnumerateCtx) -> Vec<String> {
             let Some(rel) = rel else {
                 continue;
             };
-            if is_test_file(&rel) {
-                continue;
-            }
             files.push(rel);
         }
     }
@@ -158,7 +151,11 @@ fn path_to_posix(path: &Path) -> String {
     path.to_string_lossy().replace('\\', "/")
 }
 
-fn is_test_file(path: &str) -> bool {
+/// Matches `*.test.ts`/`*.test.tsx`. Enumeration itself no longer excludes these —
+/// callers that need the historical "skip test files" default (checkers consuming
+/// the shared file list) apply this explicitly; regex-pack patterns may opt in via
+/// `Pattern.scan_test_files`.
+pub fn is_test_file(path: &str) -> bool {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| Regex::new(r"\.test\.(ts|tsx)$").unwrap())
         .is_match(path)
@@ -196,7 +193,7 @@ mod tests {
     }
 
     #[test]
-    fn walk_finds_ts_and_skips_node_modules_and_test_files() {
+    fn walk_finds_ts_and_skips_node_modules_but_includes_test_files() {
         let dir = tempfile::tempdir().unwrap();
         write_tree(dir.path());
         let ctx = fixture_ctx(dir.path());
@@ -205,7 +202,11 @@ mod tests {
 
         assert_eq!(
             files,
-            vec!["src/a/foo.ts".to_string(), "src/b.tsx".to_string()]
+            vec![
+                "src/a/foo.test.ts".to_string(),
+                "src/a/foo.ts".to_string(),
+                "src/b.tsx".to_string(),
+            ]
         );
     }
 
@@ -240,13 +241,13 @@ mod tests {
     }
 
     #[test]
-    fn file_mode_empty_for_test_file() {
+    fn file_mode_returns_rel_for_test_file() {
         let dir = tempfile::tempdir().unwrap();
         write_tree(dir.path());
         let ctx = fixture_ctx(dir.path());
 
         let got = list_source_files(&ctx, EnumerateMode::File("src/a/foo.test.ts"));
-        assert!(got.is_empty());
+        assert_eq!(got, vec!["src/a/foo.test.ts"]);
     }
 
     #[test]
@@ -287,7 +288,16 @@ mod tests {
             .output()
             .unwrap();
 
-        let got = list_source_files(&ctx, EnumerateMode::Staged);
-        assert_eq!(got, vec!["src/a/foo.ts"]);
+        let mut got = list_source_files(&ctx, EnumerateMode::Staged);
+        got.sort();
+        assert_eq!(got, vec!["src/a/foo.test.ts", "src/a/foo.ts"]);
+    }
+
+    #[test]
+    fn is_test_file_matches_dot_test_ts_and_tsx() {
+        assert!(is_test_file("src/a/foo.test.ts"));
+        assert!(is_test_file("src/a/foo.test.tsx"));
+        assert!(!is_test_file("src/a/foo.ts"));
+        assert!(!is_test_file("src/a/foo.testing.ts"));
     }
 }

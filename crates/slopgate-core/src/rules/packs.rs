@@ -32,6 +32,11 @@ pub struct Pattern {
     pub exclude_globs: Option<Vec<String>>,
     #[serde(default)]
     pub min_files: Option<u32>,
+    /// Opt-in: scan `*.test.ts`/`*.test.tsx` files for this pattern. Default `false`
+    /// (test files skipped) — matches the historical engine-wide behavior for every
+    /// existing rule pack.
+    #[serde(default)]
+    pub scan_test_files: Option<bool>,
 }
 
 pub type Packs = BTreeMap<String, Vec<Pattern>>;

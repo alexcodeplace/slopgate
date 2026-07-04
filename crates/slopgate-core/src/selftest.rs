@@ -666,6 +666,7 @@ mod tests {
                 include_globs: None,
                 exclude_globs: None,
                 min_files: None,
+                scan_test_files: None,
             }],
             ast_rule_dirs: vec![],
             checkers: BTreeMap::new(),
