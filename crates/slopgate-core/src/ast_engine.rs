@@ -597,4 +597,49 @@ mod tests {
         assert!(got.violations.is_empty());
         assert!(got.errors.is_empty());
     }
+
+    #[test]
+    fn run_scan_test_files_are_scanned() {
+        let dir = TempDir::new().unwrap();
+        let rule_dir = dir.path().join("rules/ast");
+        fs::create_dir_all(&rule_dir).unwrap();
+        let bin_dir = dir.path().join("node_modules/.bin");
+        fs::create_dir_all(&bin_dir).unwrap();
+        let stub = bin_dir.join("ast-grep");
+        fs::write(&stub, "#!/bin/sh\necho '[]'\n").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
+        }
+
+        let config = ResolvedConfig {
+            repo_root: dir.path().to_string_lossy().into_owned(),
+            config_dir: dir.path().to_string_lossy().into_owned(),
+            roots: vec![],
+            roots_rel: vec![],
+            exts: Default::default(),
+            skip_dirs: Default::default(),
+            patterns: vec![],
+            ast_rule_dirs: vec![rule_dir.to_string_lossy().into_owned()],
+            checkers: Default::default(),
+            ast_disable: Default::default(),
+            baseline_path: String::new(),
+            suppressions_path: String::new(),
+            fixtures_dirs: vec![],
+            checker_concurrency: 1,
+            gate: crate::config::GateAllow {
+                file: Default::default(),
+                staged: Default::default(),
+            },
+            ux_ast_severity: Default::default(),
+            ux_ast_all: Default::default(),
+        };
+
+        let files = vec!["src/example.test.ts".to_string(), "src/example.test.tsx".to_string()];
+        let got = run_ast_grep_scan(&config, Some(&files), &AstGrepScanOpts::default());
+        assert!(got.available);
+        assert!(got.violations.is_empty());
+        assert!(got.errors.is_empty());
+    }
 }

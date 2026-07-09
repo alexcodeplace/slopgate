@@ -7,3 +7,6 @@ rule:
   any:
     - pattern: $X.innerHTML = $$$
     - pattern: $X.insertAdjacentHTML($$$)
+ignores:
+  - '**/*.test.ts'
+  - '**/*.test.tsx'

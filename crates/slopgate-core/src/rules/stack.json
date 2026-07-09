@@ -69,5 +69,35 @@
         "(c.env as { K: string } | undefined)?.K"
       ]
     }
+  ],
+  "debug": [
+    {
+      "id": "console-log-debug",
+      "title": "console.log / console.debug left in app source",
+      "category": "convention",
+      "severity": "medium",
+      "pattern": "console\\.(?:log|debug)\\s*\\(",
+      "description": "Debug logging left in application source is a project-level convention violation.",
+      "resolution": "Remove the debug log or route it through the project's structured logging path.",
+      "includeGlobs": [
+        "src/**/*.js",
+        "src/**/*.jsx",
+        "src/**/*.ts",
+        "src/**/*.tsx",
+        "app/**/*.js",
+        "app/**/*.jsx",
+        "app/**/*.ts",
+        "app/**/*.tsx",
+        "lib/**/*.js",
+        "lib/**/*.jsx",
+        "lib/**/*.ts",
+        "lib/**/*.tsx"
+      ],
+      "canary": "console.debug('debug trace')",
+      "negativeCanary": [
+        "logger.debug('debug trace')",
+        "console.error('user-facing failure')"
+      ]
+    }
   ]
 }

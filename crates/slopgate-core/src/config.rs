@@ -82,11 +82,13 @@ fn git_root(from_dir: &Path) -> Option<PathBuf> {
 
 fn resolve_path(config_dir: &Path, rel: &str) -> PathBuf {
     let p = Path::new(rel);
-    if p.is_absolute() {
+    let joined = if p.is_absolute() {
         p.to_path_buf()
     } else {
         config_dir.join(p)
-    }
+    };
+    // lexically drop `.` components — an embedded `/./` breaks ast-grep glob matching
+    joined.components().collect()
 }
 
 fn path_to_string(p: PathBuf) -> String {
@@ -227,11 +229,16 @@ fn resolve_inner(
         }
     }
 
-    // PHASE-2: project rule packs
-    if let Some(rel_path) = raw.rules.first() {
-        return Err(format!(
-            "slopgate: project rule pack \"{rel_path}\" cannot be loaded by the native TOML resolver (PHASE-2: project rule packs)"
-        ));
+    for rel_path in &raw.rules {
+        let abs = resolve_path(&config_dir, rel_path);
+        let pack = packs::load_project_pack(&abs)?;
+        for (pack_name, patterns_in) in &pack {
+            for p in patterns_in {
+                validate_pattern(p)
+                    .map_err(|e| format!("{e} (from project:{pack_name} in {})", abs.display()))?;
+                patterns.push(p.clone());
+            }
+        }
     }
 
     let mut ux_ast_severity: BTreeMap<String, String> = BTreeMap::new();
@@ -271,7 +278,8 @@ fn resolve_inner(
     }
     let patterns: Vec<Pattern> = by_id.into_values().collect();
 
-    let mut ast_rule_dirs = vec![repo_root.join("rules/baseline/ast")];
+    let engine = crate::init::run::engine_root();
+    let mut ast_rule_dirs = vec![engine.join("rules/baseline/ast")];
     if let Some(ast_rules) = &raw.ast_rules {
         let abs = resolve_path(&config_dir, ast_rules);
         if abs.is_dir() {
@@ -279,7 +287,7 @@ fn resolve_inner(
         }
     }
     if ux_enabled_ast {
-        ast_rule_dirs.push(repo_root.join("rules/ux/ast"));
+        ast_rule_dirs.push(engine.join("rules/ux/ast"));
     }
 
     let checkers = process_checkers(raw.checkers);
@@ -324,7 +332,7 @@ fn resolve_inner(
         .map(|s| path_to_string(resolve_path(&config_dir, s)))
         .unwrap_or_else(|| path_to_string(config_dir.join("suppressions.json")));
 
-    let mut fixtures_dirs = vec![path_to_string(repo_root.join("rules/baseline/fixtures"))];
+    let mut fixtures_dirs = vec![path_to_string(engine.join("rules/baseline/fixtures"))];
     if let Some(fixtures) = &raw.fixtures {
         fixtures_dirs.push(path_to_string(resolve_path(&config_dir, fixtures)));
     }
@@ -378,9 +386,62 @@ pub fn resolve_config(path: &str) -> Result<ResolvedConfig, String> {
 
     let contents = std::fs::read_to_string(&abs_config)
         .map_err(|e| format!("slopgate: read config {}: {e}", abs_config.display()))?;
-    let raw: RawConfig = toml::from_str(&contents)
-        .map_err(|e| format!("slopgate: parse config {}: {e}", abs_config.display()))?;
+    if let Some(msg) = legacy_js_config_error(&abs_config, &contents) {
+        return Err(msg);
+    }
+    let raw: RawConfig = toml::from_str(&contents).map_err(|e| {
+        if let Some(msg) = legacy_js_config_error_on_parse_failure(&abs_config, &contents) {
+            msg
+        } else {
+            format!("slopgate: parse config {}: {e}", abs_config.display())
+        }
+    })?;
     resolve_inner(raw, config_dir, repo_root)
+}
+
+/// True when `contents` reads as a JavaScript module rather than TOML — the
+/// signature of a pre-TOML legacy `config.mjs` (`export default {…}` /
+/// `module.exports = {…}`). Used to turn a cryptic TOML parse error into an
+/// actionable migration message.
+fn looks_like_js_config(contents: &str) -> bool {
+    contents.contains("export default") || contents.contains("module.exports")
+}
+
+/// Actionable error when the config path is a legacy JavaScript config (by
+/// extension). The engine reads TOML only; a `.mjs`/`.cjs`/`.js` config is the
+/// pre-rebrand format and a stale pre-commit hook can still point a TOML engine
+/// at it (the "parsed as TOML and aborts" failure). Returns `None` for `.toml`.
+fn legacy_js_config_error(abs_config: &Path, contents: &str) -> Option<String> {
+    let ext = abs_config
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    let is_js_ext = matches!(ext.as_str(), "mjs" | "cjs" | "js");
+    if is_js_ext || (ext != "toml" && looks_like_js_config(contents)) {
+        return Some(legacy_migration_message(abs_config));
+    }
+    None
+}
+
+/// Fallback for a `.toml`-named file whose body is actually JavaScript (a stale
+/// hook renamed the path but the file was never migrated). Only fires when the
+/// TOML parse already failed.
+fn legacy_js_config_error_on_parse_failure(abs_config: &Path, contents: &str) -> Option<String> {
+    if looks_like_js_config(contents) {
+        Some(legacy_migration_message(abs_config))
+    } else {
+        None
+    }
+}
+
+fn legacy_migration_message(abs_config: &Path) -> String {
+    format!(
+        "slopgate: {} is a legacy JavaScript config; the engine reads TOML.\n  \
+         Run `slopgate init` in the repo to migrate it to .slopgate/config.toml, \
+         then remove the stale pre-commit hook block (re-run `slopgate init` rewrites it).",
+        abs_config.display()
+    )
 }
 
 /// Resolve inline TOML (unit tests). Uses `.` as `config_dir` and git/cwd for `repo_root`.
@@ -397,6 +458,7 @@ pub fn resolve_config_str(toml_src: &str) -> Result<ResolvedConfig, String> {
 mod tests {
     use super::*;
     use serde_json::Value;
+    use std::path::Path;
 
     fn cfg_path() -> String {
         format!("{}/tests/fixtures/config.toml", env!("CARGO_MANIFEST_DIR"))
@@ -459,10 +521,157 @@ mod tests {
         assert!(resolve_config_str("baseline = [\"nope\"]\n").is_err());
     }
 
+    fn write_temp_file(path: &Path, contents: &str) {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).unwrap();
+        }
+        std::fs::write(path, contents).unwrap();
+    }
+
     #[test]
-    fn project_rule_pack_is_typed_error() {
-        let err = resolve_config_str("rules = [\"./my-pack.mjs\"]\n").unwrap_err();
-        assert!(err.contains("my-pack.mjs"));
+    fn resolves_project_rule_pack() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_dir = dir.path();
+        write_temp_file(
+            &config_dir.join("rules/proj.json"),
+            r#"{"proj":[{"id":"proj-x","severity":"high","pattern":"FORBIDDEN_TOKEN","resolution":"remove it","canary":"FORBIDDEN_TOKEN","excludeGlobs":["**/*.md"]}]}"#,
+        );
+        write_temp_file(
+            &config_dir.join("config.toml"),
+            r#"rules = ["./rules/proj.json"]"#,
+        );
+        let cfg = resolve_config(&config_dir.join("config.toml").to_string_lossy()).unwrap();
+        let proj = cfg
+            .patterns
+            .iter()
+            .find(|p| p.id == "proj-x")
+            .expect("proj-x pattern");
+        assert_eq!(proj.resolution, "remove it");
+        assert_eq!(proj.exclude_globs, Some(vec!["**/*.md".to_string()]));
+    }
+
+    #[test]
+    fn project_rule_pack_bad_regex_errors_with_pack_tag() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_dir = dir.path();
+        write_temp_file(
+            &config_dir.join("rules/proj.json"),
+            r#"{"proj":[{"id":"bad","severity":"high","pattern":"(","resolution":"fix it"}]}"#,
+        );
+        write_temp_file(
+            &config_dir.join("config.toml"),
+            r#"rules = ["./rules/proj.json"]"#,
+        );
+        let err = resolve_config(&config_dir.join("config.toml").to_string_lossy()).unwrap_err();
+        assert!(err.contains("(from project:proj in"), "err={err}");
+        assert!(err.contains("proj.json"), "err={err}");
+    }
+
+    #[test]
+    fn project_rule_pack_missing_file_errors() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_dir = dir.path();
+        write_temp_file(
+            &config_dir.join("config.toml"),
+            r#"rules = ["./rules/nope.json"]"#,
+        );
+        let err = resolve_config(&config_dir.join("config.toml").to_string_lossy()).unwrap_err();
+        assert!(
+            err.contains("cannot read project rule pack") && err.contains("nope.json"),
+            "err={err}"
+        );
+    }
+
+    #[test]
+    fn resolves_two_project_rule_packs() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_dir = dir.path();
+        write_temp_file(
+            &config_dir.join("rules/a.json"),
+            r#"{"pack-a":[{"id":"proj-a","severity":"high","pattern":"TOKEN_A","resolution":"remove a","canary":"TOKEN_A"}]}"#,
+        );
+        write_temp_file(
+            &config_dir.join("rules/b.json"),
+            r#"{"pack-b":[{"id":"proj-b","severity":"medium","pattern":"TOKEN_B","resolution":"remove b","canary":"TOKEN_B"}]}"#,
+        );
+        write_temp_file(
+            &config_dir.join("config.toml"),
+            r#"rules = ["./rules/a.json", "./rules/b.json"]"#,
+        );
+        let cfg = resolve_config(&config_dir.join("config.toml").to_string_lossy()).unwrap();
+        let ids: std::collections::HashSet<_> =
+            cfg.patterns.iter().map(|p| p.id.as_str()).collect();
+        assert!(ids.contains("proj-a"));
+        assert!(ids.contains("proj-b"));
+    }
+
+    #[test]
+    fn project_rule_pack_second_path_missing_fails_closed() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_dir = dir.path();
+        write_temp_file(
+            &config_dir.join("rules/a.json"),
+            r#"{"pack-a":[{"id":"proj-a","severity":"high","pattern":"TOKEN_A","resolution":"remove a","canary":"TOKEN_A"}]}"#,
+        );
+        write_temp_file(
+            &config_dir.join("config.toml"),
+            r#"rules = ["./rules/a.json", "./rules/b.json"]"#,
+        );
+        let err = resolve_config(&config_dir.join("config.toml").to_string_lossy()).unwrap_err();
+        assert!(
+            err.contains("cannot read project rule pack") && err.contains("b.json"),
+            "err={err}"
+        );
+    }
+
+    #[test]
+    fn project_rule_pack_malformed_json_errors_at_resolve_boundary() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_dir = dir.path();
+        let pack_path = config_dir.join("rules/bad.json");
+        write_temp_file(&pack_path, "{not json");
+        write_temp_file(
+            &config_dir.join("config.toml"),
+            r#"rules = ["./rules/bad.json"]"#,
+        );
+        let err = resolve_config(&config_dir.join("config.toml").to_string_lossy()).unwrap_err();
+        assert!(err.contains("invalid project rule pack"), "err={err}");
+        assert!(err.contains("bad.json"), "err={err}");
+    }
+
+    #[test]
+    fn project_rule_pack_overrides_colliding_baseline_id() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_dir = dir.path();
+        let r_baseline = {
+            write_temp_file(&config_dir.join("config.toml"), r#"baseline = ["raw-hex"]"#);
+            let cfg = resolve_config(&config_dir.join("config.toml").to_string_lossy()).unwrap();
+            let baseline_rule = cfg
+                .patterns
+                .iter()
+                .find(|p| p.id == "raw-hex-color")
+                .expect("raw-hex-color from baseline");
+            baseline_rule.resolution.clone()
+        };
+        let r_project = "PROJECT override resolution";
+        assert_ne!(r_project, r_baseline);
+        write_temp_file(
+            &config_dir.join("rules/proj.json"),
+            r##"{"proj":[{"id":"raw-hex-color","severity":"high","pattern":"#PROJECT","resolution":"PROJECT override resolution","canary":"#abc"}]}"##,
+        );
+        write_temp_file(
+            &config_dir.join("config.toml"),
+            r#"baseline = ["raw-hex"]
+rules = ["./rules/proj.json"]"#,
+        );
+        let cfg = resolve_config(&config_dir.join("config.toml").to_string_lossy()).unwrap();
+        let matches: Vec<_> = cfg
+            .patterns
+            .iter()
+            .filter(|p| p.id == "raw-hex-color")
+            .collect();
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].resolution, r_project);
     }
 
     fn sorted_id_sev(v: &Value) -> Vec<String> {

@@ -9,6 +9,8 @@ files:
   - '**/fixtures/src/components/**'
 ignores:
   - '**/features/design-system/**'
+  - '**/*.test.ts'
+  - '**/*.test.tsx'
 rule:
   any:
     - pattern: window.$PROP

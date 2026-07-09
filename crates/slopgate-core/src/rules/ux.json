@@ -30,7 +30,35 @@
       "ux-img-no-dimensions",
       "ux-media-no-dimensions"
     ],
-    "regex": []
+    "regex": [
+      {
+        "id": "img-missing-loading",
+        "title": "<img> missing loading attribute",
+        "category": "convention",
+        "severity": "medium",
+        "pattern": "<img\\b(?![^>]*\\bloading=)[^>]*>",
+        "description": "Images without an explicit loading attribute leave loading behavior implicit and often ship eagerly by accident.",
+        "resolution": "Set loading=\"lazy\" for non-critical images or loading=\"eager\" for above-the-fold exceptions.",
+        "includeGlobs": [
+          "**/*.astro",
+          "**/*.html",
+          "**/*.htm",
+          "**/*.jsx",
+          "**/*.tsx"
+        ],
+        "excludeGlobs": [
+          "**/*.test.*",
+          "**/*.spec.*",
+          "**/fixtures/**",
+          "**/tests/**"
+        ],
+        "canary": "<img src=\"/hero.png\" alt=\"hero\">",
+        "negativeCanary": [
+          "<img src=\"/hero.png\" alt=\"hero\" loading=\"lazy\">",
+          "<img src=\"/hero.png\" alt=\"hero\" loading=\"eager\">"
+        ]
+      }
+    ]
   },
   "feedback": {
     "defaultSeverity": "high",

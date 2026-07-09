@@ -4,6 +4,8 @@
 
 use serde::Deserialize;
 use std::collections::BTreeMap;
+use std::fs;
+use std::path::Path;
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -30,6 +32,11 @@ pub struct Pattern {
     pub exclude_globs: Option<Vec<String>>,
     #[serde(default)]
     pub min_files: Option<u32>,
+    /// Opt-in: scan `*.test.ts`/`*.test.tsx` files for this pattern. Default `false`
+    /// (test files skipped) — matches the historical engine-wide behavior for every
+    /// existing rule pack.
+    #[serde(default)]
+    pub scan_test_files: Option<bool>,
 }
 
 pub type Packs = BTreeMap<String, Vec<Pattern>>;
@@ -58,6 +65,22 @@ pub fn stack_packs() -> Packs {
 
 pub fn ux_packs() -> UxPacks {
     serde_json::from_str(UX_JSON).expect("ux.json")
+}
+
+/// Load a project rule pack (same keyed-map JSON shape as baseline.json) from disk.
+pub fn load_project_pack(path: &Path) -> Result<Packs, String> {
+    let s = fs::read_to_string(path).map_err(|e| {
+        format!(
+            "slopgate: cannot read project rule pack \"{}\": {e}",
+            path.display()
+        )
+    })?;
+    serde_json::from_str::<Packs>(&s).map_err(|e| {
+        format!(
+            "slopgate: invalid project rule pack \"{}\": {e}",
+            path.display()
+        )
+    })
 }
 
 #[cfg(test)]
@@ -103,5 +126,39 @@ mod tests {
     #[test]
     fn unknown_pack_absent() {
         assert!(!baseline_packs().contains_key("does-not-exist"));
+    }
+
+    #[test]
+    fn load_project_pack_valid() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("pack.json");
+        fs::write(
+            &path,
+            r#"{"p":[{"id":"x","severity":"high","pattern":"foo","resolution":"do y"}]}"#,
+        )
+        .unwrap();
+        let packs = load_project_pack(&path).unwrap();
+        assert!(packs.contains_key("p"));
+        assert_eq!(packs["p"].len(), 1);
+        assert_eq!(packs["p"][0].id, "x");
+    }
+
+    #[test]
+    fn load_project_pack_missing_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("missing.json");
+        let err = load_project_pack(&path).unwrap_err();
+        assert!(err.contains("cannot read project rule pack"));
+        assert!(err.contains(&path.display().to_string()));
+    }
+
+    #[test]
+    fn load_project_pack_malformed_json() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("bad.json");
+        fs::write(&path, "{not json").unwrap();
+        let err = load_project_pack(&path).unwrap_err();
+        assert!(err.contains("invalid project rule pack"));
+        assert!(err.contains(&path.display().to_string()));
     }
 }

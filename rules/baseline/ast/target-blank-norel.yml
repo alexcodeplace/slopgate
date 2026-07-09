@@ -23,3 +23,6 @@ rule:
             has:
               kind: jsx_attribute
               regex: '^rel='
+ignores:
+  - '**/*.test.ts'
+  - '**/*.test.tsx'

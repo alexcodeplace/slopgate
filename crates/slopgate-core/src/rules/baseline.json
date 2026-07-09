@@ -45,6 +45,99 @@
       "canary": "const x = foo as any;"
     }
   ],
+  "no-narration-comments": [
+    {
+      "id": "narrated-comment",
+      "title": "Narrated / changelog-style comment",
+      "category": "convention",
+      "severity": "medium",
+      "flags": "i",
+      "pattern": "^\\s*(?://+|/\\*+|\\*)\\s*(?:(?:changed|removed)\\s+(?:from|in favor of|because|since)\\b|(?:before|previously|formerly|used\\s+to|was\\s+previously|no\\s+longer)\\b|now\\b.*\\b(?:instead\\s+of|replaces?|uses?|handles?|works?\\s+around)\\b|(?:this|it)\\s+(?:used\\s+to|previously)\\b|track\\s+(?:this|[a-z0-9_./#-]+)\\s+(?:later|issue)\\b|may\\s+be\\s+real\\s+later\\b|\\S+\\s+upstream\\s+noise\\b)",
+      "description": "Narration/changelog comments that describe code history, removals, or reviewer-facing notes instead of explaining a non-obvious invariant or constraint.",
+      "resolution": "Delete the narration. If context is still needed, keep a short comment about the non-obvious constraint or move history/cleanup notes to the commit message or issue.",
+      "canary": "// changed from foo to bar",
+      "negativeCanary": [
+        "// removed duplicates before sending to the API",
+        "// changed to avoid recomputation on every keystroke",
+        "// removed trailing whitespace to satisfy the linter",
+        "// workaround for upstream bug in libfoo v2, see issue #123",
+        "// memoize because this is called in a hot loop",
+        "// guards against a null race between init and teardown"
+      ]
+    }
+  ],
+  "markers": [
+    {
+      "id": "todo-fixme-hack-marker",
+      "title": "TODO / FIXME / HACK marker comment",
+      "category": "convention",
+      "severity": "medium",
+      "pattern": "^\\s*(?://|#|/\\*+|\\*)\\s*(?:TODO|FIXME|HACK)\\b|[;)}\\]]\\s*//\\s*(?:TODO|FIXME|HACK)\\b",
+      "flags": "i",
+      "description": "Marker comments like TODO/FIXME/HACK leave known debt in shipped source.",
+      "resolution": "Do the work now or replace the marker with a concrete issue reference outside the source file.",
+      "includeGlobs": [
+        "**/*.c",
+        "**/*.cc",
+        "**/*.cpp",
+        "**/*.cs",
+        "**/*.go",
+        "**/*.h",
+        "**/*.hpp",
+        "**/*.java",
+        "**/*.js",
+        "**/*.jsx",
+        "**/*.kt",
+        "**/*.mjs",
+        "**/*.php",
+        "**/*.py",
+        "**/*.rb",
+        "**/*.rs",
+        "**/*.sh",
+        "**/*.swift",
+        "**/*.ts",
+        "**/*.tsx"
+      ],
+      "excludeGlobs": [
+        "**/*.json",
+        "**/*.test.*",
+        "**/*.spec.*",
+        "**/fixtures/**",
+        "**/tests/**"
+      ],
+      "canary": "// TODO remove this marker",
+      "negativeCanary": [
+        "let lh = line_hash(\"  // TODO  \");",
+        "const msg = \"# FIXME this is fixture text\";",
+        "const block = \"/* HACK left in sample text */\";",
+        "const ok = work(); // done"
+      ]
+    }
+  ],
+  "test-integrity": [
+    {
+      "id": "disabled-focused-test",
+      "title": "Disabled or focused test runner call",
+      "category": "test-integrity",
+      "severity": "high",
+      "pattern": "(?:^|[^\\w$])(?:xit|fit)\\s*\\(|\\b(?:describe|it|test)\\s*\\.\\s*(?:skip|only)\\s*\\(",
+      "description": "Disabled or focused test calls remove coverage or narrow execution and should not ship.",
+      "resolution": "Re-enable the test and remove focused execution before committing.",
+      "includeGlobs": [
+        "**/*.test.*",
+        "**/*.spec.*",
+        "**/__tests__/**",
+        "**/test/**",
+        "**/tests/**"
+      ],
+      "canary": "describe.only('focus', () => {});",
+      "negativeCanary": [
+        "describe('coverage', () => {});",
+        "const mode = 'only';",
+        "runner.skip(task);"
+      ]
+    }
+  ],
   "raw-hex": [
     {
       "id": "raw-hex-color",
@@ -167,6 +260,23 @@
       "description": "MD5/SHA-1 are cryptographically broken — forbidden for integrity checks and unusable for passwords.",
       "resolution": "Use SHA-256+ for integrity; bcrypt/argon2/scrypt for passwords.",
       "canary": "createHash('md5').update(data).digest('hex')"
+    }
+  ],
+  "env-safety": [
+    {
+      "id": "process-env-home-fallback",
+      "title": "Fallback on process.env.HOME",
+      "category": "security",
+      "severity": "high",
+      "pattern": "process\\.env\\.HOME\\s*(?:\\|\\||\\?\\?)\\s*(['\"])",
+      "description": "Fallbacking when HOME is missing masks a broken environment and can redirect state into the wrong path.",
+      "resolution": "Require HOME to be present and fail loudly if it is missing.",
+      "canary": "const home = process.env.HOME || '/tmp';",
+      "negativeCanary": [
+        "const home = process.env.HOME;",
+        "const home = env.HOME ?? '/tmp';",
+        "const tmp = process.env.TMPDIR || '/tmp';"
+      ]
     }
   ],
   "sql-safety": [

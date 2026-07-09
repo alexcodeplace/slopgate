@@ -25,15 +25,15 @@ fn regex_test(pattern: &str, flags: &str, text: &str) -> Result<bool, String> {
     Ok(re.is_match(text).unwrap_or(false))
 }
 
-fn baseline_ast_dir(repo_root: &str) -> String {
-    Path::new(repo_root)
+fn baseline_ast_dir() -> String {
+    crate::init::run::engine_root()
         .join("rules/baseline/ast")
         .to_string_lossy()
         .into_owned()
 }
 
-fn checker_fixtures_dir(repo_root: &str) -> PathBuf {
-    Path::new(repo_root).join("rules/baseline/fixtures/checker-outputs")
+fn checker_fixtures_dir() -> PathBuf {
+    crate::init::run::engine_root().join("rules/baseline/fixtures/checker-outputs")
 }
 
 fn stringify_tsc_output(errors: &[TscError]) -> String {
@@ -268,7 +268,7 @@ pub fn run_self_test(config: &ResolvedConfig) -> i32 {
         ));
     }
 
-    let baseline_ast = baseline_ast_dir(&config.repo_root);
+    let baseline_ast = baseline_ast_dir();
     let project_ast_dirs: Vec<&str> = config
         .ast_rule_dirs
         .iter()
@@ -326,7 +326,7 @@ pub fn run_self_test(config: &ResolvedConfig) -> i32 {
         }
     }
 
-    let fix_dir = checker_fixtures_dir(&config.repo_root);
+    let fix_dir = checker_fixtures_dir();
     for f in PARSER_FIXTURES {
         let in_path = fix_dir.join(f.input);
         let exp_path = fix_dir.join(f.expected);
@@ -422,6 +422,7 @@ mod tests {
             "no-stubs",
             "ts-suppress",
             "as-any",
+            "no-narration-comments",
             "raw-hex",
             "kv-ban",
             "live-secrets",
@@ -555,6 +556,90 @@ mod tests {
         assert_eq!(run_self_test(&config), 0, "self-test should pass");
     }
 
+    fn write_temp_file(path: &Path, contents: &str) {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).unwrap();
+        }
+        fs::write(path, contents).unwrap();
+    }
+
+    /// Resolve a project pack via `config.toml`, then isolate the self-test surface:
+    /// only resolved project pattern(s), no scan roots, and copied engine fixture paths so
+    /// unrelated self-test phases (ast/parser) stay green while canary pass/fail is
+    /// attributable to the project rule.
+    fn build_project_pack_selftest_config(dir: &Path, proj_json: &str) -> ResolvedConfig {
+        use crate::config::resolve_config;
+
+        sync_repo_tree(dir);
+        write_temp_file(&dir.join("rules/proj.json"), proj_json);
+        write_temp_file(&dir.join("config.toml"), r#"rules = ["./rules/proj.json"]"#);
+        let resolved = resolve_config(&dir.join("config.toml").to_string_lossy()).unwrap();
+
+        let fixtures = dir.join("rules/baseline/fixtures");
+        let ast_dir = dir.join("rules/baseline/ast");
+
+        ResolvedConfig {
+            repo_root: dir.to_string_lossy().into_owned(),
+            config_dir: resolved.config_dir,
+            roots: vec![],
+            roots_rel: vec![],
+            exts: resolved.exts,
+            skip_dirs: resolved.skip_dirs,
+            patterns: resolved.patterns,
+            ast_rule_dirs: vec![ast_dir.to_string_lossy().into_owned()],
+            checkers: resolved.checkers,
+            ast_disable: resolved.ast_disable,
+            baseline_path: resolved.baseline_path,
+            suppressions_path: resolved.suppressions_path,
+            fixtures_dirs: vec![fixtures.to_string_lossy().into_owned()],
+            checker_concurrency: resolved.checker_concurrency,
+            gate: resolved.gate,
+            ux_ast_severity: resolved.ux_ast_severity,
+            ux_ast_all: resolved.ux_ast_all,
+        }
+    }
+
+    const PROJ_SELFTEST_JSON: &str = r#"{"proj":[{"id":"proj-selftest","severity":"high","pattern":"FORBIDDEN_TOKEN","resolution":"remove it","canary":"contains FORBIDDEN_TOKEN here"}]}"#;
+
+    #[test]
+    fn project_pack_canary_exercised_by_self_test() {
+        if !ast_grep_available() {
+            eprintln!("SKIP project_pack_canary_exercised_by_self_test: ast-grep not available");
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let config = build_project_pack_selftest_config(dir.path(), PROJ_SELFTEST_JSON);
+        assert!(
+            config.patterns.iter().any(|p| p.id == "proj-selftest"),
+            "project pattern must flow through resolve into config.patterns"
+        );
+        assert_eq!(
+            run_self_test(&config),
+            0,
+            "matching project canary must pass self-test"
+        );
+    }
+
+    #[test]
+    fn project_pack_broken_canary_fails_self_test() {
+        if !ast_grep_available() {
+            eprintln!("SKIP project_pack_broken_canary_fails_self_test: ast-grep not available");
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let proj_json = r#"{"proj":[{"id":"proj-selftest","severity":"high","pattern":"FORBIDDEN_TOKEN","resolution":"remove it","canary":"this is clean text"}]}"#;
+        let config = build_project_pack_selftest_config(dir.path(), proj_json);
+        assert!(
+            config.patterns.iter().any(|p| p.id == "proj-selftest"),
+            "project pattern must flow through resolve into config.patterns"
+        );
+        assert_eq!(
+            run_self_test(&config),
+            1,
+            "only the project canary should fail; ancillary phases stay green"
+        );
+    }
+
     #[test]
     fn broken_canary_fails() {
         let tmp = tempfile::tempdir().unwrap();
@@ -581,6 +666,7 @@ mod tests {
                 include_globs: None,
                 exclude_globs: None,
                 min_files: None,
+                scan_test_files: None,
             }],
             ast_rule_dirs: vec![],
             checkers: BTreeMap::new(),

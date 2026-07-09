@@ -23,7 +23,7 @@ A global code-quality / anti-slop gate for Claude Code and git. Engine is shared
   - **diff-shape** — wide commits spanning too many directories (encourages focused changes)
 
 - **Shared regex + AST rule packs** — fast-tier and commit-tier both run these
-  - Convention: `no-stubs`, `ts-suppress`, `as-any`, `raw-hex` (design tokens), `sql-safety`
+  - Convention: `no-stubs`, `ts-suppress`, `as-any`, `no-narration-comments`, `raw-hex` (design tokens), `sql-safety`
   - Security: `live-secrets`, `eval-ban`, `pii-logs`, `weak-hash`
   - Cloudflare boundary: `kv-ban` (plus the opt-in `stack = ["cloudflare"]` pack)
   - Built-in AST rules: empty-catch, unsafe `innerHTML`/`dangerouslySetInnerHTML`, `target="_blank"` without `rel`, `window` access during render
@@ -388,6 +388,7 @@ All are opt-in via the `baseline` array in config. Severity drives the gate thre
 | `no-stubs` | critical | convention | Stub / placeholder / "not implemented" / deferred-work markers |
 | `ts-suppress` | high | convention | `@ts-ignore` / `@ts-expect-error` — suppressing tsc instead of fixing the cause |
 | `as-any` | high | convention | `as any` casts that disable type safety |
+| `no-narration-comments` | high | convention | Comments that narrate a diff/history/removal (`changed from`, `used to`, `no longer needed`, `track later`) instead of explaining a non-obvious constraint |
 | `raw-hex` | high | convention | Hardcoded hex / `rgb()` colors + raw multi-digit `px` — use design tokens |
 | `sql-safety` | critical | convention | `SELECT … FOR UPDATE` with an aggregate (Postgres rejects this at runtime) |
 | `kv-ban` | critical | boundary | Cloudflare KV in read-after-write paths (eventually-consistent) |

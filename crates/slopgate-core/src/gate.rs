@@ -551,6 +551,7 @@ mod tests {
             include_globs: None,
             exclude_globs: None,
             min_files: None,
+            scan_test_files: None,
         });
         fs::write(root.join("src/marked.ts"), "const INFO_MARKER = 1;\n").unwrap();
 

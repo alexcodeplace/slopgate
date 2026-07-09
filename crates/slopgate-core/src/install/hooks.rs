@@ -4,6 +4,7 @@
 //! is always preserved (block inserted before first `exec`, else appended).
 
 use crate::error::SlopError;
+use regex::Regex;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -49,8 +50,38 @@ fn hook_block() -> String {
     .join("\n")
 }
 
+/// Remove EVERY slopgate hook block — the current marker AND any legacy or
+/// renamed variant (`# slop-gate-hook v1` from before the `slop-gate`→`slopgate`
+/// rebrand, or an older `vN`). This is the fix for the marker-drift class: the
+/// pre-rebrand installer used a different marker, so the current installer treated
+/// its block as foreign user content and PRESERVED it — leaving a stale block that
+/// fails closed forever (its `|| exit 1` bricks every commit, and its `.mjs`
+/// config now feeds a TOML-only engine). Matching the marker by pattern instead of
+/// one literal supersedes those orphans on the next `slopgate init`.
+///
+/// Matches the marker by shape, not a hardcoded version/brand, so a future rename
+/// or version bump cannot re-orphan a block. A corrupt/typo'd marker (e.g. `BEGAN`)
+/// is intentionally NOT matched — it is preserved as foreign content.
+fn strip_slopgate_blocks(existing: &str) -> String {
+    // Well-formed block: BEGIN line ... matching END line, inclusive of the END
+    // line's trailing newline. `(?ms)` → `.` spans newlines, `^` anchors lines;
+    // `.*?` is lazy so it stops at the FIRST END marker.
+    let full =
+        Regex::new(r"(?ms)^[ \t]*# slop-?gate-hook v\d+ BEGIN.*?# slop-?gate-hook v\d+ END[^\n]*\n?")
+            .expect("static block regex");
+    let stripped = full.replace_all(existing, "");
+    // Dangling BEGIN with no matching END (corruption): drop from the BEGIN line
+    // to end-of-file rather than leave a half-block behind.
+    let dangling = Regex::new(r"(?ms)^[ \t]*# slop-?gate-hook v\d+ BEGIN.*\z")
+        .expect("static dangling regex");
+    dangling.replace(&stripped, "").into_owned()
+}
+
 /// Render pre-commit hook file content. Idempotent: a second call on its own output
-/// returns the same string (markers are not duplicated).
+/// returns the same string (markers are not duplicated). Always collapses to exactly
+/// one canonical block — any pre-existing slopgate block (current or legacy) is
+/// stripped first, then the canonical block is inserted before the first `exec`
+/// line, else appended. Foreign (non-slopgate) content is always preserved.
 pub fn render_hook_content(existing: &str) -> String {
     let block = hook_block();
 
@@ -58,17 +89,12 @@ pub fn render_hook_content(existing: &str) -> String {
         return format!("#!/usr/bin/env bash\n{block}\n");
     }
 
-    if existing.contains(MARKER_BEGIN) {
-        if let Some(start) = existing.find(MARKER_BEGIN) {
-            let end = existing
-                .find(MARKER_END)
-                .map(|i| i + MARKER_END.len())
-                .unwrap_or(existing.len());
-            return format!("{}{}{}", &existing[..start], block, &existing[end..]);
-        }
+    let cleaned = strip_slopgate_blocks(existing);
+    if cleaned.trim().is_empty() {
+        return format!("#!/usr/bin/env bash\n{block}\n");
     }
 
-    let lines: Vec<&str> = existing.split('\n').collect();
+    let lines: Vec<&str> = cleaned.split('\n').collect();
     if let Some(exec_idx) = lines
         .iter()
         .position(|line| line.trim_start().starts_with("exec "))
@@ -87,7 +113,7 @@ pub fn render_hook_content(existing: &str) -> String {
         return out;
     }
 
-    let trimmed = existing.trim_end_matches('\n');
+    let trimmed = cleaned.trim_end_matches('\n');
     format!("{trimmed}\n{block}\n")
 }
 
@@ -256,6 +282,61 @@ mod tests {
         assert!(rendered.contains("echo before\n"));
         assert!(rendered.contains("echo after\n"));
         assert!(!rendered.contains("old slopgate block"));
+        assert_eq!(marker_count(&rendered, MARKER_BEGIN), 1);
+        assert_eq!(marker_count(&rendered, MARKER_END), 1);
+        assert_fail_closed(&rendered);
+    }
+
+    #[test]
+    fn render_supersedes_pre_rebrand_slop_gate_marker() {
+        // The exact orphaned shape: pre-rebrand `# slop-gate-hook v1` block reading
+        // a `.slop-gate/config.mjs` and failing closed with `|| exit 1`. The current
+        // installer must SUPERSEDE it, not preserve it as foreign content.
+        let existing = "#!/usr/bin/env bash\n\
+            # slop-gate-hook v1 BEGIN\n\
+            SLOPGATE_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)\n\
+            if [ -n \"$SLOPGATE_ROOT\" ] && [ -f \"$SLOPGATE_ROOT/.slop-gate/config.mjs\" ]; then\n\
+            node /old/engine/bin/slop-gate --staged --config \"$SLOPGATE_ROOT/.slop-gate/config.mjs\" || exit 1\n\
+            fi\n\
+            # slop-gate-hook v1 END\n\
+            exec \"$@\"\n";
+        let rendered = render_hook_content(existing);
+        assert!(
+            !rendered.contains("slop-gate-hook"),
+            "legacy hyphen marker must be stripped: {rendered}"
+        );
+        assert!(
+            !rendered.contains("config.mjs"),
+            "legacy .mjs invocation must be removed: {rendered}"
+        );
+        assert_eq!(marker_count(&rendered, MARKER_BEGIN), 1);
+        assert_eq!(marker_count(&rendered, MARKER_END), 1);
+        assert_fail_closed(&rendered);
+        assert_eq!(
+            rendered,
+            render_hook_content(&rendered),
+            "second pass must be idempotent"
+        );
+    }
+
+    #[test]
+    fn render_dedupes_coexisting_legacy_and_current_blocks() {
+        // The user-reported state: legacy block left in place, current block appended
+        // after it ("my block sits after it"). Re-install must leave exactly one block.
+        let existing = format!(
+            "#!/usr/bin/env bash\n\
+             # slop-gate-hook v1 BEGIN\n\
+             legacy stuff || exit 1\n\
+             # slop-gate-hook v1 END\n\
+             {MARKER_BEGIN}\n\
+             current ungated noop\n\
+             {MARKER_END}\n"
+        );
+        let rendered = render_hook_content(&existing);
+        assert!(
+            !rendered.contains("legacy stuff"),
+            "legacy block must be removed: {rendered}"
+        );
         assert_eq!(marker_count(&rendered, MARKER_BEGIN), 1);
         assert_eq!(marker_count(&rendered, MARKER_END), 1);
         assert_fail_closed(&rendered);

@@ -11,6 +11,7 @@ const namePlaceholder = 1;
 // ts-suppress SHOULD match @ts-* only (not eslint-disable):
 // @ts-ignore
 /* eslint-disable zync/no-raw-html-in-pages */
+// changed from foo to bar
 function bad(el: HTMLElement) { el.innerHTML = '<b>hi</b>'; }
 // live-secrets canary:
 const _sk = "sk_live_aaaaaaaaaaaa";
