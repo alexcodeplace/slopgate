@@ -5,3 +5,6 @@ message: Empty catch block swallows error silently
 note: '{"severity":"high","category":"convention","resolution":"Handle or rethrow. Minimum: log with context (console.error). Comment-only bodies count as empty."}'
 rule:
   pattern: 'try { $A } catch ($E) {}'
+ignores:
+  - '**/*.test.ts'
+  - '**/*.test.tsx'

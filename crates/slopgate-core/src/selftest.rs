@@ -25,15 +25,15 @@ fn regex_test(pattern: &str, flags: &str, text: &str) -> Result<bool, String> {
     Ok(re.is_match(text).unwrap_or(false))
 }
 
-fn baseline_ast_dir(repo_root: &str) -> String {
-    Path::new(repo_root)
+fn baseline_ast_dir() -> String {
+    crate::init::run::engine_root()
         .join("rules/baseline/ast")
         .to_string_lossy()
         .into_owned()
 }
 
-fn checker_fixtures_dir(repo_root: &str) -> PathBuf {
-    Path::new(repo_root).join("rules/baseline/fixtures/checker-outputs")
+fn checker_fixtures_dir() -> PathBuf {
+    crate::init::run::engine_root().join("rules/baseline/fixtures/checker-outputs")
 }
 
 fn stringify_tsc_output(errors: &[TscError]) -> String {
@@ -268,7 +268,7 @@ pub fn run_self_test(config: &ResolvedConfig) -> i32 {
         ));
     }
 
-    let baseline_ast = baseline_ast_dir(&config.repo_root);
+    let baseline_ast = baseline_ast_dir();
     let project_ast_dirs: Vec<&str> = config
         .ast_rule_dirs
         .iter()
@@ -326,7 +326,7 @@ pub fn run_self_test(config: &ResolvedConfig) -> i32 {
         }
     }
 
-    let fix_dir = checker_fixtures_dir(&config.repo_root);
+    let fix_dir = checker_fixtures_dir();
     for f in PARSER_FIXTURES {
         let in_path = fix_dir.join(f.input);
         let exp_path = fix_dir.join(f.expected);

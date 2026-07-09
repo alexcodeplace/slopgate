@@ -225,10 +225,7 @@ fn run_ast_grep_scan_in(
             } else {
                 files
                     .iter()
-                    .filter(|f| {
-                        (f.ends_with(".ts") || f.ends_with(".tsx"))
-                            && !crate::enumerate::is_test_file(f)
-                    })
+                    .filter(|f| f.ends_with(".ts") || f.ends_with(".tsx"))
                     .cloned()
                     .collect()
             }
@@ -602,13 +599,19 @@ mod tests {
     }
 
     #[test]
-    fn run_scan_test_files_filtered_to_empty() {
+    fn run_scan_test_files_are_scanned() {
         let dir = TempDir::new().unwrap();
         let rule_dir = dir.path().join("rules/ast");
         fs::create_dir_all(&rule_dir).unwrap();
         let bin_dir = dir.path().join("node_modules/.bin");
         fs::create_dir_all(&bin_dir).unwrap();
-        fs::write(bin_dir.join("ast-grep"), "#!/bin/sh\n").unwrap();
+        let stub = bin_dir.join("ast-grep");
+        fs::write(&stub, "#!/bin/sh\necho '[]'\n").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
+        }
 
         let config = ResolvedConfig {
             repo_root: dir.path().to_string_lossy().into_owned(),

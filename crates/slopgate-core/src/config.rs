@@ -82,11 +82,13 @@ fn git_root(from_dir: &Path) -> Option<PathBuf> {
 
 fn resolve_path(config_dir: &Path, rel: &str) -> PathBuf {
     let p = Path::new(rel);
-    if p.is_absolute() {
+    let joined = if p.is_absolute() {
         p.to_path_buf()
     } else {
         config_dir.join(p)
-    }
+    };
+    // lexically drop `.` components — an embedded `/./` breaks ast-grep glob matching
+    joined.components().collect()
 }
 
 fn path_to_string(p: PathBuf) -> String {
@@ -276,7 +278,8 @@ fn resolve_inner(
     }
     let patterns: Vec<Pattern> = by_id.into_values().collect();
 
-    let mut ast_rule_dirs = vec![repo_root.join("rules/baseline/ast")];
+    let engine = crate::init::run::engine_root();
+    let mut ast_rule_dirs = vec![engine.join("rules/baseline/ast")];
     if let Some(ast_rules) = &raw.ast_rules {
         let abs = resolve_path(&config_dir, ast_rules);
         if abs.is_dir() {
@@ -284,7 +287,7 @@ fn resolve_inner(
         }
     }
     if ux_enabled_ast {
-        ast_rule_dirs.push(repo_root.join("rules/ux/ast"));
+        ast_rule_dirs.push(engine.join("rules/ux/ast"));
     }
 
     let checkers = process_checkers(raw.checkers);
@@ -329,7 +332,7 @@ fn resolve_inner(
         .map(|s| path_to_string(resolve_path(&config_dir, s)))
         .unwrap_or_else(|| path_to_string(config_dir.join("suppressions.json")));
 
-    let mut fixtures_dirs = vec![path_to_string(repo_root.join("rules/baseline/fixtures"))];
+    let mut fixtures_dirs = vec![path_to_string(engine.join("rules/baseline/fixtures"))];
     if let Some(fixtures) = &raw.fixtures {
         fixtures_dirs.push(path_to_string(resolve_path(&config_dir, fixtures)));
     }
