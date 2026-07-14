@@ -23,6 +23,7 @@
 import { mkdirSync, copyFileSync, writeFileSync, readFileSync, existsSync, chmodSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { spawnSync } from 'node:child_process';
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -65,6 +66,25 @@ function stage(key) {
   console.log(`staged vendor/${p.key}/${bin}`);
 }
 
+function smoke(key) {
+  const p = PLATFORMS.find((x) => x.key === key);
+  if (!p) {
+    console.error(`error: unknown platform "${key}". known: ${PLATFORMS.map((x) => x.key).join(', ')}`);
+    process.exit(1);
+  }
+  const bin = join(REPO, 'vendor', p.key, binName(p));
+  if (!existsSync(bin)) {
+    console.error(`error: staged binary not found: ${bin}`);
+    process.exit(1);
+  }
+  const result = spawnSync(bin, ['--version'], { stdio: 'inherit' });
+  if (result.error) {
+    console.error(`error: staged binary failed to execute: ${result.error.message}`);
+    process.exit(1);
+  }
+  process.exit(result.status ?? 1);
+}
+
 function setVersion(version) {
   if (!version || !/^\d+\.\d+\.\d+/.test(version)) {
     console.error('error: --set-version <x.y.z> required');
@@ -84,7 +104,9 @@ if (cmd === '--stage') {
   setVersion(arg('--set-version'));
 } else if (cmd === '--list-matrix') {
   console.log(JSON.stringify({ include: PLATFORMS }));
+} else if (cmd === '--smoke') {
+  smoke(arg('--smoke'));
 } else {
-  console.error('usage: build-npm-packages.mjs (--stage <key> | --set-version <x.y.z> | --list-matrix)');
+  console.error('usage: build-npm-packages.mjs (--stage <key> | --smoke <key> | --set-version <x.y.z> | --list-matrix)');
   process.exit(1);
 }

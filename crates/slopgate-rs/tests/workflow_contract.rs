@@ -17,13 +17,15 @@ fn reusable_workflow_rejects_fork_prs_and_runs_full_chain() {
 }
 
 #[test]
-fn release_smokes_native_launcher_before_upload() {
+fn release_smokes_staged_native_binary_before_upload() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let workflow = fs::read_to_string(root.join(".github/workflows/release.yml")).unwrap();
     let stage = workflow
         .find("node scripts/build-npm-packages.mjs --stage")
         .unwrap();
-    let smoke = workflow.find("node bin/slopgate --version").unwrap();
+    let smoke = workflow
+        .find("node scripts/build-npm-packages.mjs --smoke")
+        .unwrap();
     let upload = workflow.find("actions/upload-artifact@v7").unwrap();
     assert!(stage < smoke && smoke < upload);
 }

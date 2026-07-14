@@ -55,8 +55,8 @@ jobs:
       - name: Stage binary into vendor/
         run: node scripts/build-npm-packages.mjs --stage "${{ matrix.key }}"
 
-      - name: Smoke native launcher
-        run: node bin/slopgate --version
+      - name: Smoke staged native binary
+        run: node scripts/build-npm-packages.mjs --smoke "${{ matrix.key }}"
 
       - uses: actions/upload-artifact@v7
         with:
