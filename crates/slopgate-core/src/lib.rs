@@ -6,6 +6,7 @@ pub mod enumerate;
 pub mod error;
 pub mod gate;
 pub mod glob;
+pub mod harvest;
 pub mod hash;
 pub mod help;
 pub mod init;

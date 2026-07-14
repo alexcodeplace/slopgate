@@ -1,0 +1,30 @@
+name: Slopgate PR Gate
+on:
+  workflow_call:
+    inputs:
+      slopgate-version:
+        required: false
+        type: string
+        default: 0.2.0
+      runner-json:
+        required: false
+        type: string
+        default: '["self-hosted"]'
+jobs:
+  slopgate:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ${{ fromJSON(inputs.runner-json) }}
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Install pinned slopgate
+        run: npm install --global "@alexcodeplace/slopgate@${{ inputs.slopgate-version }}"
+      - name: Verify rule engines
+        run: slopgate --self-test --config .slopgate/config.toml
+      - name: Enforce twice-found rule harvesting
+        run: slopgate harvest --check --config .slopgate/config.toml
+      - name: Full-repository immutable gate
+        run: slopgate scan --scope repo --tier commit --format github --config .slopgate/config.toml

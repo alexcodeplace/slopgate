@@ -2,6 +2,7 @@ use serde_json::Value;
 use slopgate_core::audit::run::run_audit;
 use slopgate_core::config::resolve_config;
 use slopgate_core::gate::{run_gate, snapshot_violations, Mode, Tier};
+use slopgate_core::harvest::{check as check_harvest, record as record_defect, DefectRecord};
 use slopgate_core::help::HELP_TEXT;
 use slopgate_core::init::run::{engine_root, run_init_io};
 use slopgate_core::install::agent_hooks::{
@@ -155,7 +156,7 @@ fn require_config(args: &[String], stderr: &mut dyn Write) -> ConfigResult {
         Ok(config) => ConfigResult::Ok(Box::new(config)),
         Err(e) => {
             write_top_level_err(stderr, &e);
-            ConfigResult::Exit(1)
+            ConfigResult::Exit(2)
         }
     }
 }
@@ -251,8 +252,8 @@ fn dispatch(
             ConfigResult::Ok(c) => c,
             ConfigResult::Exit(code) => return Ok(code),
         };
-        let result = install_pre_commit_hook(Path::new(&config.repo_root))
-            .map_err(|e| e.to_string())?;
+        let result =
+            install_pre_commit_hook(Path::new(&config.repo_root)).map_err(|e| e.to_string())?;
         writeln_stdout(
             stdout,
             &format!(
@@ -552,6 +553,78 @@ fn dispatch(
         return Ok(0);
     }
 
+    if has(args, "defect") {
+        if !args.windows(2).any(|w| w == ["defect", "record"]) {
+            write_slopgate_err(stderr, "slopgate: defect usage: defect record --class <id> --file <path> --line <n> --source <name> [--fingerprint <id>]");
+            return Ok(2);
+        }
+        let config = match require_config(args, stderr) {
+            ConfigResult::Ok(c) => c,
+            ConfigResult::Exit(code) => return Ok(code),
+        };
+        let Some(class) = val_of(args, "--class") else {
+            write_slopgate_err(stderr, "slopgate: --class required");
+            return Ok(2);
+        };
+        let Some(file) = val_of(args, "--file") else {
+            write_slopgate_err(stderr, "slopgate: --file required");
+            return Ok(2);
+        };
+        let Some(source) = val_of(args, "--source") else {
+            write_slopgate_err(stderr, "slopgate: --source required");
+            return Ok(2);
+        };
+        let line = match val_of(args, "--line").and_then(|v| v.parse::<u32>().ok()) {
+            Some(v) if v > 0 => v,
+            _ => {
+                write_slopgate_err(stderr, "slopgate: --line must be a positive integer");
+                return Ok(2);
+            }
+        };
+        record_defect(
+            &config,
+            &DefectRecord {
+                class: class.into(),
+                file: file.into(),
+                line,
+                source: source.into(),
+                fingerprint: val_of(args, "--fingerprint").map(str::to_string),
+            },
+        )?;
+        writeln_stdout(
+            stdout,
+            &format!("slopgate: defect recorded — {class} {file}:{line}"),
+        );
+        return Ok(0);
+    }
+
+    if has(args, "harvest") {
+        if !has(args, "--check") {
+            write_slopgate_err(stderr, "slopgate: harvest requires --check");
+            return Ok(2);
+        }
+        let config = match require_config(args, stderr) {
+            ConfigResult::Ok(c) => c,
+            ConfigResult::Exit(code) => return Ok(code),
+        };
+        match check_harvest(&config) {
+            Ok(unmet) if unmet.is_empty() => {
+                writeln_stdout(stdout, "slopgate: harvest clean");
+                return Ok(0);
+            }
+            Ok(unmet) => {
+                for class in unmet {
+                    write_slopgate_err(stderr, &format!("RULE_REQUIRED: {class} found twice; add AST rule plus valid/invalid fixtures"));
+                }
+                return Ok(1);
+            }
+            Err(e) => {
+                write_slopgate_err(stderr, &format!("slopgate: {e}"));
+                return Ok(2);
+            }
+        }
+    }
+
     let config = match require_config(args, stderr) {
         ConfigResult::Ok(c) => c,
         ConfigResult::Exit(code) => return Ok(code),
@@ -570,6 +643,63 @@ fn dispatch(
             return Ok(2);
         }
     };
+
+    if has(args, "scan") {
+        if val_of(args, "--scope") != Some("repo") {
+            write_slopgate_err(stderr, "slopgate: scan requires --scope repo");
+            return Ok(2);
+        }
+        let format = val_of(args, "--format").unwrap_or("human");
+        if !["human", "json", "github"].contains(&format) {
+            write_slopgate_err(stderr, "slopgate: --format must be human|json|github");
+            return Ok(2);
+        }
+        if format == "human" {
+            return Ok(run_gate(Mode::Full, &config, tier, None).code);
+        }
+        let mut captured = std::io::Cursor::new(Vec::new());
+        let mut sink = slopgate_core::gate::GateStderr {
+            writer: &mut captured,
+        };
+        let result =
+            slopgate_core::gate::run_gate_with_stderr(Mode::Full, &config, tier, None, &mut sink);
+        let diagnostics = String::from_utf8_lossy(captured.get_ref());
+        let infra_failed = ["binary not found", "skipped:", " crashed:", "timed out"]
+            .iter()
+            .any(|marker| diagnostics.contains(marker));
+        let exit_code = if infra_failed { 2 } else { result.code };
+        if format == "json" {
+            let status = if infra_failed {
+                "error"
+            } else if result.code == 0 {
+                "clean"
+            } else {
+                "violations"
+            };
+            writeln_stdout(stdout, &serde_json::json!({"schemaVersion":1,"status":status,"exitCode":exit_code,"violations":result.violations}).to_string());
+        } else {
+            if infra_failed {
+                writeln_stdout(
+                    stdout,
+                    "::error title=slopgate/infrastructure::required scanner unavailable or failed",
+                );
+            }
+            for v in &result.violations {
+                let msg = format!("{}: {} Fix: {}", v.id, v.text, v.resolution)
+                    .replace('%', "%25")
+                    .replace('\r', "%0D")
+                    .replace('\n', "%0A");
+                writeln_stdout(
+                    stdout,
+                    &format!(
+                        "::error file={},line={},title=slopgate/{}::{msg}",
+                        v.file, v.line, v.id
+                    ),
+                );
+            }
+        }
+        return Ok(exit_code);
+    }
 
     if has(args, "--staged") {
         let result = run_gate(Mode::Staged, &config, tier, None);
@@ -683,6 +813,54 @@ mod tests {
         args.extend(["--file".into(), "src/bad.ts".into()]);
         let (code, _, _) = run_capture(args);
         assert_eq!(code, 1);
+    }
+
+    #[test]
+    fn full_scan_json_has_stable_contract() {
+        let dir = setup_tmp_repo();
+        fs::write(dir.path().join("src/bad.ts"), "const x = foo as any;\n").unwrap();
+        let mut args = base_args(dir.path());
+        args.extend([
+            "scan".into(),
+            "--scope".into(),
+            "repo".into(),
+            "--tier".into(),
+            "commit".into(),
+            "--format".into(),
+            "json".into(),
+        ]);
+        let (code, out, _) = run_capture(args);
+        assert!(code == 1 || code == 2);
+        let value: Value = serde_json::from_str(out.trim()).unwrap();
+        assert_eq!(value["schemaVersion"], 1);
+        assert_eq!(value["exitCode"], code);
+        assert_eq!(value["violations"][0]["id"], "as-any-cast");
+    }
+
+    #[test]
+    fn harvest_blocks_second_distinct_defect() {
+        let dir = setup_tmp_repo();
+        for line in [1, 2] {
+            let mut args = base_args(dir.path());
+            args.extend([
+                "defect".into(),
+                "record".into(),
+                "--class".into(),
+                "repeat-bug".into(),
+                "--file".into(),
+                "src/a.ts".into(),
+                "--line".into(),
+                line.to_string(),
+                "--source".into(),
+                "review".into(),
+            ]);
+            assert_eq!(run_capture(args).0, 0);
+        }
+        let mut args = base_args(dir.path());
+        args.extend(["harvest".into(), "--check".into()]);
+        let (code, _, err) = run_capture(args);
+        assert_eq!(code, 1);
+        assert!(err.contains("RULE_REQUIRED: repeat-bug"));
     }
 
     #[test]

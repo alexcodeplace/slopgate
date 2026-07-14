@@ -93,6 +93,28 @@ slopgate baseline --prune --config .slopgate/config.toml
 slopgate --self-test --config "$(npm root -g)/slopgate/rules/baseline/selftest.config.toml"
 ```
 
+### Run immutable full-repository CI gate:
+```bash
+slopgate scan --scope repo --tier commit --format github --config .slopgate/config.toml
+```
+
+### Record reviewer defects and enforce rule harvesting:
+```bash
+slopgate defect record --class missing-button-type --file src/app.tsx --line 42 --source code-review --config .slopgate/config.toml
+slopgate harvest --check --config .slopgate/config.toml
+```
+
+Second distinct occurrence requires `.slopgate/rules/ast/<class>.yml` plus `.slopgate/fixtures/<class>.invalid.ts[x]` and `<class>.valid.ts[x]`. `--self-test` proves rule fires on configured fixtures.
+
+### Reusable GitHub gate:
+```yaml
+jobs:
+  slopgate:
+    uses: alexcodeplace/slopgate/.github/workflows/slopgate.yml@v1
+```
+
+Self-hosted jobs reject fork pull requests before checkout. Use repository-owned branches or isolated disposable runners for untrusted forks.
+
 ### Install or reinstall hooks:
 ```bash
 slopgate install-hooks --config .slopgate/config.toml
@@ -701,12 +723,10 @@ Tool crash / timeout → `⚠ skipped: <id> (<reason>)` warning, gate continues 
 
 - **Git-only** — no other VCS support
 - **No auto-fix** — violations are reported, not automatically corrected
-- **No CI integration yet** — hooks are local and Claude Code only; CI layer is future work
 - **`slopgate audit` command** — planned for v2 (non-gating architecture-health report: hotspots, module shape, co-change coupling, ratchet progress tracking)
 - **Embeddings-based semantic duplicate detection** — planned, not in v1
 - **API-surface diff gate** — track breaking changes to public exports (future)
 - **LLM-judge skill** — on-demand deep review of architectural debt (separate sub-project)
-- **Rule harvesting** — auto-generate rules from repeated violations (separate sub-project)
 
 ---
 
