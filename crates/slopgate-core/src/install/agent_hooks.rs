@@ -116,23 +116,34 @@ pub fn agent_detected(agent: &AgentDef) -> bool {
     agent.commands.iter().any(|cmd| which(cmd))
 }
 
-fn hook_paths(engine_root: &Path) -> (String, String, String) {
-    let commit = engine_root.join("hooks/commit-hook.sh");
-    let edit = engine_root.join("hooks/edit-hook.sh");
-    let session = engine_root.join("hooks/session-start.sh");
-    (
-        commit.to_string_lossy().into_owned(),
-        edit.to_string_lossy().into_owned(),
-        session.to_string_lossy().into_owned(),
-    )
+/// The canonical slopgate hook set: (event, matcher, command path).
+fn required_hook_entries(engine_root: &Path) -> Vec<(&'static str, Option<&'static str>, String)> {
+    let path = |name: &str| {
+        engine_root
+            .join("hooks")
+            .join(name)
+            .to_string_lossy()
+            .into_owned()
+    };
+    vec![
+        ("SessionStart", None, path("session-start.sh")),
+        ("PreToolUse", Some("Bash"), path("commit-hook.sh")),
+        (
+            "PreToolUse",
+            Some("Bash|Edit|Write"),
+            path("baseline-guard.sh"),
+        ),
+        ("PostToolUse", Some("Edit|Write"), path("edit-hook.sh")),
+    ]
 }
 
-/// Path suffixes of the three hook scripts slopgate installs. Used to recognize a
+/// Path suffixes of the hook scripts slopgate installs. Used to recognize a
 /// slopgate hook by *identity* regardless of which install root wrote it.
-const SLOPGATE_HOOK_SUFFIXES: [&str; 3] = [
+const SLOPGATE_HOOK_SUFFIXES: [&str; 4] = [
     "hooks/commit-hook.sh",
     "hooks/edit-hook.sh",
     "hooks/session-start.sh",
+    "hooks/baseline-guard.sh",
 ];
 
 /// True when `cmd` is one of slopgate's installed hooks.
@@ -299,7 +310,7 @@ fn write_json_pretty(path: &Path, root: &Value) -> Result<(), SlopError> {
 
 /// Idempotently merge slopgate hooks into a claude-format hooks JSON file.
 pub fn merge_hooks(file_path: &Path, engine_root: &Path) -> Result<MergeResult, SlopError> {
-    let (commit, edit, session) = hook_paths(engine_root);
+    let required = required_hook_entries(engine_root);
     let existed = file_path.is_file();
     let mut root = if existed {
         let raw = fs::read_to_string(file_path)
@@ -326,14 +337,15 @@ pub fn merge_hooks(file_path: &Path, engine_root: &Path) -> Result<MergeResult, 
     // any canonical entry that is missing. Without the prune, re-running init
     // stacks a fresh entry beside every prior install root (dev checkout + npm),
     // and the hooks double-fire forever (the dedup-by-exact-path weakness).
-    let keep = [commit.as_str(), edit.as_str(), session.as_str()];
+    let keep: Vec<&str> = required.iter().map(|(_, _, cmd)| cmd.as_str()).collect();
     let pruned = strip_slopgate_hooks(&mut root, engine_root, &keep);
 
-    let added_session = ensure_hook_entry(&mut root, "SessionStart", None, &session);
-    let added_pre = ensure_hook_entry(&mut root, "PreToolUse", Some("Bash"), &commit);
-    let added_post = ensure_hook_entry(&mut root, "PostToolUse", Some("Edit|Write"), &edit);
+    let mut added_any = false;
+    for (event, matcher, command) in &required {
+        added_any |= ensure_hook_entry(&mut root, event, *matcher, command);
+    }
 
-    if !pruned && !added_session && !added_pre && !added_post {
+    if !pruned && !added_any {
         return Ok(MergeResult {
             action: "already-present",
             path: file_path.to_path_buf(),
@@ -398,7 +410,7 @@ pub fn remove_hooks(file_path: &Path, engine_root: &Path) -> Result<RemoveResult
     })
 }
 
-/// Check how many of the 3 slopgate hooks are present.
+/// Check how many of the slopgate hooks are present.
 pub fn check_status(file_path: &Path, engine_root: &Path) -> &'static str {
     if !file_path.is_file() {
         return "not-installed";
@@ -417,42 +429,23 @@ pub fn check_status(file_path: &Path, engine_root: &Path) -> &'static str {
         return "not-installed";
     };
 
-    let (commit, edit, session) = hook_paths(engine_root);
-
-    let session_ok = h
-        .get("SessionStart")
-        .and_then(|v| v.as_array())
-        .is_some_and(|arr| {
-            arr.iter().any(|e| {
-                e.get("hooks")
-                    .and_then(|hs| hs.as_array())
-                    .is_some_and(|hs| hs.iter().any(|x| x.get("command") == Some(&json!(session))))
+    let required = required_hook_entries(engine_root);
+    let n = required
+        .iter()
+        .filter(|(event, _, command)| {
+            h.get(event).and_then(|v| v.as_array()).is_some_and(|arr| {
+                arr.iter().any(|e| {
+                    e.get("hooks")
+                        .and_then(|hs| hs.as_array())
+                        .is_some_and(|hs| {
+                            hs.iter().any(|x| x.get("command") == Some(&json!(command)))
+                        })
+                })
             })
-        });
-    let pre_ok = h
-        .get("PreToolUse")
-        .and_then(|v| v.as_array())
-        .is_some_and(|arr| {
-            arr.iter().any(|e| {
-                e.get("hooks")
-                    .and_then(|hs| hs.as_array())
-                    .is_some_and(|hs| hs.iter().any(|x| x.get("command") == Some(&json!(commit))))
-            })
-        });
-    let post_ok = h
-        .get("PostToolUse")
-        .and_then(|v| v.as_array())
-        .is_some_and(|arr| {
-            arr.iter().any(|e| {
-                e.get("hooks")
-                    .and_then(|hs| hs.as_array())
-                    .is_some_and(|hs| hs.iter().any(|x| x.get("command") == Some(&json!(edit))))
-            })
-        });
-
-    let n = [session_ok, pre_ok, post_ok].iter().filter(|&&b| b).count();
+        })
+        .count();
     match n {
-        3 => "installed",
+        n if n == required.len() => "installed",
         0 => "not-installed",
         _ => "partial",
     }
@@ -562,17 +555,31 @@ mod tests {
         fs::write(dir.path().join("hooks/commit-hook.sh"), "").unwrap();
         fs::write(dir.path().join("hooks/edit-hook.sh"), "").unwrap();
         fs::write(dir.path().join("hooks/session-start.sh"), "").unwrap();
+        fs::write(dir.path().join("hooks/baseline-guard.sh"), "").unwrap();
         dir
     }
 
-    fn hook_cmds(engine: &Path) -> (String, String, String) {
-        hook_paths(engine)
+    /// (commit, edit, session, guard) command paths for `engine`.
+    fn hook_cmds(engine: &Path) -> (String, String, String, String) {
+        let find = |suffix: &str| {
+            required_hook_entries(engine)
+                .into_iter()
+                .map(|(_, _, cmd)| cmd)
+                .find(|cmd| cmd.ends_with(suffix))
+                .unwrap()
+        };
+        (
+            find("commit-hook.sh"),
+            find("edit-hook.sh"),
+            find("session-start.sh"),
+            find("baseline-guard.sh"),
+        )
     }
 
     #[test]
     fn merge_creates_fresh_settings_with_all_hooks() {
         let engine = setup_engine();
-        let (commit, edit, session) = hook_cmds(engine.path());
+        let (commit, edit, session, guard) = hook_cmds(engine.path());
         let settings = tempfile::tempdir().unwrap();
         let file = settings.path().join("settings.json");
 
@@ -592,6 +599,11 @@ mod tests {
             .unwrap()
             .iter()
             .any(|e| e["matcher"] == "Bash" && e["hooks"][0]["command"] == commit));
+        assert!(hooks["PreToolUse"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|e| e["matcher"] == "Bash|Edit|Write" && e["hooks"][0]["command"] == guard));
         assert!(hooks["PostToolUse"]
             .as_array()
             .unwrap()
@@ -621,7 +633,7 @@ mod tests {
         // hook. Re-merge must prune the foreign-root slopgate entry, keep exactly
         // one canonical entry per event, and preserve the unrelated hook.
         let engine = setup_engine();
-        let (commit, _edit, session) = hook_cmds(engine.path());
+        let (commit, _edit, session, _guard) = hook_cmds(engine.path());
         let settings = tempfile::tempdir().unwrap();
         let file = settings.path().join("settings.json");
 
@@ -703,7 +715,7 @@ mod tests {
     #[test]
     fn remove_strips_slopgate_hooks_only() {
         let engine = setup_engine();
-        let (commit, edit, session) = hook_cmds(engine.path());
+        let (commit, edit, session, guard) = hook_cmds(engine.path());
         let settings = tempfile::tempdir().unwrap();
         let file = settings.path().join("settings.json");
 
@@ -713,7 +725,7 @@ mod tests {
 
         let root: Value = serde_json::from_str(&fs::read_to_string(&file).unwrap()).unwrap();
         assert!(root.get("hooks").is_none());
-        let _ = (commit, edit, session);
+        let _ = (commit, edit, session, guard);
     }
 
     #[test]
@@ -750,7 +762,7 @@ mod tests {
     #[test]
     fn check_status_installed_partial_and_not_installed() {
         let engine = setup_engine();
-        let (commit, edit, session) = hook_cmds(engine.path());
+        let (commit, edit, session, _guard) = hook_cmds(engine.path());
         let settings = tempfile::tempdir().unwrap();
         let file = settings.path().join("settings.json");
 
