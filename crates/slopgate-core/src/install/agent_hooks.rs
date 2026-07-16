@@ -651,7 +651,11 @@ mod tests {
                 ]
             }
         });
-        fs::write(&file, format!("{}\n", serde_json::to_string_pretty(&seeded).unwrap())).unwrap();
+        fs::write(
+            &file,
+            format!("{}\n", serde_json::to_string_pretty(&seeded).unwrap()),
+        )
+        .unwrap();
 
         let result = merge_hooks(&file, engine.path()).unwrap();
         assert_eq!(result.action, "merged");

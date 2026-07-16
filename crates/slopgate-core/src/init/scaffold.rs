@@ -177,8 +177,8 @@ pub fn convention_sources_json(sources: &crate::init::detect_stack::ConventionSo
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
     use serde_json::json;
+    use std::fs;
     use tempfile::TempDir;
 
     #[test]
