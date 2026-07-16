@@ -49,8 +49,7 @@ fn resolve_ast_grep_bin_inner(
     repo_root: &Path,
     path_env: Option<&OsStr>,
 ) -> (Option<PathBuf>, String) {
-    let local = repo_root.join("node_modules/.bin/ast-grep");
-    if local.exists() {
+    if let Some(local) = resolve_local_bin(repo_root) {
         return (Some(local), "local".to_string());
     }
 
@@ -66,6 +65,41 @@ fn resolve_ast_grep_bin_inner(
         }
         _ => (None, String::new()),
     }
+}
+
+#[cfg(not(windows))]
+fn resolve_local_bin(repo_root: &Path) -> Option<PathBuf> {
+    let local = repo_root.join("node_modules/.bin/ast-grep");
+    local.exists().then_some(local)
+}
+
+/// Windows: `node_modules/.bin/ast-grep` is a POSIX sh shim that CreateProcess
+/// rejects (os error 193). Prefer the platform package's `ast-grep.exe` —
+/// a sibling of the resolved `@ast-grep/cli` dir under both npm hoisting and
+/// pnpm's virtual store — then the `.cmd` shim, which std spawns via cmd.exe.
+#[cfg(windows)]
+fn resolve_local_bin(repo_root: &Path) -> Option<PathBuf> {
+    let arch = match std::env::consts::ARCH {
+        "x86_64" => Some("x64"),
+        "aarch64" => Some("arm64"),
+        "x86" => Some("ia32"),
+        _ => None,
+    };
+    if let Some(arch) = arch {
+        let cli = repo_root.join("node_modules/@ast-grep/cli");
+        if let Ok(real) = fs::canonicalize(&cli) {
+            if let Some(scope) = real.parent() {
+                let exe = scope
+                    .join(format!("cli-win32-{arch}-msvc"))
+                    .join("ast-grep.exe");
+                if exe.exists() {
+                    return Some(exe);
+                }
+            }
+        }
+    }
+    let shim = repo_root.join("node_modules/.bin/ast-grep.cmd");
+    shim.exists().then_some(shim)
 }
 
 /// Map ast-grep `--json` match array to engine violations (`engine: "ast"`).
@@ -343,6 +377,25 @@ mod tests {
     use std::fs;
     use tempfile::TempDir;
 
+    /// Write a runnable `ast-grep` stub that prints `stdout`: `.cmd` batch on
+    /// Windows (spawnable), executable sh script elsewhere.
+    fn write_stub(bin_dir: &Path, stdout: &str) -> PathBuf {
+        #[cfg(windows)]
+        {
+            let stub = bin_dir.join("ast-grep.cmd");
+            fs::write(&stub, format!("@echo off\r\necho {stdout}\r\n")).unwrap();
+            stub
+        }
+        #[cfg(not(windows))]
+        {
+            let stub = bin_dir.join("ast-grep");
+            fs::write(&stub, format!("#!/bin/sh\necho '{stdout}'\n")).unwrap();
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
+            stub
+        }
+    }
+
     #[test]
     fn resolve_none_when_absent() {
         let dir = TempDir::new().unwrap();
@@ -357,11 +410,36 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let bin_dir = dir.path().join("node_modules/.bin");
         fs::create_dir_all(&bin_dir).unwrap();
-        let stub = bin_dir.join("ast-grep");
-        fs::write(&stub, "#!/bin/sh\n").unwrap();
+        let stub = write_stub(&bin_dir, "[]");
 
         let (bin, source) = resolve_ast_grep_bin(dir.path());
         assert_eq!(bin, Some(stub));
+        assert_eq!(source, "local");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn resolve_prefers_platform_exe_on_windows() {
+        let arch = match std::env::consts::ARCH {
+            "x86_64" => "x64",
+            "aarch64" => "arm64",
+            "x86" => "ia32",
+            _ => return,
+        };
+        let dir = TempDir::new().unwrap();
+        let bin_dir = dir.path().join("node_modules/.bin");
+        fs::create_dir_all(&bin_dir).unwrap();
+        write_stub(&bin_dir, "[]");
+
+        let scope = dir.path().join("node_modules/@ast-grep");
+        fs::create_dir_all(scope.join("cli")).unwrap();
+        let exe_dir = scope.join(format!("cli-win32-{arch}-msvc"));
+        fs::create_dir_all(&exe_dir).unwrap();
+        let exe = exe_dir.join("ast-grep.exe");
+        fs::write(&exe, "").unwrap();
+
+        let (bin, source) = resolve_ast_grep_bin(dir.path());
+        assert_eq!(bin, Some(fs::canonicalize(&exe).unwrap()));
         assert_eq!(source, "local");
     }
 
@@ -523,7 +601,7 @@ mod tests {
         fs::create_dir_all(&rule_dir).unwrap();
         let bin_dir = dir.path().join("node_modules/.bin");
         fs::create_dir_all(&bin_dir).unwrap();
-        fs::write(bin_dir.join("ast-grep"), "#!/bin/sh\n").unwrap();
+        write_stub(&bin_dir, "[]");
 
         let not_a_dir = dir.path().join("blocking-tmp");
         fs::write(&not_a_dir, "x").unwrap();
@@ -566,7 +644,7 @@ mod tests {
         fs::create_dir_all(&rule_dir).unwrap();
         let bin_dir = dir.path().join("node_modules/.bin");
         fs::create_dir_all(&bin_dir).unwrap();
-        fs::write(bin_dir.join("ast-grep"), "#!/bin/sh\n").unwrap();
+        write_stub(&bin_dir, "[]");
 
         let config = ResolvedConfig {
             repo_root: dir.path().to_string_lossy().into_owned(),
@@ -605,13 +683,7 @@ mod tests {
         fs::create_dir_all(&rule_dir).unwrap();
         let bin_dir = dir.path().join("node_modules/.bin");
         fs::create_dir_all(&bin_dir).unwrap();
-        let stub = bin_dir.join("ast-grep");
-        fs::write(&stub, "#!/bin/sh\necho '[]'\n").unwrap();
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
-        }
+        write_stub(&bin_dir, "[]");
 
         let config = ResolvedConfig {
             repo_root: dir.path().to_string_lossy().into_owned(),
