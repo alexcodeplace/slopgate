@@ -530,15 +530,18 @@ mod tests {
 
     #[test]
     fn run_json_tool_invalid_json_reports_parse_error() {
+        // Run the script through `sh` rather than exec'ing the freshly written
+        // file: exec'ing it races ETXTBSY against concurrent test-thread forks.
         let dir = TempDir::new().unwrap();
         let script = dir.path().join("bad-json.sh");
-        fs::write(&script, "#!/bin/sh\necho 'not json'\n").unwrap();
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
-        }
-        let got = run_json_tool("test-tool", &script, &[], Some(dir.path()), None);
+        fs::write(&script, "echo 'not json'\n").unwrap();
+        let got = run_json_tool(
+            "test-tool",
+            Path::new("sh"),
+            &[script.to_str().unwrap()],
+            Some(dir.path()),
+            None,
+        );
         assert!(got.data.is_none());
         assert!(got.errors.iter().any(|e| e.contains("JSON parse error")));
     }
