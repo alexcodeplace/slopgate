@@ -66,14 +66,15 @@ fn strip_slopgate_blocks(existing: &str) -> String {
     // Well-formed block: BEGIN line ... matching END line, inclusive of the END
     // line's trailing newline. `(?ms)` → `.` spans newlines, `^` anchors lines;
     // `.*?` is lazy so it stops at the FIRST END marker.
-    let full =
-        Regex::new(r"(?ms)^[ \t]*# slop-?gate-hook v\d+ BEGIN.*?# slop-?gate-hook v\d+ END[^\n]*\n?")
-            .expect("static block regex");
+    let full = Regex::new(
+        r"(?ms)^[ \t]*# slop-?gate-hook v\d+ BEGIN.*?# slop-?gate-hook v\d+ END[^\n]*\n?",
+    )
+    .expect("static block regex");
     let stripped = full.replace_all(existing, "");
     // Dangling BEGIN with no matching END (corruption): drop from the BEGIN line
     // to end-of-file rather than leave a half-block behind.
-    let dangling = Regex::new(r"(?ms)^[ \t]*# slop-?gate-hook v\d+ BEGIN.*\z")
-        .expect("static dangling regex");
+    let dangling =
+        Regex::new(r"(?ms)^[ \t]*# slop-?gate-hook v\d+ BEGIN.*\z").expect("static dangling regex");
     dangling.replace(&stripped, "").into_owned()
 }
 

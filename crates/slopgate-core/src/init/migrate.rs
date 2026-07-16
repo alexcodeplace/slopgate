@@ -85,7 +85,9 @@ import('node:url')
         .arg(&abs)
         .output()
         .map_err(|e| {
-            format!("node not available to read legacy config ({e}); install Node or migrate manually")
+            format!(
+                "node not available to read legacy config ({e}); install Node or migrate manually"
+            )
         })?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -265,11 +267,21 @@ pub fn migrate_legacy_config(target_dir: &Path) -> MigrateOutcome {
 
     let export = match read_legacy_export(&legacy) {
         Ok(v) => v,
-        Err(reason) => return MigrateOutcome::Failed { from: legacy, reason },
+        Err(reason) => {
+            return MigrateOutcome::Failed {
+                from: legacy,
+                reason,
+            }
+        }
     };
     let (toml_src, dropped_rules) = match legacy_json_to_toml(&export) {
         Ok(r) => r,
-        Err(reason) => return MigrateOutcome::Failed { from: legacy, reason },
+        Err(reason) => {
+            return MigrateOutcome::Failed {
+                from: legacy,
+                reason,
+            }
+        }
     };
 
     // Prove the migrated TOML actually resolves before writing it. The legacy
@@ -341,7 +353,10 @@ mod tests {
         // The native engine has no project-rule-pack loader → all entries dropped.
         assert_eq!(
             dropped,
-            vec!["./rules/legacy.mjs".to_string(), "./rules/custom.js".to_string()]
+            vec![
+                "./rules/legacy.mjs".to_string(),
+                "./rules/custom.js".to_string()
+            ]
         );
         assert!(toml_src.contains("rules = []"));
 
@@ -402,7 +417,9 @@ mod tests {
 
         let outcome = migrate_legacy_config(root);
         match outcome {
-            MigrateOutcome::Migrated { to, dropped_rules, .. } => {
+            MigrateOutcome::Migrated {
+                to, dropped_rules, ..
+            } => {
                 assert!(to.is_file());
                 assert!(dropped_rules.is_empty());
                 let cfg = resolve_config(&to.to_string_lossy()).unwrap();

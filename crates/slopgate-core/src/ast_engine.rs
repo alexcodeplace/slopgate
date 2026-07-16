@@ -708,7 +708,10 @@ mod tests {
             ux_ast_all: Default::default(),
         };
 
-        let files = vec!["src/example.test.ts".to_string(), "src/example.test.tsx".to_string()];
+        let files = vec![
+            "src/example.test.ts".to_string(),
+            "src/example.test.tsx".to_string(),
+        ];
         let got = run_ast_grep_scan(&config, Some(&files), &AstGrepScanOpts::default());
         assert!(got.available);
         assert!(got.violations.is_empty());
