@@ -11,8 +11,8 @@
 //! this test's normalized actual output over the `*.norm` files — never to make
 //! a red test green without understanding why the output moved.
 //!
-//! Normalization is self-contained below: strip ANSI SGR sequences (`ESC [ … m`)
-//! and `<n>ms` / `<n>.<n>ms` timings.
+//! Normalization is self-contained below: strip ANSI SGR sequences (`ESC [ … m`),
+//! `<n>ms` / `<n>.<n>ms` timings, and trailing blank EOF noise.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -88,13 +88,22 @@ fn strip_ms(s: &str) -> String {
 }
 
 fn normalize(s: &str) -> String {
-    strip_ms(&strip_ansi(s))
+    let mut out = strip_ms(&strip_ansi(s));
+    while out.ends_with("\n\n") {
+        out.pop();
+    }
+    out
 }
 
 fn gate_output(repo: &Path, file: &str) -> (i32, String) {
     let out = Command::new(env!("CARGO_BIN_EXE_slopgate-rs"))
         .current_dir(repo)
-        .args(["--file", file, "--config", "rules/baseline/selftest.config.toml"])
+        .args([
+            "--file",
+            file,
+            "--config",
+            "rules/baseline/selftest.config.toml",
+        ])
         .output()
         .expect("run slopgate-rs");
     let mut combined = String::from_utf8_lossy(&out.stdout).into_owned();
@@ -105,20 +114,28 @@ fn gate_output(repo: &Path, file: &str) -> (i32, String) {
 #[test]
 fn gate_output_matches_js_oracle_golden() {
     if !ast_grep_available() {
-        eprintln!("SKIP parity_golden: ast-grep not available (AST canary parity cannot be checked)");
+        eprintln!(
+            "SKIP parity_golden: ast-grep not available (AST canary parity cannot be checked)"
+        );
         return;
     }
     let repo = repo_root();
     let golden_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden");
-    for name in ["canary", "ux-ast"] {
-        let file = format!("rules/baseline/fixtures/src/{name}.tsx");
-        let (code, raw) = gate_output(&repo, &file);
+    for (name, file) in [
+        ("canary", "rules/baseline/fixtures/src/canary.tsx"),
+        (
+            "focused-test",
+            "rules/baseline/fixtures/src/focused-test.ts",
+        ),
+        ("ux-ast", "rules/baseline/fixtures/src/ux-ast.tsx"),
+    ] {
+        let (code, raw) = gate_output(&repo, file);
         assert_eq!(code, 1, "{name}: expected exit 1 (violations present)");
         let golden = std::fs::read_to_string(golden_dir.join(format!("{name}.norm")))
             .unwrap_or_else(|e| panic!("read golden {name}.norm: {e}"));
         assert_eq!(
             normalize(&raw),
-            golden,
+            normalize(&golden),
             "{name}: gate output diverges from the frozen golden — \
              investigate WHY before re-blessing the `{name}.norm` file"
         );
