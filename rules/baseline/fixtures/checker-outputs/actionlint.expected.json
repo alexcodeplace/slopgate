@@ -1,0 +1,9 @@
+[
+  {
+    "file": ".github/workflows/ci.yml",
+    "line": 21,
+    "column": 20,
+    "kind": "expression",
+    "message": "property \"platform\" is not defined in object type {os: string}"
+  }
+]
