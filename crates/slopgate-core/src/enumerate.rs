@@ -25,7 +25,7 @@ pub struct EnumerateCtx {
 pub enum EnumerateMode<'a> {
     /// Single file: resolve path, apply root/ext/exists filters.
     File(&'a str),
-    /// Staged paths from `git diff --cached --name-only`.
+    /// Staged paths from `git diff --cached --name-only`, excluding deletions.
     Staged,
     /// Recurse all `roots`, honoring `skip_dirs` and extension filters.
     Walk,
@@ -60,7 +60,7 @@ fn list_single_file(ctx: &EnumerateCtx, file: &str) -> Vec<String> {
 
 fn list_staged(ctx: &EnumerateCtx) -> Vec<String> {
     let output = Command::new("git")
-        .args(["diff", "--cached", "--name-only"])
+        .args(["diff", "--cached", "--name-only", "--diff-filter=d"])
         .current_dir(&ctx.repo_root)
         .output();
 
@@ -291,6 +291,60 @@ mod tests {
         let mut got = list_source_files(&ctx, EnumerateMode::Staged);
         got.sort();
         assert_eq!(got, vec!["src/a/foo.test.ts", "src/a/foo.ts"]);
+    }
+
+    fn git(dir: &Path, args: &[&str]) {
+        let out = ProcCommand::new("git")
+            .args(args)
+            .current_dir(dir)
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "git {args:?} failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+
+    fn git_init_commit(dir: &Path, add: &[&str]) {
+        git(dir, &["init"]);
+        git(dir, &["config", "user.email", "t@t"]);
+        git(dir, &["config", "user.name", "t"]);
+        let mut add_args = vec!["add"];
+        add_args.extend_from_slice(add);
+        git(dir, &add_args);
+        git(dir, &["commit", "-m", "init"]);
+    }
+
+    #[test]
+    fn staged_mode_skips_deleted_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        write_tree(dir.path());
+        let ctx = fixture_ctx(dir.path());
+
+        git_init_commit(dir.path(), &["src/a/foo.ts", "src/b.tsx"]);
+        git(dir.path(), &["rm", "src/b.tsx"]);
+
+        let got = list_source_files(&ctx, EnumerateMode::Staged);
+        assert!(got.is_empty(), "staged deletion leaked into scan: {got:?}");
+    }
+
+    /// A path staged with content but removed from the working tree is still
+    /// listed: the index carries content that is about to be committed, so
+    /// dropping it here would gate nothing while reporting success.
+    #[test]
+    fn staged_mode_lists_added_path_removed_from_working_tree() {
+        let dir = tempfile::tempdir().unwrap();
+        write_tree(dir.path());
+        let ctx = fixture_ctx(dir.path());
+
+        git_init_commit(dir.path(), &["src/a/foo.ts"]);
+        fs::write(dir.path().join("src/staged-then-gone.tsx"), "// content").unwrap();
+        git(dir.path(), &["add", "src/staged-then-gone.tsx"]);
+        fs::remove_file(dir.path().join("src/staged-then-gone.tsx")).unwrap();
+
+        let got = list_source_files(&ctx, EnumerateMode::Staged);
+        assert_eq!(got, vec!["src/staged-then-gone.tsx"]);
     }
 
     #[test]
