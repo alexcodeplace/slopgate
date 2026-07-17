@@ -3,7 +3,7 @@
 # Only SessionStart receives a `model` field; mid-session /model switches are invisible.
 # Fail-open: any error leaves no file -> stats resolves model to 'unknown'.
 ROOT=$(realpath "$(git rev-parse --show-toplevel 2>/dev/null || pwd)" 2>/dev/null || git rev-parse --show-toplevel 2>/dev/null || pwd)
-exec node -e '
+exec /usr/bin/bun -e '
 const crypto = require("crypto"), fs = require("fs"), path = require("path"), os = require("os");
 const root = process.argv[1];
 let d = "";

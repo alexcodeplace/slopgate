@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Slopgate PreToolUse hook — runs --staged before a git commit. Exit 1 → commit blocked.
 TOOL_JSON=$(cat)
+# Cheap raw prefilter: a git commit always carries the substring "commit" in the payload,
+# so skip the interpreter spawn on every non-commit Bash call.
+printf '%s' "$TOOL_JSON" | grep -q 'commit' || exit 0
 CMD=$(/usr/bin/bun -e "
 let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{try{process.stdout.write(JSON.parse(d).tool_input?.command||'')}catch{process.stdout.write('')}});" <<< "$TOOL_JSON" 2>/dev/null)
 echo "$CMD" | grep -qE 'git[[:space:]]+commit' || exit 0
