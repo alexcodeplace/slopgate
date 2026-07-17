@@ -7,22 +7,22 @@
 set -euo pipefail
 INPUT=$(cat)
 
-tool_name=$(node -e "try{const j=JSON.parse(process.argv[1]);process.stdout.write(j.tool_name||'')}catch{}" "$INPUT" 2>/dev/null || echo '')
-tool_input=$(node -e "try{const j=JSON.parse(process.argv[1]);process.stdout.write(JSON.stringify(j.tool_input||{}))}catch{}" "$INPUT" 2>/dev/null || echo '{}')
+tool_name=$(/usr/bin/bun -e "try{const j=JSON.parse(process.argv[1]);process.stdout.write(j.tool_name||'')}catch{}" "$INPUT" 2>/dev/null || echo '')
+tool_input=$(/usr/bin/bun -e "try{const j=JSON.parse(process.argv[1]);process.stdout.write(JSON.stringify(j.tool_input||{}))}catch{}" "$INPUT" 2>/dev/null || echo '{}')
 
 blocked=0
 reason=''
 
 case "$tool_name" in
   Edit|Write)
-    file_path=$(node -e "try{const j=JSON.parse(process.argv[1]);process.stdout.write(j.file_path||'')}catch{}" "$tool_input" 2>/dev/null || echo '')
+    file_path=$(/usr/bin/bun -e "try{const j=JSON.parse(process.argv[1]);process.stdout.write(j.file_path||'')}catch{}" "$tool_input" 2>/dev/null || echo '')
     if echo "$file_path" | grep -qE '\.slopgate/(baseline|suppressions)\.json$'; then
       blocked=1
       reason="direct write to $file_path blocked — edit baseline/suppressions via slopgate CLI only"
     fi
     ;;
   Bash)
-    cmd=$(node -e "try{const j=JSON.parse(process.argv[1]);process.stdout.write(j.command||'')}catch{}" "$tool_input" 2>/dev/null || echo '')
+    cmd=$(/usr/bin/bun -e "try{const j=JSON.parse(process.argv[1]);process.stdout.write(j.command||'')}catch{}" "$tool_input" 2>/dev/null || echo '')
     # Block: slopgate baseline (create or --update)
     if echo "$cmd" | grep -qE '(^|[;&|[:space:]])(npx[[:space:]]+|pnpm[[:space:]]+exec[[:space:]]+|yarn[[:space:]]+)?(node[[:space:]]+[^ ]+/bin/slopgate|slopgate)[[:space:]]+baseline([[:space:]]|$)'; then
       blocked=1
@@ -40,7 +40,7 @@ if [ "$blocked" -eq 1 ]; then
   echo "⛔ SLOPGATE GUARD: $reason" >&2
   # Write bypass-attempt stats row (fail-open)
   ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
-  node -e "
+  /usr/bin/bun -e "
 const crypto=require('crypto'),fs=require('fs'),path=require('path'),os=require('os');
 const root=process.argv[1], reason=process.argv[2];
 try {
