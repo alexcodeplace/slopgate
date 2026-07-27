@@ -11,13 +11,39 @@
 //   2. <pkg>/vendor/<platform>-<arch>/slopgate-rs     (bundled prebuilt; npm-install path)
 //   3. <pkg>/target/release/slopgate-rs               (cargo build --release; dev)
 import { spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import os from 'node:os';
 
-const pkgRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
+// Re-entry guard: if a resolution bug ever routes the engine back to this shim,
+// fail closed instead of forking forever (a self-pointing $SLOPGATE_BIN froze a
+// workstation with an unbounded nice -10 spawn chain).
+if (process.env.SLOPGATE_SHIM_ACTIVE === '1') {
+  process.stderr.write(
+    'slopgate: recursive shim invocation detected (SLOPGATE_BIN points back at the slopgate launcher?) — aborting.\n',
+  );
+  process.exit(1);
+}
+process.env.SLOPGATE_SHIM_ACTIVE = '1';
+
+// Git hooks inherit the caller's nice; never let the gate outrank the desktop.
+try {
+  if (os.getPriority() < 0) os.setPriority(0);
+} catch {}
+
+const selfPath = fileURLToPath(import.meta.url);
+const pkgRoot = join(dirname(selfPath), '..');
 const binName = process.platform === 'win32' ? 'slopgate-rs.exe' : 'slopgate-rs';
 const host = `${process.platform}-${process.arch}`;
+
+const isSelf = (p) => {
+  try {
+    return realpathSync(p) === realpathSync(selfPath);
+  } catch {
+    return false;
+  }
+};
 
 const candidates = [
   process.env.SLOPGATE_BIN,
@@ -25,7 +51,7 @@ const candidates = [
   join(pkgRoot, 'target', 'release', binName),
 ].filter(Boolean);
 
-const bin = candidates.find((p) => existsSync(p));
+const bin = candidates.find((p) => existsSync(p) && !isSelf(p));
 if (!bin) {
   process.stderr.write(
     `slopgate: native engine binary not found for ${host}.\n` +
