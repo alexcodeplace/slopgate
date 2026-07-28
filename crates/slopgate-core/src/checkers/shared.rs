@@ -9,6 +9,21 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+pub fn stage_progress_line(stage: &str, event: &str, elapsed_ms: Option<u128>) -> String {
+    match elapsed_ms {
+        Some(elapsed_ms) => format!(
+            "SLOPGATE_PROGRESS stage={stage} event={event} elapsed_ms={elapsed_ms}"
+        ),
+        None => format!("SLOPGATE_PROGRESS stage={stage} event={event}"),
+    }
+}
+
+pub fn emit_stage_progress(stage: &str, event: &str, elapsed_ms: Option<u128>) {
+    if std::env::var_os("SLOPGATE_STAGE_DIAGNOSTICS").is_some() {
+        eprintln!("{}", stage_progress_line(stage, event, elapsed_ms));
+    }
+}
+
 /// Outcome of `run_tool` — mirrors the JS `{ ok, error, stdout, stderr, status }` shape.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ToolOut {

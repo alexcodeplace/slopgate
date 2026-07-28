@@ -2,7 +2,8 @@
 
 use crate::checkers::index::{CheckerRunResult, DetectResult};
 use crate::checkers::shared::{
-    ensure_cache_dir, local_bin, map_limit, run_tool, source_line, truncate_chars,
+    emit_stage_progress, ensure_cache_dir, local_bin, map_limit, run_tool, source_line,
+    truncate_chars,
 };
 use crate::config::ResolvedConfig;
 use crate::report::Violation;
@@ -163,9 +164,14 @@ pub fn run(
     let results = map_limit(
         &invocations,
         config.checker_concurrency as usize,
-        |(_, all_args)| {
+        |(rel, all_args)| {
+            let started = std::time::Instant::now();
+            let stage = format!("tsc:{rel}");
+            emit_stage_progress(&stage, "start", None);
             let arg_refs: Vec<&str> = all_args.iter().map(String::as_str).collect();
-            run_tool(&resolved.bin, &arg_refs, Some(repo), Some(timeout_ms))
+            let result = run_tool(&resolved.bin, &arg_refs, Some(repo), Some(timeout_ms));
+            emit_stage_progress(&stage, "end", Some(started.elapsed().as_millis()));
+            result
         },
     );
 

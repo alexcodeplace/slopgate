@@ -3,7 +3,7 @@
 use crate::ast_engine::{run_ast_grep_scan, AstGrepScanOpts};
 use crate::checkers::health::{is_infra_error, update_checker_health, CheckerOutcome};
 use crate::checkers::index::{Checker, CHECKERS};
-use crate::checkers::shared::{ensure_cache_dir, map_limit};
+use crate::checkers::shared::{emit_stage_progress, ensure_cache_dir, map_limit};
 use crate::config::ResolvedConfig;
 use crate::enumerate::{list_source_files, EnumerateCtx, EnumerateMode};
 use crate::hash::line_hash;
@@ -143,11 +143,18 @@ pub fn collect_violations(
     file_target: Option<&str>,
 ) -> CollectResult {
     let ctx = enumerate_ctx(config);
+    let discovery_started = Instant::now();
+    emit_stage_progress("discovery", "start", None);
     let files = match mode {
         Mode::Staged => list_source_files(&ctx, EnumerateMode::Staged),
         Mode::File => list_source_files(&ctx, EnumerateMode::File(file_target.unwrap_or(""))),
         Mode::Full => list_source_files(&ctx, EnumerateMode::Walk),
     };
+    emit_stage_progress(
+        "discovery",
+        "end",
+        Some(discovery_started.elapsed().as_millis()),
+    );
 
     let mut notices = Vec::new();
     if files.is_empty() && mode != Mode::Full {
@@ -157,14 +164,20 @@ pub fn collect_violations(
         };
     }
 
+    let regex_started = Instant::now();
+    emit_stage_progress("regex", "start", None);
     let mut violations = scan_regex(config, &files, mode == Mode::File);
+    emit_stage_progress("regex", "end", Some(regex_started.elapsed().as_millis()));
 
     let ast_files = if mode == Mode::Full {
         None
     } else {
         Some(files.as_slice())
     };
+    let ast_started = Instant::now();
+    emit_stage_progress("ast", "start", None);
     let ast = run_ast_grep_scan(config, ast_files, &AstGrepScanOpts::default());
+    emit_stage_progress("ast", "end", Some(ast_started.elapsed().as_millis()));
     if !ast.available {
         notices.push(ast.errors.join("; "));
     } else {
@@ -215,10 +228,12 @@ pub fn collect_violations(
         }
 
         let started = Instant::now();
+        emit_stage_progress("checkers", "start", None);
         let mode_label = mode_str(mode);
         let results: Vec<CheckerRunItemResult> =
             map_limit(&eligible, config.checker_concurrency as usize, |item| {
                 let t0 = Instant::now();
+                emit_stage_progress(item.checker.id, "start", None);
                 let res = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     (item.checker.run)(
                         config,
@@ -243,6 +258,11 @@ pub fn collect_violations(
                     }
                 };
                 let seconds = t0.elapsed().as_secs_f64();
+                emit_stage_progress(
+                    item.checker.id,
+                    "end",
+                    Some(t0.elapsed().as_millis()),
+                );
                 CheckerRunItemResult {
                     id: item.checker.id.to_string(),
                     res,
@@ -250,6 +270,7 @@ pub fn collect_violations(
                 }
             });
         let elapsed = started.elapsed().as_secs_f64();
+        emit_stage_progress("checkers", "end", Some(started.elapsed().as_millis()));
         if elapsed > 30.0 {
             notices.push(format!(
                 "commit-tier checkers took {:.0}s (budget ~30s) — check tsc incremental cache / disable slow checkers",
@@ -257,6 +278,8 @@ pub fn collect_violations(
             ));
         }
 
+        let aggregation_started = Instant::now();
+        emit_stage_progress("aggregation", "start", None);
         for item in results {
             for e in &item.res.errors {
                 notices.push(format!("{}: {e}", item.id));
@@ -274,6 +297,11 @@ pub fn collect_violations(
                 });
             }
         }
+        emit_stage_progress(
+            "aggregation",
+            "end",
+            Some(aggregation_started.elapsed().as_millis()),
+        );
 
         if mode == Mode::Staged {
             if let Ok(cache_dir) = ensure_cache_dir(Path::new(&config.config_dir)) {
@@ -494,6 +522,22 @@ mod tests {
         let result = f(&mut gate_stderr);
         let stderr = String::from_utf8(buf.into_inner()).unwrap();
         (result, stderr)
+    }
+
+    #[test]
+    fn stage_progress_line_has_stable_machine_format() {
+        assert_eq!(
+            crate::checkers::shared::stage_progress_line(
+                "tsc:apps/zync-app/tsconfig.json",
+                "start",
+                None,
+            ),
+            "SLOPGATE_PROGRESS stage=tsc:apps/zync-app/tsconfig.json event=start"
+        );
+        assert_eq!(
+            crate::checkers::shared::stage_progress_line("aggregation", "end", Some(17)),
+            "SLOPGATE_PROGRESS stage=aggregation event=end elapsed_ms=17"
+        );
     }
 
     #[test]
