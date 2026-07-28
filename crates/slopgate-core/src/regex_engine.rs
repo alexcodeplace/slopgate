@@ -11,7 +11,12 @@ use std::path::Path;
 
 struct CompiledPattern<'a> {
     pattern: &'a Pattern,
-    re: Regex,
+    matcher: LineMatcher,
+}
+
+enum LineMatcher {
+    Fancy(Regex),
+    RecordStringAnyGeneric(regex::Regex),
 }
 
 struct LineHit {
@@ -164,6 +169,39 @@ fn regex_matches(re: &Regex, line: &str) -> bool {
     re.is_match(line).unwrap_or(false)
 }
 
+const RECORD_STRING_ANY_GENERIC_ID: &str = "record-string-any-generic";
+const RECORD_STRING_ANY_GENERIC_TARGET: &str =
+    r"(?:[:=,<({\[]\s*)Record\s*<\s*string\s*,\s*any\s*>";
+
+/// Mirrors legacy line-local comment behavior without evaluating its repeated
+/// negative lookahead through `fancy-regex`.
+fn record_string_any_generic_code(line: &str) -> Option<&str> {
+    let comment_start = match (line.find("//"), line.find("/*")) {
+        (Some(a), Some(b)) => a.min(b),
+        (Some(a), None) | (None, Some(a)) => a,
+        (None, None) => line.len(),
+    };
+    let code = &line[..comment_start];
+    let trimmed = code.trim_start();
+    if trimmed.starts_with("//")
+        || trimmed.starts_with("/*")
+        || trimmed.starts_with('*')
+        || trimmed.starts_with("*/")
+    {
+        return None;
+    }
+    Some(code)
+}
+
+fn matcher_matches(matcher: &LineMatcher, line: &str) -> bool {
+    match matcher {
+        LineMatcher::Fancy(re) => regex_matches(re, line),
+        LineMatcher::RecordStringAnyGeneric(re) => {
+            record_string_any_generic_code(line).is_some_and(|code| re.is_match(code))
+        }
+    }
+}
+
 fn violation_text(line: &str) -> String {
     let trimmed = line.trim();
     if trimmed.encode_utf16().count() <= 90 {
@@ -187,8 +225,16 @@ pub fn scan_regex(config: &ResolvedConfig, files: &[String], file_mode: bool) ->
         if file_mode && min_files > 1 {
             continue;
         }
-        if let Ok(re) = compile_line_regex(&p.pattern, p.flags.as_deref().unwrap_or("")) {
-            compiled.push(CompiledPattern { pattern: p, re });
+        let matcher = if p.id == RECORD_STRING_ANY_GENERIC_ID {
+            regex::Regex::new(RECORD_STRING_ANY_GENERIC_TARGET)
+                .map(LineMatcher::RecordStringAnyGeneric)
+                .map_err(|error| error.to_string())
+        } else {
+            compile_line_regex(&p.pattern, p.flags.as_deref().unwrap_or(""))
+                .map(LineMatcher::Fancy)
+        };
+        if let Ok(matcher) = matcher {
+            compiled.push(CompiledPattern { pattern: p, matcher });
         }
     }
 
@@ -218,7 +264,7 @@ pub fn scan_regex(config: &ResolvedConfig, files: &[String], file_mode: bool) ->
 
             let mut per_file: Vec<LineHit> = Vec::new();
             for (i, line) in lines.iter().enumerate() {
-                if regex_matches(&cp.re, line) {
+                if matcher_matches(&cp.matcher, line) {
                     per_file.push(LineHit {
                         line: (i + 1) as u32,
                         text: (*line).to_string(),
@@ -354,6 +400,42 @@ mod tests {
                 let expect = case["match"].as_bool().unwrap();
                 assert_eq!(regex_matches(&re, line), expect, "id={id} line={line:?}");
             }
+        }
+    }
+
+    #[test]
+    fn record_string_any_generic_uses_bounded_comment_aware_matching() {
+        let matcher = LineMatcher::RecordStringAnyGeneric(
+            regex::Regex::new(RECORD_STRING_ANY_GENERIC_TARGET).unwrap(),
+        );
+
+        assert!(matcher_matches(
+            &matcher,
+            "const payload: Record<string, any> = {};"
+        ));
+        assert!(matcher_matches(
+            &matcher,
+            "  const session: Record<string, any> = authFlow; // legacy shape"
+        ));
+
+        let pathological_auth_flow = format!(
+            "const authFlow{}: Record<string, any> = state;",
+            ".metadata".repeat(8_192)
+        );
+        assert!(matcher_matches(&matcher, &pathological_auth_flow));
+
+        for line in [
+            "// type Payload = Record<string, any>;",
+            "/* type Payload = Record<string, any>; */",
+            "* @type {Record<string, any>}",
+            "*/ Record<string, any>",
+            "const note = 'Record<string, any>';",
+            "const payload: Record<string, unknown> = {};",
+        ] {
+            assert!(
+                !matcher_matches(&matcher, line),
+                "unexpected match for {line:?}"
+            );
         }
     }
 
