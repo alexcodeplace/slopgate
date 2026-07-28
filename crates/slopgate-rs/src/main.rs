@@ -1090,7 +1090,7 @@ mod tests {
 
     #[test]
     fn self_test_exits_zero_on_real_config() {
-        let config_path = engine_root().join(".slopgate/config.toml");
+        let config_path = engine_root().join("rules/baseline/selftest.config.toml");
         if !config_path.is_file() {
             return;
         }

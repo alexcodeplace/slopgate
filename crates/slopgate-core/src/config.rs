@@ -332,10 +332,14 @@ fn resolve_inner(
         .map(|s| path_to_string(resolve_path(&config_dir, s)))
         .unwrap_or_else(|| path_to_string(config_dir.join("suppressions.json")));
 
-    let mut fixtures_dirs = vec![path_to_string(engine.join("rules/baseline/fixtures"))];
-    if let Some(fixtures) = &raw.fixtures {
-        fixtures_dirs.push(path_to_string(resolve_path(&config_dir, fixtures)));
-    }
+    // An explicit fixture directory is the project's self-test contract. Do not
+    // inject engine fixtures: doing so makes a project self-test pass or fail
+    // based on files outside its checkout. Retain engine fixtures only for
+    // legacy configs that have no `fixtures` setting.
+    let fixtures_dirs = match &raw.fixtures {
+        Some(fixtures) => vec![path_to_string(resolve_path(&config_dir, fixtures))],
+        None => vec![path_to_string(engine.join("rules/baseline/fixtures"))],
+    };
 
     let baseline_path = path_to_string(config_dir.join("baseline.json"));
     Ok(ResolvedConfig {
@@ -458,7 +462,9 @@ pub fn resolve_config_str(toml_src: &str) -> Result<ResolvedConfig, String> {
 mod tests {
     use super::*;
     use serde_json::Value;
+    use std::fs;
     use std::path::Path;
+    use std::process::Command;
 
     fn cfg_path() -> String {
         format!("{}/tests/fixtures/config.toml", env!("CARGO_MANIFEST_DIR"))
@@ -477,6 +483,30 @@ mod tests {
         assert!(c.skip_dirs.contains("node_modules"));
         assert!(c.gate.staged.contains("critical") && c.gate.staged.contains("high"));
         assert_eq!(c.checker_concurrency, 3);
+    }
+
+    #[test]
+    fn explicit_fixtures_are_config_relative_without_engine_fixture_injection() {
+        let repo = tempfile::tempdir().unwrap();
+        assert!(Command::new("git")
+            .args(["init", "--quiet"])
+            .current_dir(repo.path())
+            .status()
+            .unwrap()
+            .success());
+
+        let config_dir = repo.path().join(".slopgate");
+        let fixture_dir = config_dir.join("fixtures");
+        fs::create_dir_all(&fixture_dir).unwrap();
+        fs::write(
+            config_dir.join("config.toml"),
+            "roots = []\nfixtures = \"./fixtures\"\n",
+        )
+        .unwrap();
+
+        let config = resolve_config(&config_dir.join("config.toml").to_string_lossy()).unwrap();
+        assert_eq!(config.fixtures_dirs, vec![fixture_dir.to_string_lossy()]);
+        assert!(!repo.path().join("rules").exists());
     }
 
     #[test]

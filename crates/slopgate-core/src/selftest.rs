@@ -35,8 +35,12 @@ fn baseline_ast_dir() -> String {
         .into_owned()
 }
 
-fn checker_fixtures_dir() -> PathBuf {
-    crate::init::run::engine_root().join("rules/baseline/fixtures/checker-outputs")
+fn checker_fixtures_dir(config: &ResolvedConfig) -> PathBuf {
+    config
+        .fixtures_dirs
+        .first()
+        .map(|dir| Path::new(dir).join("checker-outputs"))
+        .unwrap_or_else(|| Path::new(&config.config_dir).join("fixtures/checker-outputs"))
 }
 
 fn stringify_tsc_output(errors: &[TscError]) -> String {
@@ -408,7 +412,7 @@ pub fn run_self_test(config: &ResolvedConfig) -> i32 {
         }
     }
 
-    let fix_dir = checker_fixtures_dir();
+    let fix_dir = checker_fixtures_dir(config);
     for f in PARSER_FIXTURES {
         let in_path = fix_dir.join(f.input);
         let exp_path = fix_dir.join(f.expected);
@@ -643,6 +647,31 @@ mod tests {
             fs::create_dir_all(parent).unwrap();
         }
         fs::write(path, contents).unwrap();
+    }
+
+    #[test]
+    fn checker_fixtures_resolve_from_isolated_project_config() {
+        use crate::config::resolve_config;
+
+        let repo = tempfile::tempdir().unwrap();
+        assert!(Command::new("git")
+            .args(["init", "--quiet"])
+            .current_dir(repo.path())
+            .status()
+            .unwrap()
+            .success());
+
+        let config_dir = repo.path().join(".slopgate");
+        let checker_dir = config_dir.join("fixtures/checker-outputs");
+        fs::create_dir_all(&checker_dir).unwrap();
+        write_temp_file(
+            &config_dir.join("config.toml"),
+            "roots = []\nfixtures = \"./fixtures\"\n",
+        );
+
+        let config = resolve_config(&config_dir.join("config.toml").to_string_lossy()).unwrap();
+        assert_eq!(checker_fixtures_dir(&config), checker_dir);
+        assert!(!repo.path().join("rules").exists());
     }
 
     /// Resolve a project pack via `config.toml`, then isolate the self-test surface:
