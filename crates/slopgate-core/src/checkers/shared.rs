@@ -347,7 +347,8 @@ where
                 if i >= items.len() {
                     break;
                 }
-                slots.lock().unwrap()[i] = Some(f(&items[i]));
+                let result = f(&items[i]);
+                slots.lock().unwrap()[i] = Some(result);
             });
         }
     });

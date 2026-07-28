@@ -1,7 +1,9 @@
 //! tsc --noEmit adapter — mirrors `src/checkers/tsc.mjs`.
 
 use crate::checkers::index::{CheckerRunResult, DetectResult};
-use crate::checkers::shared::{ensure_cache_dir, local_bin, run_tool, source_line, truncate_chars};
+use crate::checkers::shared::{
+    ensure_cache_dir, local_bin, map_limit, run_tool, source_line, truncate_chars,
+};
 use crate::config::ResolvedConfig;
 use crate::report::Violation;
 use serde_json::Value;
@@ -136,25 +138,38 @@ pub fn run(
     let cache_dir = ensure_cache_dir(Path::new(&config.config_dir)).ok();
     let slug_re = regex::Regex::new(r"[^\w.-]+").unwrap();
 
-    for rel in tsconfig_list(cfg) {
-        let mut all_args: Vec<String> = vec![
-            "--noEmit".into(),
-            "--pretty".into(),
-            "false".into(),
-            "-p".into(),
-            repo.join(&rel).to_string_lossy().into_owned(),
-        ];
-        if incremental {
-            if let Some(ref cache) = cache_dir {
-                let slug = slug_re.replace_all(&rel, "_");
-                let tsbuildinfo = cache.join(format!("tsc-{slug}.tsbuildinfo"));
-                all_args.push("--incremental".into());
-                all_args.push("--tsBuildInfoFile".into());
-                all_args.push(tsbuildinfo.to_string_lossy().into_owned());
+    let invocations: Vec<(String, Vec<String>)> = tsconfig_list(cfg)
+        .into_iter()
+        .map(|rel| {
+            let mut all_args: Vec<String> = vec![
+                "--noEmit".into(),
+                "--pretty".into(),
+                "false".into(),
+                "-p".into(),
+                repo.join(&rel).to_string_lossy().into_owned(),
+            ];
+            if incremental {
+                if let Some(ref cache) = cache_dir {
+                    let slug = slug_re.replace_all(&rel, "_");
+                    let tsbuildinfo = cache.join(format!("tsc-{slug}.tsbuildinfo"));
+                    all_args.push("--incremental".into());
+                    all_args.push("--tsBuildInfoFile".into());
+                    all_args.push(tsbuildinfo.to_string_lossy().into_owned());
+                }
             }
-        }
-        let arg_refs: Vec<&str> = all_args.iter().map(String::as_str).collect();
-        let res = run_tool(&resolved.bin, &arg_refs, Some(repo), Some(timeout_ms));
+            (rel, all_args)
+        })
+        .collect();
+    let results = map_limit(
+        &invocations,
+        config.checker_concurrency as usize,
+        |(_, all_args)| {
+            let arg_refs: Vec<&str> = all_args.iter().map(String::as_str).collect();
+            run_tool(&resolved.bin, &arg_refs, Some(repo), Some(timeout_ms))
+        },
+    );
+
+    for ((rel, _), res) in invocations.into_iter().zip(results) {
         if !res.ok && res.status.is_none() {
             errors.push(format!(
                 "tsc({rel}) failed: {}",
@@ -186,6 +201,10 @@ pub fn run(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
+    use std::fs;
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
     use tempfile::TempDir;
 
     #[test]
@@ -244,5 +263,118 @@ mod tests {
         let det = detect(&config, &serde_json::json!({}));
         assert!(!det.available);
         assert_eq!(det.reason.as_deref(), Some("no tsconfig.json"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn runs_configs_with_bounded_parallelism_and_deterministic_merge() {
+        let dir = TempDir::new().unwrap();
+        let state = dir.path().join("state");
+        let bin_dir = dir.path().join("node_modules/.bin");
+        fs::create_dir_all(&state).unwrap();
+        fs::create_dir_all(&bin_dir).unwrap();
+        fs::write(state.join("max"), "0\n").unwrap();
+
+        let configs = ["a.json", "b.json", "c.json", "d.json"];
+        for rel in configs {
+            fs::write(dir.path().join(rel), "{}\n").unwrap();
+        }
+
+        let script = format!(
+            r#"#!/bin/sh
+config=""
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "-p" ]; then
+    shift
+    config="$1"
+    break
+  fi
+  shift
+done
+name=$(basename "$config" .json)
+state='{}'
+while ! mkdir "$state/lock" 2>/dev/null; do sleep 0.01; done
+touch "$state/active-$name"
+active=$(find "$state" -name 'active-*' | wc -l)
+max=$(cat "$state/max")
+if [ "$active" -gt "$max" ]; then
+  printf '%s\n' "$active" > "$state/max"
+fi
+rmdir "$state/lock"
+case "$name" in
+  a) sleep 0.30; code=2301 ;;
+  b) sleep 0.20; code=2302 ;;
+  c) sleep 0.10; code=2303 ;;
+  d) sleep 0.05; code=2304 ;;
+esac
+printf '%s.ts(1,1): error TS%s: finding %s\n' "$name" "$code" "$name"
+printf 'error TS5000: config %s\n' "$name"
+while ! mkdir "$state/lock" 2>/dev/null; do sleep 0.01; done
+rm "$state/active-$name"
+rmdir "$state/lock"
+"#,
+            state.to_string_lossy()
+        );
+        let bin = bin_dir.join("tsc");
+        fs::write(&bin, script).unwrap();
+        let mut permissions = fs::metadata(&bin).unwrap().permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&bin, permissions).unwrap();
+
+        let config = ResolvedConfig {
+            repo_root: dir.path().to_string_lossy().into_owned(),
+            config_dir: dir.path().join(".slopgate").to_string_lossy().into_owned(),
+            roots: vec![],
+            roots_rel: vec![],
+            exts: Default::default(),
+            skip_dirs: Default::default(),
+            patterns: vec![],
+            ast_rule_dirs: vec![],
+            checkers: Default::default(),
+            ast_disable: Default::default(),
+            baseline_path: String::new(),
+            suppressions_path: String::new(),
+            fixtures_dirs: vec![],
+            checker_concurrency: 2,
+            gate: crate::config::GateAllow {
+                file: Default::default(),
+                staged: Default::default(),
+            },
+            ux_ast_severity: Default::default(),
+            ux_ast_all: Default::default(),
+        };
+        let cfg = serde_json::json!({
+            "tsconfig": configs,
+            "incremental": false,
+            "timeout": 5
+        });
+
+        let result = run(
+            &config,
+            &cfg,
+            crate::checkers::index::CheckerRunOpts {
+                files: None,
+                mode: "full",
+            },
+        );
+
+        assert_eq!(fs::read_to_string(state.join("max")).unwrap().trim(), "2");
+        assert_eq!(
+            result
+                .violations
+                .iter()
+                .map(|violation| violation.file.as_str())
+                .collect::<Vec<_>>(),
+            vec!["a.ts", "b.ts", "c.ts", "d.ts"]
+        );
+        assert_eq!(
+            result.errors,
+            vec![
+                "tsc(a.json) failed: TS5000: config a",
+                "tsc(b.json) failed: TS5000: config b",
+                "tsc(c.json) failed: TS5000: config c",
+                "tsc(d.json) failed: TS5000: config d",
+            ]
+        );
     }
 }
