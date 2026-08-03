@@ -1,6 +1,6 @@
 //! Gate conductor — mirrors `src/gate.mjs` (`collectViolations`, `applyGateFilters`, `runGate`, `snapshotViolations`).
 
-use crate::ast_engine::{run_ast_grep_scan, AstGrepScanOpts};
+use crate::ast_engine::{run_ast_grep_scan, run_pinned_ast_grep_scan, AstGrepScanOpts};
 use crate::checkers::health::{is_infra_error, update_checker_health, CheckerOutcome};
 use crate::checkers::index::{Checker, CHECKERS};
 use crate::checkers::shared::{emit_stage_progress, ensure_cache_dir, map_limit};
@@ -132,9 +132,9 @@ fn push_ast_violations(config: &ResolvedConfig, violations: &mut Vec<Violation>,
     violations.push(ast_v);
 }
 
-struct EligibleChecker<'a> {
-    checker: &'static Checker,
-    cfg: &'a Value,
+struct EligibleChecker<'checker, 'cfg> {
+    checker: &'checker Checker,
+    cfg: &'cfg Value,
 }
 
 struct CheckerRunItemResult {
@@ -149,6 +149,16 @@ pub fn collect_violations(
     config: &ResolvedConfig,
     tier: Tier,
     file_target: Option<&str>,
+) -> CollectResult {
+    collect_violations_with_checkers(mode, config, tier, file_target, CHECKERS)
+}
+
+fn collect_violations_with_checkers(
+    mode: Mode,
+    config: &ResolvedConfig,
+    tier: Tier,
+    file_target: Option<&str>,
+    checkers: &[Checker],
 ) -> CollectResult {
     let ctx = enumerate_ctx(config);
     let discovery_started = Instant::now();
@@ -196,7 +206,11 @@ pub fn collect_violations(
 
     let ast_started = Instant::now();
     emit_stage_progress("ast", "start", None);
-    let ast = run_ast_grep_scan(config, Some(files.as_slice()), &AstGrepScanOpts::default());
+    let ast = if mode == Mode::Full {
+        run_pinned_ast_grep_scan(config, Some(files.as_slice()), &AstGrepScanOpts::default())
+    } else {
+        run_ast_grep_scan(config, Some(files.as_slice()), &AstGrepScanOpts::default())
+    };
     emit_stage_progress("ast", "end", Some(ast_started.elapsed().as_millis()));
     if !ast.available {
         fatal = true;
@@ -214,10 +228,10 @@ pub fn collect_violations(
     }
 
     if tier == Tier::Commit {
-        let mut eligible: Vec<EligibleChecker<'_>> = Vec::new();
+        let mut eligible: Vec<EligibleChecker<'_, '_>> = Vec::new();
         let mut outcomes: Vec<CheckerOutcome> = Vec::new();
 
-        for checker in CHECKERS {
+        for checker in checkers {
             let Some(cfg) = config.checkers.get(checker.id) else {
                 continue;
             };
@@ -228,6 +242,9 @@ pub fn collect_violations(
                 Err(payload) => {
                     let msg = panic_payload_str(payload);
                     notices.push(format!("{} detect crashed: {msg}", checker.id));
+                    if mode == Mode::Full {
+                        fatal = true;
+                    }
                     outcomes.push(CheckerOutcome {
                         id: checker.id.to_string(),
                         infra_failed: true,
@@ -240,6 +257,9 @@ pub fn collect_violations(
             if !det.available {
                 let reason = det.reason.unwrap_or_else(|| "unavailable".to_string());
                 notices.push(format!("skipped: {} ({reason})", checker.id));
+                if mode == Mode::Full && reason.contains("binary") {
+                    fatal = true;
+                }
                 outcomes.push(CheckerOutcome {
                     id: checker.id.to_string(),
                     infra_failed: true,
@@ -303,6 +323,9 @@ pub fn collect_violations(
         for item in results {
             for e in &item.res.errors {
                 notices.push(format!("{}: {e}", item.id));
+            }
+            if mode == Mode::Full && !item.res.errors.is_empty() {
+                fatal = true;
             }
             outcomes.push(CheckerOutcome {
                 id: item.id.clone(),
@@ -922,6 +945,76 @@ mod tests {
             snap.is_empty(),
             "high-severity as-any should be filtered by critical-only staged gate"
         );
+    }
+
+    #[test]
+    fn configured_checker_detect_panic_is_fatal_for_full_snapshot() {
+        fn detect_panic(_: &ResolvedConfig, _: &Value) -> crate::checkers::index::DetectResult {
+            panic!("detect failure");
+        }
+        fn run_unused(
+            _: &ResolvedConfig,
+            _: &Value,
+            _: crate::checkers::index::CheckerRunOpts<'_>,
+        ) -> crate::checkers::index::CheckerRunResult {
+            unreachable!()
+        }
+
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+        let mut config = setup_repo(root);
+        config
+            .checkers
+            .insert("detect-panic".into(), serde_json::json!({}));
+        let checkers = [Checker {
+            id: "detect-panic",
+            detect: detect_panic,
+            run: run_unused,
+        }];
+
+        let collected =
+            collect_violations_with_checkers(Mode::Full, &config, Tier::Commit, None, &checkers);
+        assert!(collected.fatal);
+        assert!(collected
+            .notices
+            .iter()
+            .any(|notice| notice.contains("detect-panic detect crashed")));
+    }
+
+    #[test]
+    fn configured_non_applicable_checker_is_not_fatal_for_full_snapshot() {
+        fn detect_non_applicable(
+            _: &ResolvedConfig,
+            _: &Value,
+        ) -> crate::checkers::index::DetectResult {
+            crate::checkers::index::DetectResult {
+                available: false,
+                reason: Some("no applicable config".into()),
+            }
+        }
+        fn run_unused(
+            _: &ResolvedConfig,
+            _: &Value,
+            _: crate::checkers::index::CheckerRunOpts<'_>,
+        ) -> crate::checkers::index::CheckerRunResult {
+            unreachable!()
+        }
+
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+        let mut config = setup_repo(root);
+        config
+            .checkers
+            .insert("non-applicable".into(), serde_json::json!({}));
+        let checkers = [Checker {
+            id: "non-applicable",
+            detect: detect_non_applicable,
+            run: run_unused,
+        }];
+
+        let collected =
+            collect_violations_with_checkers(Mode::Full, &config, Tier::Commit, None, &checkers);
+        assert!(!collected.fatal);
     }
 
     #[test]

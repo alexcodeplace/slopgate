@@ -584,7 +584,15 @@ pub fn run_ast_grep_scan(
     files: Option<&[String]>,
     opts: &AstGrepScanOpts,
 ) -> AstGrepScanResult {
-    run_ast_grep_scan_in(config, files, opts, std::env::temp_dir())
+    run_ast_grep_scan_in(config, files, opts, std::env::temp_dir(), false)
+}
+
+pub fn run_pinned_ast_grep_scan(
+    config: &ResolvedConfig,
+    files: Option<&[String]>,
+    opts: &AstGrepScanOpts,
+) -> AstGrepScanResult {
+    run_ast_grep_scan_in(config, files, opts, std::env::temp_dir(), true)
 }
 
 fn run_ast_grep_scan_in(
@@ -592,6 +600,7 @@ fn run_ast_grep_scan_in(
     files: Option<&[String]>,
     opts: &AstGrepScanOpts,
     temp_base: impl AsRef<Path>,
+    require_pinned: bool,
 ) -> AstGrepScanResult {
     let rule_dirs: Vec<&str> = config
         .ast_rule_dirs
@@ -628,14 +637,6 @@ fn run_ast_grep_scan_in(
         };
     }
 
-    if files.is_some() && targets.is_empty() {
-        return AstGrepScanResult {
-            available: true,
-            violations: vec![],
-            errors,
-        };
-    }
-
     let path_env = opts.path_env.as_deref().map(OsStr::new);
     let (bin, source) = resolve_ast_grep_bin_inner(repo_root, path_env);
 
@@ -647,11 +648,47 @@ fn run_ast_grep_scan_in(
         };
     };
 
+    if require_pinned && source != "local" {
+        return AstGrepScanResult {
+            available: false,
+            violations: vec![],
+            errors: vec!["ast-grep pinned local binary not found — run npm ci".to_string()],
+        };
+    }
+
+    if require_pinned {
+        let version = Command::new(&bin)
+            .arg("--version")
+            .current_dir(repo_root)
+            .output();
+        if !version.as_ref().is_ok_and(|output| output.status.success()) {
+            let detail = match version {
+                Ok(output) => format!("status {}", output.status),
+                Err(error) => error.to_string(),
+            };
+            return AstGrepScanResult {
+                available: false,
+                violations: vec![],
+                errors: vec![format!(
+                    "ast-grep pinned local binary check failed: {detail}"
+                )],
+            };
+        }
+    }
+
     if source == "path" {
         errors.push(
             "ast-grep: using PATH binary (version not pinned — results may differ from CI)"
                 .to_string(),
         );
+    }
+
+    if files.is_some() && targets.is_empty() {
+        return AstGrepScanResult {
+            available: true,
+            violations: vec![],
+            errors,
+        };
     }
 
     let scan = with_temp_dir_in(temp_base, "slopgate-sg-", |dir| {
@@ -1231,7 +1268,13 @@ mod tests {
             ux_ast_all: Default::default(),
         };
 
-        let got = run_ast_grep_scan_in(&config, None, &AstGrepScanOpts::default(), &not_a_dir);
+        let got = run_ast_grep_scan_in(
+            &config,
+            None,
+            &AstGrepScanOpts::default(),
+            &not_a_dir,
+            false,
+        );
 
         assert!(!got.available);
         assert!(got.violations.is_empty());

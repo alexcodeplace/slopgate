@@ -818,6 +818,36 @@ mod tests {
         fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
     }
 
+    #[cfg(unix)]
+    fn write_failing_jscpd_stub(root: &std::path::Path) {
+        use std::os::unix::fs::PermissionsExt;
+
+        let stub = root.join("node_modules/.bin/jscpd");
+        fs::write(&stub, "#!/bin/sh\nprintf 'jscpd exit 9' >&2\nexit 9\n").unwrap();
+        fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    fn configure_jscpd(root: &std::path::Path) {
+        let config_path = root.join(".slopgate/config.toml");
+        let config = fs::read_to_string(&config_path).unwrap();
+        fs::write(config_path, format!("{config}\n[checkers.jscpd]\n")).unwrap();
+    }
+
+    fn configure_ast_rules(root: &std::path::Path) {
+        let rule_dir = root.join("rules/ast");
+        fs::create_dir_all(&rule_dir).unwrap();
+        let config_path = root.join(".slopgate/config.toml");
+        let config = fs::read_to_string(&config_path).unwrap();
+        fs::write(
+            config_path,
+            config.replace(
+                "astRules = \"./rules/ast\"",
+                &format!("astRules = \"{}\"", rule_dir.display()),
+            ),
+        )
+        .unwrap();
+    }
+
     fn run_capture(args: Vec<String>) -> (i32, String, String) {
         run_capture_with_home(args, &home_dir())
     }
@@ -1249,6 +1279,110 @@ mod tests {
         assert_eq!(code, 2, "stderr:\n{stderr}");
         assert!(stderr.contains("src/second.ts"), "stderr:\n{stderr}");
         assert_eq!(fs::read(&baseline_path).unwrap(), before);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn baseline_zero_targets_with_healthy_pinned_scanner_writes_empty_snapshot() {
+        let dir = setup_tmp_repo();
+        let root = dir.path();
+        configure_ast_rules(root);
+
+        let mut args = base_args(root);
+        args.push("baseline".into());
+        assert_eq!(run_capture(args).0, 0);
+        let baseline: serde_json::Value = serde_json::from_str(
+            &fs::read_to_string(root.join(".slopgate/baseline.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(baseline["entries"], serde_json::json!({}));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn baseline_update_and_prune_preserve_bytes_when_zero_target_scanner_is_missing() {
+        let dir = setup_tmp_repo();
+        let root = dir.path();
+
+        let mut create_args = base_args(root);
+        create_args.push("baseline".into());
+        assert_eq!(run_capture(create_args).0, 0);
+        let baseline_path = root.join(".slopgate/baseline.json");
+        let before = fs::read(&baseline_path).unwrap();
+        configure_ast_rules(root);
+        fs::remove_file(root.join("node_modules/.bin/ast-grep")).unwrap();
+
+        for flag in ["--update", "--prune"] {
+            let mut args = base_args(root);
+            args.extend(["baseline".into(), flag.into()]);
+            assert_eq!(run_capture(args).0, 2, "{flag}");
+            assert_eq!(fs::read(&baseline_path).unwrap(), before, "{flag}");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn baseline_update_and_prune_preserve_bytes_when_zero_target_scanner_is_incompatible() {
+        let dir = setup_tmp_repo();
+        let root = dir.path();
+
+        let mut create_args = base_args(root);
+        create_args.push("baseline".into());
+        assert_eq!(run_capture(create_args).0, 0);
+        let baseline_path = root.join(".slopgate/baseline.json");
+        let before = fs::read(&baseline_path).unwrap();
+        configure_ast_rules(root);
+        write_failing_ast_stub(root);
+
+        for flag in ["--update", "--prune"] {
+            let mut args = base_args(root);
+            args.extend(["baseline".into(), flag.into()]);
+            assert_eq!(run_capture(args).0, 2, "{flag}");
+            assert_eq!(fs::read(&baseline_path).unwrap(), before, "{flag}");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn baseline_update_and_prune_preserve_bytes_when_configured_checker_binary_is_missing() {
+        let dir = setup_tmp_repo();
+        let root = dir.path();
+
+        let mut create_args = base_args(root);
+        create_args.push("baseline".into());
+        assert_eq!(run_capture(create_args).0, 0);
+        let baseline_path = root.join(".slopgate/baseline.json");
+        let before = fs::read(&baseline_path).unwrap();
+        configure_jscpd(root);
+
+        for flag in ["--update", "--prune"] {
+            let mut args = base_args(root);
+            args.extend(["baseline".into(), flag.into()]);
+            assert_eq!(run_capture(args).0, 2, "{flag}");
+            assert_eq!(fs::read(&baseline_path).unwrap(), before, "{flag}");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn baseline_update_and_prune_preserve_bytes_when_configured_checker_run_fails() {
+        let dir = setup_tmp_repo();
+        let root = dir.path();
+
+        let mut create_args = base_args(root);
+        create_args.push("baseline".into());
+        assert_eq!(run_capture(create_args).0, 0);
+        let baseline_path = root.join(".slopgate/baseline.json");
+        let before = fs::read(&baseline_path).unwrap();
+        configure_jscpd(root);
+        write_failing_jscpd_stub(root);
+
+        for flag in ["--update", "--prune"] {
+            let mut args = base_args(root);
+            args.extend(["baseline".into(), flag.into()]);
+            assert_eq!(run_capture(args).0, 2, "{flag}");
+            assert_eq!(fs::read(&baseline_path).unwrap(), before, "{flag}");
+        }
     }
 
     #[test]
