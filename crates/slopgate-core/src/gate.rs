@@ -37,6 +37,7 @@ pub enum Tier {
 pub struct CollectResult {
     pub violations: Vec<Violation>,
     pub notices: Vec<String>,
+    pub fatal: bool,
 }
 
 /// Result of [`run_gate`].
@@ -157,10 +158,12 @@ pub fn collect_violations(
     );
 
     let mut notices = Vec::new();
+    let mut fatal = false;
     if files.is_empty() && mode != Mode::Full {
         return CollectResult {
             violations: vec![],
             notices,
+            fatal,
         };
     }
 
@@ -179,9 +182,20 @@ pub fn collect_violations(
     let ast = run_ast_grep_scan(config, ast_files, &AstGrepScanOpts::default());
     emit_stage_progress("ast", "end", Some(ast_started.elapsed().as_millis()));
     if !ast.available {
+        let missing_binary = !ast.errors.is_empty()
+            && ast
+                .errors
+                .iter()
+                .all(|error| error.contains("binary not found"));
+        if !missing_binary {
+            fatal = true;
+        }
         notices.push(ast.errors.join("; "));
     } else {
         for e in &ast.errors {
+            if !e.starts_with("ast-grep: using PATH") {
+                fatal = true;
+            }
             notices.push(format!("ast-grep: {e}"));
         }
     }
@@ -315,6 +329,7 @@ pub fn collect_violations(
     CollectResult {
         violations,
         notices,
+        fatal,
     }
 }
 
@@ -404,10 +419,18 @@ pub fn run_gate_with_stderr(
     let CollectResult {
         violations: collected,
         notices,
+        fatal,
     } = collect_violations(mode, config, eff_tier, file_target);
 
     for n in notices {
         gate_stderr.notice(&n);
+    }
+    if fatal {
+        gate_stderr.writeln("SLOPGATE: blocked (scanner infrastructure error)");
+        return GateResult {
+            violations: vec![],
+            code: 2,
+        };
     }
 
     let mut violations = apply_gate_filters(collected, config, mode, Some(gate_stderr));
@@ -465,9 +488,13 @@ pub fn snapshot_violations(config: &ResolvedConfig) -> Vec<Violation> {
     let CollectResult {
         violations,
         notices,
+        fatal,
     } = collect_violations(Mode::Full, config, Tier::Commit, None);
     for n in notices {
         let _ = writeln!(std::io::stderr(), "⚠ SLOPGATE: {n}");
+    }
+    if fatal {
+        return vec![];
     }
     apply_gate_filters_simple(violations, config, Mode::Staged)
 }
@@ -480,6 +507,7 @@ mod tests {
     use crate::rules::packs::Pattern;
     use std::fs;
     use std::io::Cursor;
+    use std::process::Command;
     use tempfile::TempDir;
 
     fn fixture_toml() -> String {
@@ -511,6 +539,96 @@ mod tests {
     fn setup_repo(root: &Path) -> ResolvedConfig {
         fs::create_dir_all(root.join("src")).unwrap();
         test_config(root, &fixture_toml())
+    }
+
+    #[cfg(unix)]
+    fn git_ok(root: &Path, args: &[&str]) {
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(root)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "git {args:?} failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    #[cfg(unix)]
+    fn write_ast_stub(root: &Path, status: i32, stderr: &str) {
+        use std::os::unix::fs::PermissionsExt;
+        let path = root.join("node_modules/.bin/ast-grep");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let stderr = stderr.replace('\\', "\\\\").replace('\'', "'\\''");
+        fs::write(
+            &path,
+            format!("#!/bin/sh\nprintf '%s' '{stderr}' >&2\nprintf '[]'\nexit {status}\n"),
+        )
+        .unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn staged_path_resolution_error_blocks_gate_instead_of_reporting_clean() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+        let config = setup_repo(root);
+        fs::write(root.join("src/staged.ts"), "export const staged = 1;\n").unwrap();
+        git_ok(root, &["init"]);
+        git_ok(root, &["add", "src/staged.ts"]);
+        fs::remove_file(root.join("src/staged.ts")).unwrap();
+
+        let (result, stderr) = capture_stderr(|stderr| {
+            run_gate_with_stderr(Mode::Staged, &config, Some(Tier::Fast), None, stderr)
+        });
+        assert_eq!(result.code, 2, "stderr:\n{stderr}");
+        assert!(stderr.contains("staged.ts"), "stderr:\n{stderr}");
+        assert!(!stderr.contains("SLOPGATE: clean"), "stderr:\n{stderr}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn scanner_error_blocks_staged_gate_with_nonzero_status() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+        let config = setup_repo(root);
+        fs::write(root.join("src/clean.ts"), "export const clean = 1;\n").unwrap();
+        git_ok(root, &["init"]);
+        git_ok(root, &["config", "user.email", "test@example.invalid"]);
+        git_ok(root, &["config", "user.name", "test"]);
+        git_ok(root, &["add", "src/clean.ts"]);
+        write_ast_stub(root, 7, "scanner exploded\n");
+
+        let (result, stderr) = capture_stderr(|stderr| {
+            run_gate_with_stderr(Mode::Staged, &config, Some(Tier::Fast), None, stderr)
+        });
+        assert_eq!(result.code, 2, "stderr:\n{stderr}");
+        assert!(stderr.contains("scanner exploded"), "stderr:\n{stderr}");
+        assert!(!stderr.contains("SLOPGATE: clean"), "stderr:\n{stderr}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn scanner_stderr_blocks_staged_gate_even_with_zero_status() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+        let config = setup_repo(root);
+        fs::write(root.join("src/clean.ts"), "export const clean = 1;\n").unwrap();
+        git_ok(root, &["init"]);
+        git_ok(root, &["add", "src/clean.ts"]);
+        write_ast_stub(root, 0, "No such file or directory\n");
+
+        let (result, stderr) = capture_stderr(|stderr| {
+            run_gate_with_stderr(Mode::Staged, &config, Some(Tier::Fast), None, stderr)
+        });
+        assert_eq!(result.code, 2, "stderr:\n{stderr}");
+        assert!(
+            stderr.contains("No such file or directory"),
+            "stderr:\n{stderr}"
+        );
+        assert!(!stderr.contains("SLOPGATE: clean"), "stderr:\n{stderr}");
     }
 
     fn capture_stderr<F>(f: F) -> (GateResult, String)

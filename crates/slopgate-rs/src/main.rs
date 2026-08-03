@@ -664,9 +664,10 @@ fn dispatch(
         let result =
             slopgate_core::gate::run_gate_with_stderr(Mode::Full, &config, tier, None, &mut sink);
         let diagnostics = String::from_utf8_lossy(captured.get_ref());
-        let infra_failed = ["binary not found", "skipped:", " crashed:", "timed out"]
-            .iter()
-            .any(|marker| diagnostics.contains(marker));
+        let infra_failed = result.code == 2
+            || ["binary not found", "skipped:", " crashed:", "timed out"]
+                .iter()
+                .any(|marker| diagnostics.contains(marker));
         let exit_code = if infra_failed { 2 } else { result.code };
         if format == "json" {
             let status = if infra_failed {

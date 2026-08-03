@@ -6,9 +6,10 @@ use crate::config::ResolvedConfig;
 use crate::report::Violation;
 use crate::temp::with_temp_dir_in;
 use serde_json::Value;
+use std::collections::HashSet;
 use std::ffi::OsStr;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 
 const MISSING_BIN_MSG: &str =
@@ -25,7 +26,7 @@ pub struct AstGrepScanResult {
 /// Options for [`run_ast_grep_scan`].
 #[derive(Debug, Clone, Default)]
 pub struct AstGrepScanOpts {
-    /// When true, use `files` as-is; otherwise keep only `.ts` / `.tsx`.
+    /// When true, allow directory and external fixture targets without extension filtering.
     pub raw_targets: bool,
     /// Overrides `PATH` for ast-grep resolution only (unit tests).
     #[doc(hidden)]
@@ -201,6 +202,191 @@ pub fn parse_ast_grep_json(matches: &Value) -> AstGrepParseResult {
     AstGrepParseResult { violations, errors }
 }
 
+fn normalize_relative_path(path: &Path) -> Option<String> {
+    let mut parts = Vec::new();
+    for component in path.components() {
+        match component {
+            Component::Normal(part) => parts.push(part.to_string_lossy().into_owned()),
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if parts.pop().is_none() {
+                    return None;
+                }
+            }
+            Component::RootDir | Component::Prefix(_) => return None,
+        }
+    }
+    (!parts.is_empty()).then(|| parts.join("/").replace('\\', "/"))
+}
+
+fn input_relative_path(repo_root: &Path, canonical_root: &Path, raw: &str) -> Option<String> {
+    let path = Path::new(raw);
+    if path.is_absolute() {
+        path.strip_prefix(canonical_root)
+            .or_else(|_| path.strip_prefix(repo_root))
+            .ok()
+            .and_then(normalize_relative_path)
+    } else {
+        normalize_relative_path(path)
+    }
+}
+
+fn staged_deleted_paths(repo_root: &Path) -> Result<HashSet<String>, String> {
+    let output = Command::new("git")
+        .args([
+            "diff",
+            "--cached",
+            "--name-status",
+            "-z",
+            "--diff-filter=DR",
+        ])
+        .current_dir(repo_root)
+        .output()
+        .map_err(|e| format!("cannot inspect staged deletions: {e}"))?;
+    if !output.status.success() {
+        let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(if detail.is_empty() {
+            format!("git diff exited with {}", output.status)
+        } else {
+            format!("git diff failed: {detail}")
+        });
+    }
+
+    let fields: Vec<&[u8]> = output.stdout.split(|byte| *byte == 0).collect();
+    let mut deleted = HashSet::new();
+    let mut index = 0;
+    while index < fields.len() {
+        let status = fields[index];
+        index += 1;
+        if status.is_empty() {
+            continue;
+        }
+        let Some(status_code) = status.first().copied() else {
+            continue;
+        };
+        let Some(first_path) = fields.get(index) else {
+            break;
+        };
+        index += 1;
+        let first_path = String::from_utf8_lossy(first_path).replace('\\', "/");
+        if status_code == b'D' || status_code == b'R' {
+            deleted.insert(first_path);
+        }
+        if status_code == b'R' {
+            index += 1;
+        }
+    }
+    Ok(deleted)
+}
+
+fn resolve_changed_targets(
+    repo_root: &Path,
+    files: &[String],
+    raw_targets: bool,
+) -> (Vec<String>, Vec<String>) {
+    let canonical_root = match fs::canonicalize(repo_root) {
+        Ok(root) => root,
+        Err(error) => {
+            return (
+                vec![],
+                vec![format!(
+                    "ast-grep path resolution failed: cannot resolve worktree root {}: {error}",
+                    repo_root.display()
+                )],
+            )
+        }
+    };
+
+    let mut deleted_paths: Option<HashSet<String>> = None;
+    let mut targets = Vec::new();
+    let mut errors = Vec::new();
+    let mut seen = HashSet::new();
+
+    for raw in files {
+        if !raw_targets && !raw.ends_with(".ts") && !raw.ends_with(".tsx") {
+            continue;
+        }
+
+        let path = Path::new(raw);
+        let candidate = if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            repo_root.join(path)
+        };
+
+        let metadata = match fs::metadata(&candidate) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                let rel = input_relative_path(repo_root, &canonical_root, raw);
+                if let Some(deleted) = deleted_paths.as_ref() {
+                    if rel.as_deref().is_some_and(|path| deleted.contains(path)) {
+                        continue;
+                    }
+                } else {
+                    match staged_deleted_paths(repo_root) {
+                        Ok(paths) => deleted_paths = Some(paths),
+                        Err(detail) => {
+                            errors.push(format!(
+                                "ast-grep path resolution failed for '{raw}': {detail}"
+                            ));
+                            continue;
+                        }
+                    }
+                    if rel.as_deref().is_some_and(|path| {
+                        deleted_paths.as_ref().is_some_and(|set| set.contains(path))
+                    }) {
+                        continue;
+                    }
+                }
+                errors.push(format!(
+                    "ast-grep path resolution failed for '{raw}': file does not exist under worktree root {}",
+                    canonical_root.display()
+                ));
+                continue;
+            }
+            Err(error) => {
+                errors.push(format!(
+                    "ast-grep path resolution failed for '{raw}': cannot inspect path: {error}"
+                ));
+                continue;
+            }
+        };
+
+        if !metadata.is_file() && !(raw_targets && metadata.is_dir()) {
+            errors.push(format!(
+                "ast-grep path resolution failed for '{raw}': path is not a regular file"
+            ));
+            continue;
+        }
+
+        let canonical = match fs::canonicalize(&candidate) {
+            Ok(path) => path,
+            Err(error) => {
+                errors.push(format!(
+                    "ast-grep path resolution failed for '{raw}': cannot canonicalize path: {error}"
+                ));
+                continue;
+            }
+        };
+        let relative = match canonical.strip_prefix(&canonical_root) {
+            Ok(relative) => relative.to_string_lossy().replace('\\', "/"),
+            Err(_) if raw_targets => canonical.to_string_lossy().replace('\\', "/"),
+            Err(_) => {
+                errors.push(format!(
+                    "ast-grep path resolution failed for '{raw}': path escapes worktree root {}",
+                    canonical_root.display()
+                ));
+                continue;
+            }
+        };
+        if seen.insert(relative.clone()) {
+            targets.push(relative);
+        }
+    }
+
+    (targets, errors)
+}
+
 /// Run ast-grep against project rule dirs and map findings to violations. Never panics.
 pub fn run_ast_grep_scan(
     config: &ResolvedConfig,
@@ -232,6 +418,33 @@ fn run_ast_grep_scan_in(
     }
 
     let repo_root = Path::new(&config.repo_root);
+    let mut errors = Vec::new();
+    let targets: Vec<String> = match files {
+        None => config.roots_rel.clone(),
+        Some(files) => {
+            let (resolved, resolution_errors) =
+                resolve_changed_targets(repo_root, files, opts.raw_targets);
+            errors.extend(resolution_errors);
+            resolved
+        }
+    };
+
+    if files.is_some() && !errors.is_empty() {
+        return AstGrepScanResult {
+            available: true,
+            violations: vec![],
+            errors,
+        };
+    }
+
+    if files.is_some() && targets.is_empty() {
+        return AstGrepScanResult {
+            available: true,
+            violations: vec![],
+            errors,
+        };
+    }
+
     let path_env = opts.path_env.as_deref().map(OsStr::new);
     let (bin, source) = resolve_ast_grep_bin_inner(repo_root, path_env);
 
@@ -243,35 +456,11 @@ fn run_ast_grep_scan_in(
         };
     };
 
-    let mut errors = Vec::new();
     if source == "path" {
         errors.push(
             "ast-grep: using PATH binary (version not pinned — results may differ from CI)"
                 .to_string(),
         );
-    }
-
-    let targets: Vec<String> = match files {
-        None => config.roots_rel.clone(),
-        Some(files) => {
-            if opts.raw_targets {
-                files.to_vec()
-            } else {
-                files
-                    .iter()
-                    .filter(|f| f.ends_with(".ts") || f.ends_with(".tsx"))
-                    .cloned()
-                    .collect()
-            }
-        }
-    };
-
-    if files.is_some() && targets.is_empty() {
-        return AstGrepScanResult {
-            available: true,
-            violations: vec![],
-            errors,
-        };
     }
 
     let scan = with_temp_dir_in(temp_base, "slopgate-sg-", |dir| {
@@ -319,6 +508,26 @@ fn run_ast_grep_scan_in(
         let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);
 
+        if !output.status.success() {
+            let detail = stderr.trim();
+            let detail = if detail.is_empty() {
+                format!("no stderr; status {}", output.status)
+            } else {
+                format!("stderr: {}", detail.chars().take(500).collect::<String>())
+            };
+            errors.push(format!("ast-grep failed with {} ({detail})", output.status));
+            return AstGrepScanResult {
+                available: true,
+                violations: vec![],
+                errors,
+            };
+        }
+
+        if !stderr.trim().is_empty() {
+            let cap = stderr.chars().take(500).collect::<String>();
+            errors.push(format!("ast-grep stderr: {cap}"));
+        }
+
         let parsed: Value = match serde_json::from_str(stdout.trim()) {
             Ok(v) => v,
             Err(e) => {
@@ -336,14 +545,6 @@ fn run_ast_grep_scan_in(
             errors: mut parse_errors,
         } = parse_ast_grep_json(&parsed);
         errors.append(&mut parse_errors);
-
-        if !stderr.is_empty()
-            && stderr.to_ascii_lowercase().contains("error")
-            && !stderr.contains("error(s) found in code")
-        {
-            let cap = stderr.chars().take(500).collect::<String>();
-            errors.push(format!("ast-grep stderr: {cap}"));
-        }
 
         AstGrepScanResult {
             available: true,
@@ -375,7 +576,12 @@ mod tests {
     use super::*;
     use serde_json::json;
     use std::fs;
+    use std::process::Command;
+    use std::sync::{Mutex, OnceLock};
     use tempfile::TempDir;
+
+    #[cfg(unix)]
+    static CAPTURE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
     /// Write a runnable `ast-grep` stub that prints `stdout`: `.cmd` batch on
     /// Windows (spawnable), executable sh script elsewhere.
@@ -394,6 +600,94 @@ mod tests {
             fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
             stub
         }
+    }
+
+    #[cfg(unix)]
+    fn write_observing_stub(bin_dir: &Path, status: i32, stderr: &str) -> PathBuf {
+        use std::os::unix::fs::PermissionsExt;
+
+        let stub = bin_dir.join("ast-grep");
+        let escaped_stderr = stderr.replace('\\', "\\\\").replace('\'', "'\\''");
+        let script = format!(
+            "#!/bin/sh\nprintf 'cwd=%s\\n' \"$PWD\" > \"$SLOPGATE_CAPTURE\"\nprintf 'arg=%s\\n' \"$@\" >> \"$SLOPGATE_CAPTURE\"\nprintf '%s' '{escaped_stderr}' >&2\nprintf '[]'\nexit {status}\n"
+        );
+        fs::write(&stub, script).unwrap();
+        fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
+        stub
+    }
+
+    #[cfg(unix)]
+    fn ast_config_at(root: &Path) -> ResolvedConfig {
+        let rule_dir = root.join("rules/ast");
+        fs::create_dir_all(root.join("src")).unwrap();
+        fs::create_dir_all(&rule_dir).unwrap();
+        fs::create_dir_all(root.join("node_modules/.bin")).unwrap();
+        ResolvedConfig {
+            repo_root: root.to_string_lossy().into_owned(),
+            config_dir: root.to_string_lossy().into_owned(),
+            roots: vec![],
+            roots_rel: vec![],
+            exts: Default::default(),
+            skip_dirs: Default::default(),
+            patterns: vec![],
+            ast_rule_dirs: vec![rule_dir.to_string_lossy().into_owned()],
+            checkers: Default::default(),
+            ast_disable: Default::default(),
+            baseline_path: String::new(),
+            suppressions_path: String::new(),
+            fixtures_dirs: vec![],
+            checker_concurrency: 1,
+            gate: crate::config::GateAllow {
+                file: Default::default(),
+                staged: Default::default(),
+            },
+            ux_ast_severity: Default::default(),
+            ux_ast_all: Default::default(),
+        }
+    }
+
+    #[cfg(unix)]
+    fn ast_config(dir: &TempDir) -> ResolvedConfig {
+        ast_config_at(dir.path())
+    }
+
+    #[cfg(unix)]
+    fn run_with_stub(
+        files: &[String],
+        status: i32,
+        scanner_stderr: &str,
+    ) -> (AstGrepScanResult, String) {
+        let _capture_guard = CAPTURE_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
+        let dir = TempDir::new().unwrap();
+        let config = ast_config(&dir);
+        for file in files {
+            let path = dir.path().join(file);
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent).unwrap();
+            }
+            if file.ends_with(".ts") || file.ends_with(".tsx") {
+                fs::write(path, "export const value = 1;\n").unwrap();
+            }
+        }
+        let stub = dir.path().join("node_modules/.bin");
+        write_observing_stub(&stub, status, scanner_stderr);
+        let capture = dir.path().join("capture.txt");
+        let old_capture = std::env::var_os("SLOPGATE_CAPTURE");
+        std::env::set_var("SLOPGATE_CAPTURE", &capture);
+        let result = run_ast_grep_scan(
+            &config,
+            Some(files),
+            &AstGrepScanOpts {
+                raw_targets: true,
+                path_env: None,
+            },
+        );
+        match old_capture {
+            Some(value) => std::env::set_var("SLOPGATE_CAPTURE", value),
+            None => std::env::remove_var("SLOPGATE_CAPTURE"),
+        }
+        let captured = fs::read_to_string(capture).unwrap_or_default();
+        (result, captured)
     }
 
     #[test]
@@ -429,6 +723,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let bin_dir = dir.path().join("node_modules/.bin");
         fs::create_dir_all(&bin_dir).unwrap();
+        fs::create_dir_all(dir.path().join("src")).unwrap();
         write_stub(&bin_dir, "[]");
 
         let scope = dir.path().join("node_modules/@ast-grep");
@@ -601,6 +896,7 @@ mod tests {
         fs::create_dir_all(&rule_dir).unwrap();
         let bin_dir = dir.path().join("node_modules/.bin");
         fs::create_dir_all(&bin_dir).unwrap();
+        fs::create_dir_all(dir.path().join("src")).unwrap();
         write_stub(&bin_dir, "[]");
 
         let not_a_dir = dir.path().join("blocking-tmp");
@@ -644,6 +940,7 @@ mod tests {
         fs::create_dir_all(&rule_dir).unwrap();
         let bin_dir = dir.path().join("node_modules/.bin");
         fs::create_dir_all(&bin_dir).unwrap();
+        fs::create_dir_all(dir.path().join("src")).unwrap();
         write_stub(&bin_dir, "[]");
 
         let config = ResolvedConfig {
@@ -676,6 +973,280 @@ mod tests {
         assert!(got.errors.is_empty());
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn run_scan_accepts_external_raw_directory_target() {
+        let _capture_guard = CAPTURE_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
+        let repo = TempDir::new().unwrap();
+        let fixtures = TempDir::new().unwrap();
+        let config = ast_config(&repo);
+        fs::write(
+            fixtures.path().join("fixture.ts"),
+            "export const fixture = 1;\n",
+        )
+        .unwrap();
+        let bin_dir = repo.path().join("node_modules/.bin");
+        write_observing_stub(&bin_dir, 0, "");
+        let capture = repo.path().join("capture.txt");
+        let old_capture = std::env::var_os("SLOPGATE_CAPTURE");
+        std::env::set_var("SLOPGATE_CAPTURE", &capture);
+        let target = fixtures.path().to_string_lossy().into_owned();
+        let files = vec![target.clone()];
+        let got = run_ast_grep_scan(
+            &config,
+            Some(&files),
+            &AstGrepScanOpts {
+                raw_targets: true,
+                path_env: None,
+            },
+        );
+        match old_capture {
+            Some(value) => std::env::set_var("SLOPGATE_CAPTURE", value),
+            None => std::env::remove_var("SLOPGATE_CAPTURE"),
+        }
+        let captured = fs::read_to_string(capture).unwrap();
+        assert!(got.errors.is_empty(), "unexpected errors: {:?}", got.errors);
+        assert!(captured.contains(&format!("arg={target}\n")));
+    }
+    #[cfg(unix)]
+    #[test]
+    fn run_scan_resolves_linked_worktree_absolute_and_relative_paths() {
+        let _capture_guard = CAPTURE_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
+        let main = TempDir::new().unwrap();
+        fs::create_dir_all(main.path().join("src")).unwrap();
+        fs::write(main.path().join("src/base.ts"), "export const base = 1;\n").unwrap();
+        git_ok(main.path(), &["init", "-b", "main"]);
+        git_ok(
+            main.path(),
+            &["config", "user.email", "test@example.invalid"],
+        );
+        git_ok(main.path(), &["config", "user.name", "test"]);
+        git_ok(main.path(), &["add", "src/base.ts"]);
+        git_ok(main.path(), &["commit", "-m", "initial"]);
+        let linked_root = main.path().join("linked-worktree");
+        git_ok(
+            main.path(),
+            &[
+                "worktree",
+                "add",
+                "-b",
+                "linked-test",
+                "linked-worktree",
+                "HEAD",
+            ],
+        );
+        let config = ast_config_at(&linked_root);
+        fs::write(
+            linked_root.join("src/with space.ts"),
+            "export const linked = 1;\n",
+        )
+        .unwrap();
+        let bin_dir = linked_root.join("node_modules/.bin");
+        write_observing_stub(&bin_dir, 0, "");
+        let capture = linked_root.join("capture.txt");
+        let old_capture = std::env::var_os("SLOPGATE_CAPTURE");
+        std::env::set_var("SLOPGATE_CAPTURE", &capture);
+        let absolute = linked_root.join("src/with space.ts");
+        let files = vec![
+            "src/base.ts".to_string(),
+            absolute.to_string_lossy().into_owned(),
+        ];
+        let got = run_ast_grep_scan(
+            &config,
+            Some(&files),
+            &AstGrepScanOpts {
+                raw_targets: true,
+                path_env: None,
+            },
+        );
+        match old_capture {
+            Some(value) => std::env::set_var("SLOPGATE_CAPTURE", value),
+            None => std::env::remove_var("SLOPGATE_CAPTURE"),
+        }
+        let captured = fs::read_to_string(capture).unwrap();
+        assert!(got.errors.is_empty(), "unexpected errors: {:?}", got.errors);
+        assert!(captured.contains("arg=src/base.ts\n"));
+        assert!(captured.contains("arg=src/with space.ts\n"));
+        assert!(!captured.contains(&format!("arg={}\n", absolute.display())));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn run_scan_resolves_absolute_and_relative_paths_from_worktree_root() {
+        let _capture_guard = CAPTURE_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
+        let dir = TempDir::new().unwrap();
+        let config = ast_config(&dir);
+        fs::write(
+            dir.path().join("src/relative.ts"),
+            "export const relative = 1;\n",
+        )
+        .unwrap();
+        fs::write(
+            dir.path().join("src/with space.ts"),
+            "export const spaced = 1;\n",
+        )
+        .unwrap();
+        let bin_dir = dir.path().join("node_modules/.bin");
+        write_observing_stub(&bin_dir, 0, "");
+        let capture = dir.path().join("capture.txt");
+        let old_capture = std::env::var_os("SLOPGATE_CAPTURE");
+        std::env::set_var("SLOPGATE_CAPTURE", &capture);
+        let absolute = dir.path().join("src/with space.ts");
+        let files = vec![
+            "src/relative.ts".to_string(),
+            absolute.to_string_lossy().into_owned(),
+        ];
+        let got = run_ast_grep_scan(
+            &config,
+            Some(&files),
+            &AstGrepScanOpts {
+                raw_targets: true,
+                path_env: None,
+            },
+        );
+        match old_capture {
+            Some(value) => std::env::set_var("SLOPGATE_CAPTURE", value),
+            None => std::env::remove_var("SLOPGATE_CAPTURE"),
+        }
+        let captured = fs::read_to_string(capture).unwrap();
+        assert!(got.errors.is_empty(), "unexpected errors: {:?}", got.errors);
+        assert!(captured.contains("cwd="));
+        assert!(captured.contains("arg=src/relative.ts\n"));
+        assert!(captured.contains("arg=src/with space.ts\n"));
+        assert!(!captured.contains(&format!("arg={}\n", absolute.display())));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn run_scan_reports_nonzero_scanner_status_and_stderr() {
+        let files = vec!["src/changed.ts".to_string()];
+        let (got, _) = run_with_stub(&files, 7, "scanner exploded\n");
+        assert!(got.errors.iter().any(|error| error.contains("exit")));
+        assert!(got
+            .errors
+            .iter()
+            .any(|error| error.contains("scanner exploded")));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn run_scan_reports_successful_scanner_with_no_files_scanned() {
+        let files = vec!["src/changed.ts".to_string()];
+        let (got, _) = run_with_stub(&files, 0, "No such file or directory\n");
+        assert!(got
+            .errors
+            .iter()
+            .any(|error| error.contains("No such file")));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn run_scan_rejects_mixed_valid_and_unresolvable_source_paths() {
+        let dir = TempDir::new().unwrap();
+        let config = ast_config(&dir);
+        fs::write(dir.path().join("src/valid.ts"), "export const valid = 1;\n").unwrap();
+        write_stub(&dir.path().join("node_modules/.bin"), "[]");
+        let files = vec!["src/valid.ts".to_string(), "src/missing.ts".to_string()];
+        let got = run_ast_grep_scan(
+            &config,
+            Some(&files),
+            &AstGrepScanOpts {
+                raw_targets: true,
+                path_env: None,
+            },
+        );
+        assert!(got.errors.iter().any(|error| error.contains("missing.ts")));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn run_scan_rejects_all_unresolvable_source_paths() {
+        let dir = TempDir::new().unwrap();
+        let config = ast_config(&dir);
+        write_stub(&dir.path().join("node_modules/.bin"), "[]");
+        let files = vec!["src/missing.ts".to_string(), "src/other.tsx".to_string()];
+        let got = run_ast_grep_scan(
+            &config,
+            Some(&files),
+            &AstGrepScanOpts {
+                raw_targets: true,
+                path_env: None,
+            },
+        );
+        assert!(got.errors.iter().any(|error| error.contains("missing.ts")));
+        assert!(got.errors.iter().any(|error| error.contains("other.tsx")));
+    }
+
+    #[cfg(unix)]
+    fn git_ok(dir: &Path, args: &[&str]) {
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(dir)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "git {args:?} failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    #[cfg(unix)]
+    fn run_scan_for_deleted_path(args: &[&str]) -> (AstGrepScanResult, String) {
+        let _capture_guard = CAPTURE_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
+        let dir = TempDir::new().unwrap();
+        let config = ast_config(&dir);
+        fs::write(
+            dir.path().join("src/old.ts"),
+            "export const oldValue = 1;\n",
+        )
+        .unwrap();
+        git_ok(dir.path(), &["init"]);
+        git_ok(
+            dir.path(),
+            &["config", "user.email", "test@example.invalid"],
+        );
+        git_ok(dir.path(), &["config", "user.name", "test"]);
+        git_ok(dir.path(), &["add", "src/old.ts"]);
+        git_ok(dir.path(), &["commit", "-m", "initial"]);
+        git_ok(dir.path(), args);
+        let bin_dir = dir.path().join("node_modules/.bin");
+        write_observing_stub(&bin_dir, 0, "");
+        let capture = dir.path().join("capture.txt");
+        let old_capture = std::env::var_os("SLOPGATE_CAPTURE");
+        std::env::set_var("SLOPGATE_CAPTURE", &capture);
+        let files = vec!["src/old.ts".to_string()];
+        let got = run_ast_grep_scan(
+            &config,
+            Some(&files),
+            &AstGrepScanOpts {
+                raw_targets: true,
+                path_env: None,
+            },
+        );
+        match old_capture {
+            Some(value) => std::env::set_var("SLOPGATE_CAPTURE", value),
+            None => std::env::remove_var("SLOPGATE_CAPTURE"),
+        }
+        (got, fs::read_to_string(capture).unwrap_or_default())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn run_scan_excludes_intentionally_deleted_paths() {
+        let (got, captured) = run_scan_for_deleted_path(&["rm", "src/old.ts"]);
+        assert!(got.errors.is_empty(), "unexpected errors: {:?}", got.errors);
+        assert!(!captured.contains("arg=src/old.ts"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn run_scan_excludes_old_side_of_staged_rename() {
+        let (got, captured) = run_scan_for_deleted_path(&["mv", "src/old.ts", "src/new.ts"]);
+        assert!(got.errors.is_empty(), "unexpected errors: {:?}", got.errors);
+        assert!(!captured.contains("arg=src/old.ts"));
+    }
+
     #[test]
     fn run_scan_test_files_are_scanned() {
         let dir = TempDir::new().unwrap();
@@ -683,6 +1254,7 @@ mod tests {
         fs::create_dir_all(&rule_dir).unwrap();
         let bin_dir = dir.path().join("node_modules/.bin");
         fs::create_dir_all(&bin_dir).unwrap();
+        fs::create_dir_all(dir.path().join("src")).unwrap();
         write_stub(&bin_dir, "[]");
 
         let config = ResolvedConfig {
@@ -712,6 +1284,16 @@ mod tests {
             "src/example.test.ts".to_string(),
             "src/example.test.tsx".to_string(),
         ];
+        fs::write(
+            dir.path().join("src/example.test.ts"),
+            "export const ts = 1;\n",
+        )
+        .unwrap();
+        fs::write(
+            dir.path().join("src/example.test.tsx"),
+            "export const tsx = 1;\n",
+        )
+        .unwrap();
         let got = run_ast_grep_scan(&config, Some(&files), &AstGrepScanOpts::default());
         assert!(got.available);
         assert!(got.violations.is_empty());

@@ -60,7 +60,13 @@ fn list_single_file(ctx: &EnumerateCtx, file: &str) -> Vec<String> {
 
 fn list_staged(ctx: &EnumerateCtx) -> Vec<String> {
     let output = Command::new("git")
-        .args(["diff", "--cached", "--name-only", "--diff-filter=d"])
+        .args([
+            "diff",
+            "--cached",
+            "--name-only",
+            "-z",
+            "--diff-filter=ACMR",
+        ])
         .current_dir(&ctx.repo_root)
         .output();
 
@@ -72,7 +78,7 @@ fn list_staged(ctx: &EnumerateCtx) -> Vec<String> {
     }
 
     let raw = String::from_utf8_lossy(&output.stdout);
-    raw.lines()
+    raw.split('\0')
         .filter(|line| !line.is_empty())
         .filter(|f| {
             under_root(f, &ctx.roots_rel)
@@ -345,6 +351,34 @@ mod tests {
 
         let got = list_source_files(&ctx, EnumerateMode::Staged);
         assert_eq!(got, vec!["src/staged-then-gone.tsx"]);
+    }
+
+    #[test]
+    fn staged_mode_preserves_spaces_in_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("src")).unwrap();
+        fs::write(dir.path().join("src/with space.ts"), "// spaced").unwrap();
+        let ctx = fixture_ctx(dir.path());
+
+        git(dir.path(), &["init"]);
+        git(dir.path(), &["add", "src/with space.ts"]);
+
+        let got = list_source_files(&ctx, EnumerateMode::Staged);
+        assert_eq!(got, vec!["src/with space.ts"]);
+    }
+
+    #[test]
+    fn staged_mode_uses_rename_destination_and_excludes_source() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("src")).unwrap();
+        fs::write(dir.path().join("src/old.ts"), "// old").unwrap();
+        let ctx = fixture_ctx(dir.path());
+
+        git_init_commit(dir.path(), &["src/old.ts"]);
+        git(dir.path(), &["mv", "src/old.ts", "src/new.ts"]);
+
+        let got = list_source_files(&ctx, EnumerateMode::Staged);
+        assert_eq!(got, vec!["src/new.ts"]);
     }
 
     #[test]
