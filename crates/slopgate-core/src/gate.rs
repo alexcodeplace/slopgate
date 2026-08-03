@@ -197,14 +197,7 @@ pub fn collect_violations(
     let ast = run_ast_grep_scan(config, ast_files, &AstGrepScanOpts::default());
     emit_stage_progress("ast", "end", Some(ast_started.elapsed().as_millis()));
     if !ast.available {
-        let missing_binary = !ast.errors.is_empty()
-            && ast
-                .errors
-                .iter()
-                .all(|error| error.contains("binary not found"));
-        if !missing_binary {
-            fatal = true;
-        }
+        fatal = true;
         notices.push(ast.errors.join("; "));
     } else {
         for e in &ast.errors {
@@ -287,11 +280,7 @@ pub fn collect_violations(
                     }
                 };
                 let seconds = t0.elapsed().as_secs_f64();
-                emit_stage_progress(
-                    item.checker.id,
-                    "end",
-                    Some(t0.elapsed().as_millis()),
-                );
+                emit_stage_progress(item.checker.id, "end", Some(t0.elapsed().as_millis()));
                 CheckerRunItemResult {
                     id: item.checker.id.to_string(),
                     res,
@@ -553,7 +542,20 @@ mod tests {
 
     fn setup_repo(root: &Path) -> ResolvedConfig {
         fs::create_dir_all(root.join("src")).unwrap();
-        test_config(root, &fixture_toml())
+        let mut config = test_config(root, &fixture_toml());
+        config.ast_rule_dirs.clear();
+        config
+    }
+
+    #[cfg(unix)]
+    fn setup_repo_with_ast(root: &Path) -> ResolvedConfig {
+        let mut config = setup_repo(root);
+        let rule_dir = root.join("rules/ast");
+        fs::create_dir_all(&rule_dir).unwrap();
+        config
+            .ast_rule_dirs
+            .push(rule_dir.to_string_lossy().into_owned());
+        config
     }
 
     #[cfg(unix)]
@@ -589,7 +591,7 @@ mod tests {
     fn staged_path_resolution_error_blocks_gate_instead_of_reporting_clean() {
         let dir = TempDir::new().unwrap();
         let root = dir.path();
-        let config = setup_repo(root);
+        let config = setup_repo_with_ast(root);
         fs::write(root.join("src/staged.ts"), "export const staged = 1;\n").unwrap();
         git_ok(root, &["init"]);
         git_ok(root, &["add", "src/staged.ts"]);
@@ -643,7 +645,7 @@ mod tests {
     fn scanner_error_blocks_staged_gate_with_nonzero_status() {
         let dir = TempDir::new().unwrap();
         let root = dir.path();
-        let config = setup_repo(root);
+        let config = setup_repo_with_ast(root);
         fs::write(root.join("src/clean.ts"), "export const clean = 1;\n").unwrap();
         git_ok(root, &["init"]);
         git_ok(root, &["config", "user.email", "test@example.invalid"]);
@@ -661,10 +663,32 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn scanner_stub_that_ignores_targets_blocks_clean_staged_gate() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+        let config = setup_repo_with_ast(root);
+        fs::write(root.join("src/clean.ts"), "export const clean = 1;\n").unwrap();
+        git_ok(root, &["init"]);
+        git_ok(root, &["add", "src/clean.ts"]);
+        write_ast_stub(root, 0, "");
+
+        let (result, stderr) = capture_stderr(|stderr| {
+            run_gate_with_stderr(Mode::Staged, &config, Some(Tier::Fast), None, stderr)
+        });
+        assert_eq!(result.code, 2, "stderr:\n{stderr}");
+        assert!(
+            stderr.contains("path participation") || stderr.contains("path canary"),
+            "stderr:\n{stderr}"
+        );
+        assert!(!stderr.contains("SLOPGATE: clean"), "stderr:\n{stderr}");
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn scanner_stderr_blocks_staged_gate_even_with_zero_status() {
         let dir = TempDir::new().unwrap();
         let root = dir.path();
-        let config = setup_repo(root);
+        let config = setup_repo_with_ast(root);
         fs::write(root.join("src/clean.ts"), "export const clean = 1;\n").unwrap();
         git_ok(root, &["init"]);
         git_ok(root, &["add", "src/clean.ts"]);

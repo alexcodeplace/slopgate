@@ -766,6 +766,18 @@ mod tests {
         fs::create_dir_all(root.join(".slopgate")).unwrap();
         fs::create_dir_all(root.join("src")).unwrap();
         fs::write(root.join(".slopgate/config.toml"), fixture_toml()).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let stub = root.join("node_modules/.bin/ast-grep");
+            fs::create_dir_all(stub.parent().unwrap()).unwrap();
+            fs::write(
+                &stub,
+                "#!/bin/sh\nprintf '['\nfirst=1\nfor arg in \"$@\"; do\n  case \"$arg\" in\n    *.ts|*.tsx)\n      if [ $first -eq 0 ]; then printf ','; fi\n      printf '{\"ruleId\":\"slopgate-path-participation\",\"file\":\"%s\",\"lines\":\"canary\"}' \"$arg\"\n      first=0\n      ;;\n  esac\ndone\nprintf ']'\n",
+            )
+            .unwrap();
+            fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
+        }
         dir
     }
 
