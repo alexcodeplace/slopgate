@@ -47,6 +47,13 @@ pub struct GateResult {
     pub code: i32,
 }
 
+/// Result of [`snapshot_violations`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SnapshotResult {
+    Violations(Vec<Violation>),
+    Fatal,
+}
+
 /// Stderr sink for gate machine-surface output (testable).
 pub struct GateStderr<'a> {
     pub writer: &'a mut dyn Write,
@@ -488,7 +495,7 @@ pub fn run_gate_with_stderr(
 }
 
 /// Full-repo commit-tier snapshot, filtered like the gate (severity + suppressions).
-pub fn snapshot_violations(config: &ResolvedConfig) -> Vec<Violation> {
+pub fn snapshot_violations(config: &ResolvedConfig) -> SnapshotResult {
     let CollectResult {
         violations,
         notices,
@@ -498,9 +505,9 @@ pub fn snapshot_violations(config: &ResolvedConfig) -> Vec<Violation> {
         let _ = writeln!(std::io::stderr(), "⚠ SLOPGATE: {n}");
     }
     if fatal {
-        return vec![];
+        return SnapshotResult::Fatal;
     }
-    apply_gate_filters_simple(violations, config, Mode::Staged)
+    SnapshotResult::Violations(apply_gate_filters_simple(violations, config, Mode::Staged))
 }
 
 #[cfg(test)]
@@ -904,7 +911,9 @@ mod tests {
         config.gate.staged = ["critical"].iter().map(|s| s.to_string()).collect();
         fs::write(root.join("src/bad.ts"), "const x = foo as any;\n").unwrap();
 
-        let snap = snapshot_violations(&config);
+        let SnapshotResult::Violations(snap) = snapshot_violations(&config) else {
+            panic!("snapshot should succeed");
+        };
         assert!(
             snap.is_empty(),
             "high-severity as-any should be filtered by critical-only staged gate"

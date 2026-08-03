@@ -1,7 +1,7 @@
 use serde_json::Value;
 use slopgate_core::audit::run::run_audit;
 use slopgate_core::config::resolve_config;
-use slopgate_core::gate::{run_gate, snapshot_violations, Mode, Tier};
+use slopgate_core::gate::{run_gate, snapshot_violations, Mode, SnapshotResult, Tier};
 use slopgate_core::harvest::{check as check_harvest, record as record_defect, DefectRecord};
 use slopgate_core::help::HELP_TEXT;
 use slopgate_core::init::run::{engine_root, run_init_io};
@@ -449,7 +449,10 @@ fn dispatch(
                 write_slopgate_err(stderr, "slopgate: no valid baseline to prune");
                 return Ok(2);
             }
-            let snap = snapshot_violations(&config);
+            let snap = match snapshot_violations(&config) {
+                SnapshotResult::Violations(snap) => snap,
+                SnapshotResult::Fatal => return Ok(2),
+            };
             let current: HashSet<String> = snap
                 .iter()
                 .map(|v| fingerprint_violation(v, None))
@@ -490,7 +493,10 @@ fn dispatch(
                 error: None,
             }
         };
-        let snap = snapshot_violations(&config);
+        let snap = match snapshot_violations(&config) {
+            SnapshotResult::Violations(snap) => snap,
+            SnapshotResult::Fatal => return Ok(2),
+        };
         let n = write_baseline(baseline_path, &snap, &iso_timestamp_now())?;
         if exists {
             let fps: HashSet<String> = snap
@@ -779,6 +785,15 @@ mod tests {
             fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
         }
         dir
+    }
+
+    #[cfg(unix)]
+    fn write_failing_ast_stub(root: &std::path::Path) {
+        use std::os::unix::fs::PermissionsExt;
+
+        let stub = root.join("node_modules/.bin/ast-grep");
+        fs::write(&stub, "#!/bin/sh\nprintf 'scanner exit 9' >&2\nexit 9\n").unwrap();
+        fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
     }
 
     fn run_capture(args: Vec<String>) -> (i32, String, String) {
@@ -1074,6 +1089,46 @@ mod tests {
         let (code2, _, err2) = run_capture(guard_args);
         assert_eq!(code2, 2);
         assert!(err2.contains("baseline.json exists"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn baseline_update_preserves_bytes_when_scanner_exits_nine() {
+        let dir = setup_tmp_repo();
+        let root = dir.path();
+        fs::write(root.join("src/clean.ts"), "export const x = 1;\n").unwrap();
+
+        let mut create_args = base_args(root);
+        create_args.push("baseline".into());
+        assert_eq!(run_capture(create_args).0, 0);
+        let baseline_path = root.join(".slopgate/baseline.json");
+        let before = fs::read(&baseline_path).unwrap();
+        write_failing_ast_stub(root);
+
+        let mut update_args = base_args(root);
+        update_args.extend(["baseline".into(), "--update".into()]);
+        assert_eq!(run_capture(update_args).0, 2);
+        assert_eq!(fs::read(&baseline_path).unwrap(), before);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn baseline_prune_preserves_bytes_when_scanner_exits_nine() {
+        let dir = setup_tmp_repo();
+        let root = dir.path();
+        fs::write(root.join("src/clean.ts"), "export const x = 1;\n").unwrap();
+
+        let mut create_args = base_args(root);
+        create_args.push("baseline".into());
+        assert_eq!(run_capture(create_args).0, 0);
+        let baseline_path = root.join(".slopgate/baseline.json");
+        let before = fs::read(&baseline_path).unwrap();
+        write_failing_ast_stub(root);
+
+        let mut prune_args = base_args(root);
+        prune_args.extend(["baseline".into(), "--prune".into()]);
+        assert_eq!(run_capture(prune_args).0, 2);
+        assert_eq!(fs::read(&baseline_path).unwrap(), before);
     }
 
     #[test]
