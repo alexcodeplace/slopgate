@@ -1,7 +1,7 @@
 use serde_json::Value;
 use slopgate_core::audit::run::run_audit;
 use slopgate_core::config::resolve_config;
-use slopgate_core::gate::{run_gate, snapshot_violations, Mode, SnapshotResult, Tier};
+use slopgate_core::gate::{run_gate, snapshot_violations_with_stderr, Mode, SnapshotResult, Tier};
 use slopgate_core::harvest::{check as check_harvest, record as record_defect, DefectRecord};
 use slopgate_core::help::HELP_TEXT;
 use slopgate_core::init::run::{engine_root, run_init_io};
@@ -449,7 +449,7 @@ fn dispatch(
                 write_slopgate_err(stderr, "slopgate: no valid baseline to prune");
                 return Ok(2);
             }
-            let snap = match snapshot_violations(&config) {
+            let snap = match snapshot_violations_with_stderr(&config, stderr) {
                 SnapshotResult::Violations(snap) => snap,
                 SnapshotResult::Fatal => return Ok(2),
             };
@@ -493,7 +493,7 @@ fn dispatch(
                 error: None,
             }
         };
-        let snap = match snapshot_violations(&config) {
+        let snap = match snapshot_violations_with_stderr(&config, stderr) {
             SnapshotResult::Violations(snap) => snap,
             SnapshotResult::Fatal => return Ok(2),
         };
@@ -793,6 +793,28 @@ mod tests {
 
         let stub = root.join("node_modules/.bin/ast-grep");
         fs::write(&stub, "#!/bin/sh\nprintf 'scanner exit 9' >&2\nexit 9\n").unwrap();
+        fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    #[cfg(unix)]
+    fn write_ignoring_ast_stub(root: &std::path::Path) {
+        use std::os::unix::fs::PermissionsExt;
+
+        let stub = root.join("node_modules/.bin/ast-grep");
+        fs::write(&stub, "#!/bin/sh\nprintf '[]'\n").unwrap();
+        fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    #[cfg(unix)]
+    fn write_partial_coverage_ast_stub(root: &std::path::Path) {
+        use std::os::unix::fs::PermissionsExt;
+
+        let stub = root.join("node_modules/.bin/ast-grep");
+        fs::write(
+            &stub,
+            "#!/bin/sh\nprintf '['\nfirst=1\ncovered=0\nfor arg in \"$@\"; do\n  case \"$arg\" in\n    *path-canary-sentinel.ts|*path-canary-sentinel.tsx) scan=1 ;;\n    *.ts|*.tsx)\n      if [ $covered -eq 0 ]; then scan=1; covered=1; else scan=0; fi\n      ;;\n    *) scan=0 ;;\n  esac\n  if [ $scan -eq 1 ]; then\n    if [ $first -eq 0 ]; then printf ','; fi\n    printf '{\"ruleId\":\"slopgate-path-participation\",\"file\":\"%s\",\"lines\":\"canary\"}' \"$arg\"\n    first=0\n  fi\ndone\nprintf ']'\n",
+        )
+        .unwrap();
         fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
     }
 
@@ -1131,6 +1153,104 @@ mod tests {
         assert_eq!(fs::read(&baseline_path).unwrap(), before);
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn baseline_update_rejects_scanner_ignoring_full_scan_arguments() {
+        let dir = setup_tmp_repo();
+        let root = dir.path();
+        fs::write(root.join("src/clean.ts"), "export const x = 1;\n").unwrap();
+
+        let mut create_args = base_args(root);
+        create_args.push("baseline".into());
+        assert_eq!(run_capture(create_args).0, 0);
+        let baseline_path = root.join(".slopgate/baseline.json");
+        let before = fs::read(&baseline_path).unwrap();
+        write_ignoring_ast_stub(root);
+
+        let mut update_args = base_args(root);
+        update_args.extend(["baseline".into(), "--update".into()]);
+        let (code, _, stderr) = run_capture(update_args);
+        assert_eq!(code, 2, "stderr:\n{stderr}");
+        assert!(
+            stderr.contains("path participation canary"),
+            "stderr:\n{stderr}"
+        );
+        assert_eq!(fs::read(&baseline_path).unwrap(), before);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn baseline_prune_rejects_scanner_ignoring_full_scan_arguments() {
+        let dir = setup_tmp_repo();
+        let root = dir.path();
+        fs::write(root.join("src/clean.ts"), "export const x = 1;\n").unwrap();
+
+        let mut create_args = base_args(root);
+        create_args.push("baseline".into());
+        assert_eq!(run_capture(create_args).0, 0);
+        let baseline_path = root.join(".slopgate/baseline.json");
+        let before = fs::read(&baseline_path).unwrap();
+        write_ignoring_ast_stub(root);
+
+        let mut prune_args = base_args(root);
+        prune_args.extend(["baseline".into(), "--prune".into()]);
+        let (code, _, stderr) = run_capture(prune_args);
+        assert_eq!(code, 2, "stderr:\n{stderr}");
+        assert!(
+            stderr.contains("path participation canary"),
+            "stderr:\n{stderr}"
+        );
+        assert_eq!(fs::read(&baseline_path).unwrap(), before);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn baseline_update_rejects_partial_full_scan_coverage() {
+        let dir = setup_tmp_repo();
+        let root = dir.path();
+        for file in ["first.ts", "second.ts"] {
+            fs::write(root.join("src").join(file), "export const x = 1;\n").unwrap();
+        }
+
+        let mut create_args = base_args(root);
+        create_args.push("baseline".into());
+        assert_eq!(run_capture(create_args).0, 0);
+        let baseline_path = root.join(".slopgate/baseline.json");
+        let before = fs::read(&baseline_path).unwrap();
+        write_partial_coverage_ast_stub(root);
+
+        let mut update_args = base_args(root);
+        update_args.extend(["baseline".into(), "--update".into()]);
+        let (code, _, stderr) = run_capture(update_args);
+        assert_eq!(code, 2, "stderr:\n{stderr}");
+        assert!(stderr.contains("src/second.ts"), "stderr:\n{stderr}");
+        assert_eq!(fs::read(&baseline_path).unwrap(), before);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn baseline_prune_rejects_partial_full_scan_coverage() {
+        let dir = setup_tmp_repo();
+        let root = dir.path();
+        for file in ["first.ts", "second.ts"] {
+            fs::write(root.join("src").join(file), "export const x = 1;\n").unwrap();
+        }
+
+        let mut create_args = base_args(root);
+        create_args.push("baseline".into());
+        assert_eq!(run_capture(create_args).0, 0);
+        let baseline_path = root.join(".slopgate/baseline.json");
+        let before = fs::read(&baseline_path).unwrap();
+        write_partial_coverage_ast_stub(root);
+
+        let mut prune_args = base_args(root);
+        prune_args.extend(["baseline".into(), "--prune".into()]);
+        let (code, _, stderr) = run_capture(prune_args);
+        assert_eq!(code, 2, "stderr:\n{stderr}");
+        assert!(stderr.contains("src/second.ts"), "stderr:\n{stderr}");
+        assert_eq!(fs::read(&baseline_path).unwrap(), before);
+    }
+
     #[test]
     fn audit_exits_zero_with_header() {
         let dir = setup_tmp_repo();
@@ -1168,14 +1288,14 @@ mod tests {
         if config.fixtures_dirs.iter().any(|d| !Path::new(d).is_dir()) {
             return;
         }
-        if Command::new("ast-grep")
-            .arg("--version")
-            .output()
-            .map(|o| !o.status.success())
-            .unwrap_or(true)
-        {
-            return;
-        }
+        #[cfg(windows)]
+        let local_ast_grep = engine_root().join("node_modules/.bin/ast-grep.cmd");
+        #[cfg(not(windows))]
+        let local_ast_grep = engine_root().join("node_modules/.bin/ast-grep");
+        assert!(
+            local_ast_grep.is_file(),
+            "repository tests require pinned local ast-grep; run npm ci"
+        );
 
         let (code, _, _) = run_capture(vec![
             "slopgate-rs".into(),

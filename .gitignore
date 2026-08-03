@@ -18,6 +18,7 @@
 # 3. Allow-list: repo-public root files.
 !/.gitignore
 !/package.json
+!/package-lock.json
 !/README.md
 !/LICENSE
 !/CONTRIBUTING.md

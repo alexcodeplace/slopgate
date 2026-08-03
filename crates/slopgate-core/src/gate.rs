@@ -194,14 +194,9 @@ pub fn collect_violations(
     let mut violations = scan_regex(config, &files, mode == Mode::File);
     emit_stage_progress("regex", "end", Some(regex_started.elapsed().as_millis()));
 
-    let ast_files = if mode == Mode::Full {
-        None
-    } else {
-        Some(files.as_slice())
-    };
     let ast_started = Instant::now();
     emit_stage_progress("ast", "start", None);
-    let ast = run_ast_grep_scan(config, ast_files, &AstGrepScanOpts::default());
+    let ast = run_ast_grep_scan(config, Some(files.as_slice()), &AstGrepScanOpts::default());
     emit_stage_progress("ast", "end", Some(ast_started.elapsed().as_millis()));
     if !ast.available {
         fatal = true;
@@ -495,19 +490,28 @@ pub fn run_gate_with_stderr(
 }
 
 /// Full-repo commit-tier snapshot, filtered like the gate (severity + suppressions).
-pub fn snapshot_violations(config: &ResolvedConfig) -> SnapshotResult {
+pub fn snapshot_violations_with_stderr(
+    config: &ResolvedConfig,
+    stderr: &mut dyn Write,
+) -> SnapshotResult {
     let CollectResult {
         violations,
         notices,
         fatal,
     } = collect_violations(Mode::Full, config, Tier::Commit, None);
     for n in notices {
-        let _ = writeln!(std::io::stderr(), "⚠ SLOPGATE: {n}");
+        let _ = writeln!(stderr, "⚠ SLOPGATE: {n}");
     }
     if fatal {
         return SnapshotResult::Fatal;
     }
     SnapshotResult::Violations(apply_gate_filters_simple(violations, config, Mode::Staged))
+}
+
+/// Full-repo commit-tier snapshot, filtered like the gate (severity + suppressions).
+pub fn snapshot_violations(config: &ResolvedConfig) -> SnapshotResult {
+    let mut stderr = std::io::stderr();
+    snapshot_violations_with_stderr(config, &mut stderr)
 }
 
 #[cfg(test)]

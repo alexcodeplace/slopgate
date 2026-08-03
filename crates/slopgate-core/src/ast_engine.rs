@@ -565,6 +565,19 @@ fn validate_path_participation(
     errors
 }
 
+fn is_error_diagnostic_summary(stderr: &str) -> bool {
+    let mut lines = stderr.trim().lines();
+    matches!(
+        lines.next(),
+        Some(line)
+            if line.starts_with("Error: ")
+                && (line.ends_with("found in code.") || line.ends_with("found in codebase."))
+    ) && matches!(
+        lines.next(),
+        Some("Help: Scan succeeded and found error level diagnostics in the codebase.")
+    ) && lines.next().is_none()
+}
+
 /// Run ast-grep against project rule dirs and map findings to violations. Never panics.
 pub fn run_ast_grep_scan(
     config: &ResolvedConfig,
@@ -713,7 +726,11 @@ fn run_ast_grep_scan_in(
             }
         };
 
-        if !output.status.success() {
+        let diagnostic_status = output.status.code() == Some(1)
+            && std::str::from_utf8(&output.stderr)
+                .map(is_error_diagnostic_summary)
+                .unwrap_or(false);
+        if !output.status.success() && !diagnostic_status {
             let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
             let detail = if detail.is_empty() {
                 format!("no stderr; status {}", output.status)
@@ -735,7 +752,7 @@ fn run_ast_grep_scan_in(
                 ""
             }
         };
-        if !stderr.trim().is_empty() {
+        if !stderr.trim().is_empty() && !diagnostic_status {
             let cap = stderr.trim().chars().take(500).collect::<String>();
             errors.push(format!("ast-grep stderr: {cap}"));
         }
@@ -833,6 +850,22 @@ mod tests {
             fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
             stub
         }
+    }
+
+    #[cfg(unix)]
+    fn write_error_diagnostic_stub(bin_dir: &Path, stdout: &str) -> PathBuf {
+        use std::os::unix::fs::PermissionsExt;
+
+        let stub = bin_dir.join("ast-grep");
+        fs::write(
+            &stub,
+            format!(
+                "#!/bin/sh\nprintf '%s\\n' '{stdout}'\nprintf '%s\\n' 'Error: 1 error found in codebase.' >&2\nprintf '%s\\n' 'Help: Scan succeeded and found error level diagnostics in the codebase.' >&2\nexit 1\n"
+            ),
+        )
+        .unwrap();
+        fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
+        stub
     }
 
     #[cfg(unix)]
@@ -1403,6 +1436,37 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn run_scan_accepts_ast_grep_error_diagnostic_status_with_json_matches() {
+        let dir = TempDir::new().unwrap();
+        let config = ast_config(&dir);
+        fs::write(
+            dir.path().join("src/changed.ts"),
+            "export const changed = 1;\n",
+        )
+        .unwrap();
+        write_error_diagnostic_stub(
+            &dir.path().join("node_modules/.bin"),
+            r#"[{"ruleId":"test-rule","file":"src/changed.ts","lines":"export const changed = 1;","range":{"start":{"line":0}}}]"#,
+        );
+
+        let files = vec!["src/changed.ts".to_string()];
+        let got = run_ast_grep_scan(
+            &config,
+            Some(&files),
+            &AstGrepScanOpts {
+                raw_targets: true,
+                path_env: None,
+            },
+        );
+
+        assert!(got.available);
+        assert!(got.errors.is_empty(), "errors: {:?}", got.errors);
+        assert_eq!(got.violations.len(), 1);
+        assert_eq!(got.violations[0].id, "test-rule");
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn run_scan_rejects_stub_that_returns_empty_matches_without_scanning_targets() {
         let dir = TempDir::new().unwrap();
         let config = ast_config(&dir);
@@ -1584,7 +1648,7 @@ mod tests {
         write_canary_stub(&dir.path().join("node_modules/.bin"), Some("comment.ts"));
         let files = vec!["src/comment.ts".to_string(), "src/source.ts".to_string()];
         let got = run_ast_grep_scan(&config, Some(&files), &AstGrepScanOpts::default());
-        assert!(got.available);
+        assert!(got.available, "errors: {:?}", got.errors);
         assert!(got.errors.is_empty(), "errors: {:?}", got.errors);
         assert!(got.violations.is_empty());
     }
