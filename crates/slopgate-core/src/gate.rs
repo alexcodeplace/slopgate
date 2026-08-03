@@ -146,10 +146,25 @@ pub fn collect_violations(
     let ctx = enumerate_ctx(config);
     let discovery_started = Instant::now();
     emit_stage_progress("discovery", "start", None);
-    let files = match mode {
+    let enumeration = match mode {
         Mode::Staged => list_source_files(&ctx, EnumerateMode::Staged),
         Mode::File => list_source_files(&ctx, EnumerateMode::File(file_target.unwrap_or(""))),
         Mode::Full => list_source_files(&ctx, EnumerateMode::Walk),
+    };
+    let files = match enumeration {
+        Ok(files) => files,
+        Err(error) => {
+            emit_stage_progress(
+                "discovery",
+                "end",
+                Some(discovery_started.elapsed().as_millis()),
+            );
+            return CollectResult {
+                violations: vec![],
+                notices: vec![format!("source enumeration failed: {error}")],
+                fatal: true,
+            };
+        }
     };
     emit_stage_progress(
         "discovery",
@@ -586,6 +601,41 @@ mod tests {
         assert_eq!(result.code, 2, "stderr:\n{stderr}");
         assert!(stderr.contains("staged.ts"), "stderr:\n{stderr}");
         assert!(!stderr.contains("SLOPGATE: clean"), "stderr:\n{stderr}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn staged_enumeration_failure_blocks_gate_with_code_two() {
+        let dir = TempDir::new().unwrap();
+        let config = setup_repo(dir.path());
+
+        let (result, stderr) = capture_stderr(|stderr| {
+            run_gate_with_stderr(Mode::Staged, &config, Some(Tier::Fast), None, stderr)
+        });
+        assert_eq!(result.code, 2, "stderr:\n{stderr}");
+        assert!(
+            stderr.contains("source enumeration failed"),
+            "stderr:\n{stderr}"
+        );
+        assert!(stderr.contains("git diff --cached"), "stderr:\n{stderr}");
+        assert!(!stderr.contains("SLOPGATE: clean"), "stderr:\n{stderr}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn truly_empty_staged_set_is_clean() {
+        let dir = TempDir::new().unwrap();
+        let config = setup_repo(dir.path());
+        git_ok(dir.path(), &["init"]);
+
+        let (result, stderr) = capture_stderr(|stderr| {
+            run_gate_with_stderr(Mode::Staged, &config, Some(Tier::Fast), None, stderr)
+        });
+        assert_eq!(result.code, 0, "stderr:\n{stderr}");
+        assert!(
+            !stderr.contains("source enumeration failed"),
+            "stderr:\n{stderr}"
+        );
     }
 
     #[cfg(unix)]

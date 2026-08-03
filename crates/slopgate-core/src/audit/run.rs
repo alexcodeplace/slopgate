@@ -622,9 +622,10 @@ fn run_audit_inner(config: &ResolvedConfig, since_days: u32, json: bool) -> Stri
     let header = format!("SLOPGATE AUDIT — {project} — window {since_days}d");
     let repo_root = Path::new(&config.repo_root);
 
-    let outer: Result<(), String> = {
+    let outer: Result<(), String> = (|| {
         let ctx = enumerate_ctx(config);
-        let files = list_source_files(&ctx, EnumerateMode::Walk);
+        let files =
+            list_source_files(&ctx, EnumerateMode::Walk).map_err(|error| error.to_string())?;
         let mut sources: HashMap<String, String> = HashMap::new();
         for f in &files {
             let path = repo_root.join(f);
@@ -795,7 +796,7 @@ fn run_audit_inner(config: &ResolvedConfig, since_days: u32, json: bool) -> Stri
         }
 
         Ok(())
-    };
+    })();
 
     if let Err(e) = outer {
         notices.push(format!("audit error: {e}"));
