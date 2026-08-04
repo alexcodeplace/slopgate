@@ -43,7 +43,10 @@ fn hook_block() -> String {
         "    echo \"slopgate: engine not found on PATH (install slopgate or set SLOPGATE_BIN) — commit BLOCKED\" >&2",
         "    exit 1",
         "  fi",
-        "  \"$SLOPGATE_ENGINE\" --staged --config \"$SLOPGATE_ROOT/.slopgate/config.toml\" || exit 1",
+        // git exports GIT_DIR/GIT_WORK_TREE to hooks; in a linked worktree GIT_DIR is
+        // .git/worktrees/<name>, which the engine resolves as its root — every checker
+        // then fail-opens.
+        "  (cd \"$SLOPGATE_ROOT\" && env -u GIT_DIR -u GIT_WORK_TREE \"$SLOPGATE_ENGINE\" --staged --config \"$SLOPGATE_ROOT/.slopgate/config.toml\") || exit 1",
         "fi",
         MARKER_END,
     ]
@@ -247,6 +250,14 @@ mod tests {
         assert!(
             !content.contains("gate SKIPPED"),
             "hook must never fail open"
+        );
+        assert!(
+            content.contains("env -u GIT_DIR -u GIT_WORK_TREE"),
+            "hook must clear git's per-worktree env or every checker fail-opens in a linked worktree"
+        );
+        assert!(
+            content.contains("cd \"$SLOPGATE_ROOT\""),
+            "engine must run from the toplevel, not the linked worktree's GIT_DIR"
         );
     }
 
