@@ -25,6 +25,24 @@ chk baseline-guard.sh 2 "Bash slopgate baseline blocked" '{"tool_name":"Bash","t
 BJSON=".slopgate/baseline.json"
 chk baseline-guard.sh 2 "Bash rm baseline blocked"       "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"rm $BJSON\"}}"
 chk baseline-guard.sh 0 "Bash benign allowed"            '{"tool_name":"Bash","tool_input":{"command":"ls -la"}}'
+BCMD="slopgate ""baseline"
+chk baseline-guard.sh 2 "Write baseline.json blocked"    '{"tool_name":"Write","tool_input":{"file_path":"/x/.slopgate/baseline.json"}}'
+chk baseline-guard.sh 2 "Bash npx wrapper blocked"       "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"npx $BCMD\"}}"
+chk baseline-guard.sh 2 "Bash node bin wrapper blocked"  "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"node ./dist/bin/$BCMD --update\"}}"
+chk baseline-guard.sh 2 "Bash mv baseline blocked"       "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"mv $BJSON /tmp/x\"}}"
+chk baseline-guard.sh 0 "Read is not gated"              '{"tool_name":"Read","tool_input":{"file_path":"/x/.slopgate/baseline.json"}}'
+chk baseline-guard.sh 0 "empty payload allowed"          ''
+
+# A block must still emit the operator-facing reason and the bypass-attempt stats row.
+mkdir -p "$SANDBOX/.slopgate/sessions"
+skey=$(printf '%s' "$PWD" | sha256sum | cut -c1-16)
+printf '{"model":"opus","sessionId":"s1"}' > "$SANDBOX/.slopgate/sessions/$skey.json"
+blk_err=$(printf '%s' '{"tool_name":"Edit","tool_input":{"file_path":"/x/.slopgate/baseline.json"}}' | bash "$HERE/baseline-guard.sh" 2>&1 >/dev/null)
+if [[ "$blk_err" == *"SLOPGATE GUARD"* ]]; then echo "PASS (0) block prints the guard reason"; pass=$((pass+1));
+else echo "FAIL block prints the guard reason: $blk_err"; fail=$((fail+1)); fi
+if grep -q '"ruleId":"baseline-tamper"' "$SANDBOX/.slopgate/stats.jsonl" 2>/dev/null; then
+  echo "PASS (0) block records a bypass-attempt stats row"; pass=$((pass+1));
+else echo "FAIL block records a bypass-attempt stats row"; fail=$((fail+1)); fi
 
 echo "== commit-hook (0=allow/skip; no .slopgate config in sandbox HOME) =="
 chk commit-hook.sh 0 "non-commit Bash fast-skips"        '{"tool_name":"Bash","tool_input":{"command":"ls -la"}}'
