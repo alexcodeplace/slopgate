@@ -11,9 +11,9 @@ use std::process::Command;
 
 pub fn stage_progress_line(stage: &str, event: &str, elapsed_ms: Option<u128>) -> String {
     match elapsed_ms {
-        Some(elapsed_ms) => format!(
-            "SLOPGATE_PROGRESS stage={stage} event={event} elapsed_ms={elapsed_ms}"
-        ),
+        Some(elapsed_ms) => {
+            format!("SLOPGATE_PROGRESS stage={stage} event={event} elapsed_ms={elapsed_ms}")
+        }
         None => format!("SLOPGATE_PROGRESS stage={stage} event={event}"),
     }
 }
