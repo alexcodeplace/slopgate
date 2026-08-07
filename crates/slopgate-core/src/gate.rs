@@ -258,11 +258,7 @@ pub fn collect_violations(
                     }
                 };
                 let seconds = t0.elapsed().as_secs_f64();
-                emit_stage_progress(
-                    item.checker.id,
-                    "end",
-                    Some(t0.elapsed().as_millis()),
-                );
+                emit_stage_progress(item.checker.id, "end", Some(t0.elapsed().as_millis()));
                 CheckerRunItemResult {
                     id: item.checker.id.to_string(),
                     res,
