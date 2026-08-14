@@ -10,8 +10,9 @@ import { installSkills } from './install-skills.mjs';
 import { installAgentHooks, removeAgentHooks, statusAgentHooks, AGENTS } from './install-agent-hooks.mjs';
 import { recordIncidents } from './stats/record.mjs';
 import { readRows, globalStatsPath, projectStatsPath } from './stats/store.mjs';
-import { aggregate, formatStats, DIMENSIONS } from './stats/query.mjs';
+import { aggregate, formatStats, formatDashboard, aggregateDashboard, DIMENSIONS } from './stats/query.mjs';
 import { runAudit } from './audit/audit.mjs';
+import { HELP_TEXT } from './help.mjs';
 
 const args = process.argv.slice(2);
 const has = (f) => args.includes(f);
@@ -19,29 +20,39 @@ const valOf = (f) => { const i = args.indexOf(f); return i === -1 ? null : args[
 
 async function requireConfig() {
   const configPath = valOf('--config');
-  if (!configPath) { process.stderr.write('slopgate: --config <path> required\n'); process.exit(2); }
+  if (!configPath) { process.stderr.write("slopgate: --config <path> required — run 'slopgate --help'\n"); process.exit(2); }
   return resolveConfig(configPath);
 }
 
 async function main() {
+  if (args.length === 0 || has('--help') || has('-h') || args[0] === 'help') {
+    process.stdout.write(HELP_TEXT + '\n');
+    process.exit(0);
+  }
+
   if (has('init')) {
     const dir = valOf('init') || process.cwd();
     process.exit(runInit(dir));
   }
 
   if (has('stats')) {
-    const by = valOf('--by') ?? 'rule';
-    if (!DIMENSIONS[by]) {
-      process.stderr.write(`slopgate: --by must be ${Object.keys(DIMENSIONS).join('|')}\n`);
-      process.exit(2);
-    }
+    const byPresent = has('--by');
+    const byFlag = valOf('--by');
     const since = valOf('--since') ?? undefined;
     const json = has('--json');
     const configPath = valOf('--config');
     const rows = configPath
       ? readRows(projectStatsPath(await resolveConfig(configPath)))
       : readRows(globalStatsPath());
-    process.stdout.write(formatStats(aggregate(rows, { by, since }), { json }) + '\n');
+    if (!byPresent) {
+      process.stdout.write(formatDashboard(aggregateDashboard(rows, { since }), { json }) + '\n');
+      process.exit(0);
+    }
+    if (!DIMENSIONS[byFlag]) {
+      process.stderr.write(`slopgate: --by must be ${Object.keys(DIMENSIONS).join('|')}\n`);
+      process.exit(2);
+    }
+    process.stdout.write(formatStats(aggregate(rows, { by: byFlag, since }), { json }) + '\n');
     process.exit(0);
   }
 
@@ -188,7 +199,7 @@ async function main() {
   const fileTarget = valOf('--file');
   if (fileTarget) process.exit((await runGate('file', config, { tier: tierFlag ?? undefined, fileTarget })).code);
 
-  process.stderr.write('slopgate: no mode (use --staged | --file <p> | --self-test | init [dir] | baseline [--update|--prune] | install-hooks | install-skills [--force] | agent-hooks [status|install|reinstall|remove] [--agent <id>] | audit [--since-days N] [--json] | stats [--by rule|model|project|severity|engine|category] [--since <iso>] [--json] [--config <p>])\n');
+  process.stderr.write("slopgate: unknown command — run 'slopgate --help'\n");
   process.exit(2);
 }
 main().catch((e) => { process.stderr.write(`slopgate: ${e?.stack || e}\n`); process.exit(1); });
