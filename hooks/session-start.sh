@@ -2,8 +2,10 @@
 # Slopgate SessionStart hook — capture the session-start model for stats attribution.
 # Only SessionStart receives a `model` field; mid-session /model switches are invisible.
 # Fail-open: any error leaves no file -> stats resolves model to 'unknown'.
+. "${BASH_SOURCE[0]%/*}/runtime.sh"
+RUNTIME="$(slopgate_runtime_or_warn session-start)" || exit 0
 ROOT=$(realpath "$(git rev-parse --show-toplevel 2>/dev/null || pwd)" 2>/dev/null || git rev-parse --show-toplevel 2>/dev/null || pwd)
-exec /usr/bin/bun -e '
+exec "$RUNTIME" -e '
 const crypto = require("crypto"), fs = require("fs"), path = require("path"), os = require("os");
 const root = process.argv[1];
 let d = "";

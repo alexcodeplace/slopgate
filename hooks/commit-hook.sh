@@ -4,12 +4,14 @@ TOOL_JSON=$(cat)
 # Cheap raw prefilter: a git commit always carries the substring "commit" in the payload,
 # so skip the interpreter spawn on every non-commit Bash call.
 printf '%s' "$TOOL_JSON" | grep -q 'commit' || exit 0
-CMD=$(/usr/bin/bun -e "
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+. "$HERE/runtime.sh"
+RUNTIME="$(slopgate_runtime_or_warn commit-hook)" || exit 0
+CMD=$("$RUNTIME" -e "
 let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{try{process.stdout.write(JSON.parse(d).tool_input?.command||'')}catch{process.stdout.write('')}});" <<< "$TOOL_JSON" 2>/dev/null)
 echo "$CMD" | grep -qE 'git[[:space:]]+commit' || exit 0
 
 ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
 CONFIG="$ROOT/.slopgate/config.toml"
 [ -f "$CONFIG" ] || exit 0
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-exec /usr/bin/bun "$HERE/../bin/slopgate" --staged --config "$CONFIG"
+exec "$RUNTIME" "$HERE/../bin/slopgate" --staged --config "$CONFIG"

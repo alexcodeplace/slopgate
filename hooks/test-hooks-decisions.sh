@@ -50,5 +50,38 @@ chk commit-hook.sh 0 "non-commit Bash fast-skips"        '{"tool_name":"Bash","t
 echo "== session-start (0, records model, no crash) =="
 chk session-start.sh 0 "session-start records model"     '{"model":"opus","session_id":"s1","cwd":"'"$PWD"'"}'
 
+echo "== runtime resolution (a host without /usr/bin/bun still runs every hook) =="
+node_bin="$(command -v node)"
+if [ -n "$node_bin" ]; then
+  export SLOPGATE_RUNTIME="$node_bin"
+  chk baseline-guard.sh 2 "node runtime blocks baseline edit" \
+    '{"tool_name":"Edit","tool_input":{"file_path":"/x/.slopgate/baseline.json"}}'
+  chk session-start.sh 0 "node runtime records model" \
+    '{"model":"opus","session_id":"s1","cwd":"'"$PWD"'"}'
+  unset SLOPGATE_RUNTIME
+else
+  echo "FAIL no node on PATH to prove runtime independence"; fail=$((fail+1))
+fi
+
+# The hooks name no interpreter by absolute path: one that a box does not have makes every
+# gate exit 0 without a word, which is indistinguishable from a clean scan.
+hardcoded=$(grep -l '/usr/bin/\(bun\|node\)' "$HERE"/baseline-guard.sh "$HERE"/commit-hook.sh \
+  "$HERE"/edit-hook.sh "$HERE"/session-start.sh 2>/dev/null)
+if [ -z "$hardcoded" ]; then echo "PASS (0) no hook hardcodes an interpreter path"; pass=$((pass+1));
+else echo "FAIL hooks hardcode an interpreter path: $hardcoded"; fail=$((fail+1)); fi
+
+warn=$(printf '%s' '{"tool_name":"Edit","tool_input":{"file_path":"/x/src/app.ts"}}' \
+  | env -i HOME="$SANDBOX" PATH=/nonexistent SLOPGATE_SYSTEM_RUNTIME= \
+    /bin/bash "$HERE/baseline-guard.sh" 2>&1 >/dev/null)
+rc=$?
+if [ "$rc" -eq 0 ] && [[ "$warn" == *"no bun or node on this host"* ]]; then
+  echo "PASS (0) missing runtime says so on stderr"; pass=$((pass+1));
+else echo "FAIL missing runtime is silent (rc=$rc): $warn"; fail=$((fail+1)); fi
+
+if (. "$HERE/runtime.sh"; SLOPGATE_RUNTIME="$HERE/baseline-guard.sh" \
+    SLOPGATE_SYSTEM_RUNTIME= PATH=/nonexistent slopgate_runtime >/dev/null 2>&1); then
+  echo "FAIL a hook path is accepted as the runtime"; fail=$((fail+1));
+else echo "PASS (0) a hook path is rejected as the runtime"; pass=$((pass+1)); fi
+
 echo "---- pass=$pass fail=$fail ----"
 [ "$fail" -eq 0 ]
