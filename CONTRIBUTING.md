@@ -12,6 +12,8 @@ cargo build --release    # builds the native engine (target/release/slopgate-rs)
 npm run self-test
 ```
 
+A first-time clone needs both `npm install` and `cargo build --release` before `npm run self-test` passes.
+
 The engine is a native Rust workspace. `bin/slopgate` is a thin Node launcher that
 locates and execs the compiled binary (`target/release/slopgate-rs`), so the engine
 must be built before `bin/slopgate` (and therefore `npm run self-test`) will run.
