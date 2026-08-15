@@ -116,10 +116,60 @@ pub fn agent_detected(agent: &AgentDef) -> bool {
     agent.commands.iter().any(|cmd| which(cmd))
 }
 
+/// Durable anchor for generated hook command paths.
+///
+/// An `engine_root` that is a *linked git worktree* is ephemeral: when the
+/// worktree is removed, every installed hook points at a dead path and the
+/// guards fail OPEN ("not found" on each tool call). Remap such a root to the
+/// main checkout (parent of `git rev-parse --git-common-dir`), whose `hooks/`
+/// is the durable copy of the same landed content. Unchanged for: a normal
+/// checkout (common dir is the root's own `.git`), a non-repo root, a root
+/// nested inside some other repo, or a main checkout missing the hooks marker.
+fn durable_hook_root(engine_root: &Path) -> PathBuf {
+    fn main_checkout_root(engine_root: &Path) -> Option<PathBuf> {
+        let out = Command::new("git")
+            .arg("-C")
+            .arg(engine_root)
+            .args(["rev-parse", "--show-toplevel", "--git-common-dir"])
+            .output()
+            .ok()?;
+        if !out.status.success() {
+            return None;
+        }
+        let text = String::from_utf8_lossy(&out.stdout);
+        let mut lines = text.lines();
+        let toplevel = PathBuf::from(lines.next()?.trim());
+        let toplevel = toplevel.canonicalize().unwrap_or(toplevel);
+        let common = lines.next()?.trim();
+        let common = if Path::new(common).is_absolute() {
+            PathBuf::from(common)
+        } else {
+            toplevel.join(common)
+        };
+        let common = common.canonicalize().unwrap_or(common);
+        let engine_canon = engine_root
+            .canonicalize()
+            .unwrap_or_else(|_| engine_root.to_path_buf());
+        if toplevel != engine_canon {
+            return None;
+        }
+        let main_root = common.parent()?;
+        if main_root == engine_canon {
+            return None;
+        }
+        if !main_root.join("hooks/session-start.sh").is_file() {
+            return None;
+        }
+        Some(main_root.to_path_buf())
+    }
+    main_checkout_root(engine_root).unwrap_or_else(|| engine_root.to_path_buf())
+}
+
 /// The canonical slopgate hook set: (event, matcher, command path).
 fn required_hook_entries(engine_root: &Path) -> Vec<(&'static str, Option<&'static str>, String)> {
+    let anchor = durable_hook_root(engine_root);
     let path = |name: &str| {
-        engine_root
+        anchor
             .join("hooks")
             .join(name)
             .to_string_lossy()
@@ -843,6 +893,69 @@ mod tests {
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].action, "removed");
         assert!(settings_path.is_file());
+    }
+
+    fn git(dir: &Path, args: &[&str]) {
+        let status = std::process::Command::new("git")
+            .arg("-C")
+            .arg(dir)
+            .args([
+                "-c",
+                "user.email=slopgate-test@example.com",
+                "-c",
+                "user.name=slopgate-test",
+            ])
+            .args(args)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .unwrap();
+        assert!(status.success(), "git {args:?} failed in {}", dir.display());
+    }
+
+    #[test]
+    fn required_hooks_from_linked_worktree_anchor_at_main_checkout() {
+        let root = TempDir::new().unwrap();
+        let main = root.path().join("main");
+        fs::create_dir_all(main.join("hooks")).unwrap();
+        for name in [
+            "commit-hook.sh",
+            "edit-hook.sh",
+            "session-start.sh",
+            "baseline-guard.sh",
+        ] {
+            fs::write(main.join("hooks").join(name), "").unwrap();
+        }
+        git(&main, &["init", "-q"]);
+        git(&main, &["add", "-A"]);
+        git(&main, &["commit", "-q", "-m", "hooks"]);
+        let wt = root.path().join("wt");
+        git(&main, &["worktree", "add", "-q", wt.to_str().unwrap()]);
+
+        let main_canon = main.canonicalize().unwrap();
+        for (_, _, cmd) in required_hook_entries(&wt) {
+            assert!(
+                Path::new(&cmd).starts_with(&main_canon),
+                "hook not anchored at main checkout: {cmd}"
+            );
+            assert!(!Path::new(&cmd).starts_with(&wt), "hook anchored in worktree: {cmd}");
+            assert!(Path::new(&cmd).is_file(), "hook path not durable: {cmd}");
+        }
+    }
+
+    #[test]
+    fn required_hooks_in_normal_checkout_unchanged() {
+        let engine = setup_engine();
+        git(engine.path(), &["init", "-q"]);
+        git(engine.path(), &["add", "-A"]);
+        git(engine.path(), &["commit", "-q", "-m", "hooks"]);
+
+        for (_, _, cmd) in required_hook_entries(engine.path()) {
+            assert!(
+                Path::new(&cmd).starts_with(engine.path()),
+                "hook moved off the checkout root: {cmd}"
+            );
+        }
     }
 
     #[test]
