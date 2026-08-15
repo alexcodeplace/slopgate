@@ -1,6 +1,6 @@
 //! Gate conductor — mirrors `src/gate.mjs` (`collectViolations`, `applyGateFilters`, `runGate`, `snapshotViolations`).
 
-use crate::ast_engine::{run_ast_grep_scan, AstGrepScanOpts};
+use crate::ast_engine::{run_ast_grep_scan, run_pinned_ast_grep_scan, AstGrepScanOpts};
 use crate::checkers::health::{is_infra_error, update_checker_health, CheckerOutcome};
 use crate::checkers::index::{Checker, CHECKERS};
 use crate::checkers::shared::{emit_stage_progress, ensure_cache_dir, map_limit};
@@ -37,6 +37,7 @@ pub enum Tier {
 pub struct CollectResult {
     pub violations: Vec<Violation>,
     pub notices: Vec<String>,
+    pub fatal: bool,
 }
 
 /// Result of [`run_gate`].
@@ -44,6 +45,13 @@ pub struct CollectResult {
 pub struct GateResult {
     pub violations: Vec<Violation>,
     pub code: i32,
+}
+
+/// Result of [`snapshot_violations`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SnapshotResult {
+    Violations(Vec<Violation>),
+    Fatal,
 }
 
 /// Stderr sink for gate machine-surface output (testable).
@@ -124,9 +132,9 @@ fn push_ast_violations(config: &ResolvedConfig, violations: &mut Vec<Violation>,
     violations.push(ast_v);
 }
 
-struct EligibleChecker<'a> {
-    checker: &'static Checker,
-    cfg: &'a Value,
+struct EligibleChecker<'checker, 'cfg> {
+    checker: &'checker Checker,
+    cfg: &'cfg Value,
 }
 
 struct CheckerRunItemResult {
@@ -142,13 +150,38 @@ pub fn collect_violations(
     tier: Tier,
     file_target: Option<&str>,
 ) -> CollectResult {
+    collect_violations_with_checkers(mode, config, tier, file_target, CHECKERS)
+}
+
+fn collect_violations_with_checkers(
+    mode: Mode,
+    config: &ResolvedConfig,
+    tier: Tier,
+    file_target: Option<&str>,
+    checkers: &[Checker],
+) -> CollectResult {
     let ctx = enumerate_ctx(config);
     let discovery_started = Instant::now();
     emit_stage_progress("discovery", "start", None);
-    let files = match mode {
+    let enumeration = match mode {
         Mode::Staged => list_source_files(&ctx, EnumerateMode::Staged),
         Mode::File => list_source_files(&ctx, EnumerateMode::File(file_target.unwrap_or(""))),
         Mode::Full => list_source_files(&ctx, EnumerateMode::Walk),
+    };
+    let files = match enumeration {
+        Ok(files) => files,
+        Err(error) => {
+            emit_stage_progress(
+                "discovery",
+                "end",
+                Some(discovery_started.elapsed().as_millis()),
+            );
+            return CollectResult {
+                violations: vec![],
+                notices: vec![format!("source enumeration failed: {error}")],
+                fatal: true,
+            };
+        }
     };
     emit_stage_progress(
         "discovery",
@@ -157,10 +190,12 @@ pub fn collect_violations(
     );
 
     let mut notices = Vec::new();
+    let mut fatal = false;
     if files.is_empty() && mode != Mode::Full {
         return CollectResult {
             violations: vec![],
             notices,
+            fatal,
         };
     }
 
@@ -169,19 +204,22 @@ pub fn collect_violations(
     let mut violations = scan_regex(config, &files, mode == Mode::File);
     emit_stage_progress("regex", "end", Some(regex_started.elapsed().as_millis()));
 
-    let ast_files = if mode == Mode::Full {
-        None
-    } else {
-        Some(files.as_slice())
-    };
     let ast_started = Instant::now();
     emit_stage_progress("ast", "start", None);
-    let ast = run_ast_grep_scan(config, ast_files, &AstGrepScanOpts::default());
+    let ast = if mode == Mode::Full {
+        run_pinned_ast_grep_scan(config, Some(files.as_slice()), &AstGrepScanOpts::default())
+    } else {
+        run_ast_grep_scan(config, Some(files.as_slice()), &AstGrepScanOpts::default())
+    };
     emit_stage_progress("ast", "end", Some(ast_started.elapsed().as_millis()));
     if !ast.available {
+        fatal = true;
         notices.push(ast.errors.join("; "));
     } else {
         for e in &ast.errors {
+            if !e.starts_with("ast-grep: using PATH") {
+                fatal = true;
+            }
             notices.push(format!("ast-grep: {e}"));
         }
     }
@@ -190,10 +228,10 @@ pub fn collect_violations(
     }
 
     if tier == Tier::Commit {
-        let mut eligible: Vec<EligibleChecker<'_>> = Vec::new();
+        let mut eligible: Vec<EligibleChecker<'_, '_>> = Vec::new();
         let mut outcomes: Vec<CheckerOutcome> = Vec::new();
 
-        for checker in CHECKERS {
+        for checker in checkers {
             let Some(cfg) = config.checkers.get(checker.id) else {
                 continue;
             };
@@ -204,6 +242,9 @@ pub fn collect_violations(
                 Err(payload) => {
                     let msg = panic_payload_str(payload);
                     notices.push(format!("{} detect crashed: {msg}", checker.id));
+                    if mode == Mode::Full {
+                        fatal = true;
+                    }
                     outcomes.push(CheckerOutcome {
                         id: checker.id.to_string(),
                         infra_failed: true,
@@ -216,6 +257,9 @@ pub fn collect_violations(
             if !det.available {
                 let reason = det.reason.unwrap_or_else(|| "unavailable".to_string());
                 notices.push(format!("skipped: {} ({reason})", checker.id));
+                if mode == Mode::Full && reason.contains("binary") {
+                    fatal = true;
+                }
                 outcomes.push(CheckerOutcome {
                     id: checker.id.to_string(),
                     infra_failed: true,
@@ -280,6 +324,9 @@ pub fn collect_violations(
             for e in &item.res.errors {
                 notices.push(format!("{}: {e}", item.id));
             }
+            if mode == Mode::Full && !item.res.errors.is_empty() {
+                fatal = true;
+            }
             outcomes.push(CheckerOutcome {
                 id: item.id.clone(),
                 infra_failed: item.res.errors.iter().any(|e| is_infra_error(e)),
@@ -311,6 +358,7 @@ pub fn collect_violations(
     CollectResult {
         violations,
         notices,
+        fatal,
     }
 }
 
@@ -400,10 +448,18 @@ pub fn run_gate_with_stderr(
     let CollectResult {
         violations: collected,
         notices,
+        fatal,
     } = collect_violations(mode, config, eff_tier, file_target);
 
     for n in notices {
         gate_stderr.notice(&n);
+    }
+    if fatal {
+        gate_stderr.writeln("SLOPGATE: blocked (scanner infrastructure error)");
+        return GateResult {
+            violations: vec![],
+            code: 2,
+        };
     }
 
     let mut violations = apply_gate_filters(collected, config, mode, Some(gate_stderr));
@@ -457,15 +513,28 @@ pub fn run_gate_with_stderr(
 }
 
 /// Full-repo commit-tier snapshot, filtered like the gate (severity + suppressions).
-pub fn snapshot_violations(config: &ResolvedConfig) -> Vec<Violation> {
+pub fn snapshot_violations_with_stderr(
+    config: &ResolvedConfig,
+    stderr: &mut dyn Write,
+) -> SnapshotResult {
     let CollectResult {
         violations,
         notices,
+        fatal,
     } = collect_violations(Mode::Full, config, Tier::Commit, None);
     for n in notices {
-        let _ = writeln!(std::io::stderr(), "⚠ SLOPGATE: {n}");
+        let _ = writeln!(stderr, "⚠ SLOPGATE: {n}");
     }
-    apply_gate_filters_simple(violations, config, Mode::Staged)
+    if fatal {
+        return SnapshotResult::Fatal;
+    }
+    SnapshotResult::Violations(apply_gate_filters_simple(violations, config, Mode::Staged))
+}
+
+/// Full-repo commit-tier snapshot, filtered like the gate (severity + suppressions).
+pub fn snapshot_violations(config: &ResolvedConfig) -> SnapshotResult {
+    let mut stderr = std::io::stderr();
+    snapshot_violations_with_stderr(config, &mut stderr)
 }
 
 #[cfg(test)]
@@ -476,6 +545,7 @@ mod tests {
     use crate::rules::packs::Pattern;
     use std::fs;
     use std::io::Cursor;
+    use std::process::Command;
     use tempfile::TempDir;
 
     fn fixture_toml() -> String {
@@ -506,7 +576,167 @@ mod tests {
 
     fn setup_repo(root: &Path) -> ResolvedConfig {
         fs::create_dir_all(root.join("src")).unwrap();
-        test_config(root, &fixture_toml())
+        let mut config = test_config(root, &fixture_toml());
+        config.ast_rule_dirs.clear();
+        config
+    }
+
+    #[cfg(unix)]
+    fn setup_repo_with_ast(root: &Path) -> ResolvedConfig {
+        let mut config = setup_repo(root);
+        let rule_dir = root.join("rules/ast");
+        fs::create_dir_all(&rule_dir).unwrap();
+        config
+            .ast_rule_dirs
+            .push(rule_dir.to_string_lossy().into_owned());
+        config
+    }
+
+    #[cfg(unix)]
+    fn git_ok(root: &Path, args: &[&str]) {
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(root)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "git {args:?} failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    #[cfg(unix)]
+    fn write_ast_stub(root: &Path, status: i32, stderr: &str) {
+        use std::os::unix::fs::PermissionsExt;
+        let path = root.join("node_modules/.bin/ast-grep");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let stderr = stderr.replace('\\', "\\\\").replace('\'', "'\\''");
+        fs::write(
+            &path,
+            format!("#!/bin/sh\nprintf '%s' '{stderr}' >&2\nprintf '[]'\nexit {status}\n"),
+        )
+        .unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn staged_path_resolution_error_blocks_gate_instead_of_reporting_clean() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+        let config = setup_repo_with_ast(root);
+        fs::write(root.join("src/staged.ts"), "export const staged = 1;\n").unwrap();
+        git_ok(root, &["init"]);
+        git_ok(root, &["add", "src/staged.ts"]);
+        fs::remove_file(root.join("src/staged.ts")).unwrap();
+
+        let (result, stderr) = capture_stderr(|stderr| {
+            run_gate_with_stderr(Mode::Staged, &config, Some(Tier::Fast), None, stderr)
+        });
+        assert_eq!(result.code, 2, "stderr:\n{stderr}");
+        assert!(stderr.contains("staged.ts"), "stderr:\n{stderr}");
+        assert!(!stderr.contains("SLOPGATE: clean"), "stderr:\n{stderr}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn staged_enumeration_failure_blocks_gate_with_code_two() {
+        let dir = TempDir::new().unwrap();
+        let config = setup_repo(dir.path());
+
+        let (result, stderr) = capture_stderr(|stderr| {
+            run_gate_with_stderr(Mode::Staged, &config, Some(Tier::Fast), None, stderr)
+        });
+        assert_eq!(result.code, 2, "stderr:\n{stderr}");
+        assert!(
+            stderr.contains("source enumeration failed"),
+            "stderr:\n{stderr}"
+        );
+        assert!(stderr.contains("git diff --cached"), "stderr:\n{stderr}");
+        assert!(!stderr.contains("SLOPGATE: clean"), "stderr:\n{stderr}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn truly_empty_staged_set_is_clean() {
+        let dir = TempDir::new().unwrap();
+        let config = setup_repo(dir.path());
+        git_ok(dir.path(), &["init"]);
+
+        let (result, stderr) = capture_stderr(|stderr| {
+            run_gate_with_stderr(Mode::Staged, &config, Some(Tier::Fast), None, stderr)
+        });
+        assert_eq!(result.code, 0, "stderr:\n{stderr}");
+        assert!(
+            !stderr.contains("source enumeration failed"),
+            "stderr:\n{stderr}"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn scanner_error_blocks_staged_gate_with_nonzero_status() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+        let config = setup_repo_with_ast(root);
+        fs::write(root.join("src/clean.ts"), "export const clean = 1;\n").unwrap();
+        git_ok(root, &["init"]);
+        git_ok(root, &["config", "user.email", "test@example.invalid"]);
+        git_ok(root, &["config", "user.name", "test"]);
+        git_ok(root, &["add", "src/clean.ts"]);
+        write_ast_stub(root, 7, "scanner exploded\n");
+
+        let (result, stderr) = capture_stderr(|stderr| {
+            run_gate_with_stderr(Mode::Staged, &config, Some(Tier::Fast), None, stderr)
+        });
+        assert_eq!(result.code, 2, "stderr:\n{stderr}");
+        assert!(stderr.contains("scanner exploded"), "stderr:\n{stderr}");
+        assert!(!stderr.contains("SLOPGATE: clean"), "stderr:\n{stderr}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn scanner_stub_that_ignores_targets_blocks_clean_staged_gate() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+        let config = setup_repo_with_ast(root);
+        fs::write(root.join("src/clean.ts"), "export const clean = 1;\n").unwrap();
+        git_ok(root, &["init"]);
+        git_ok(root, &["add", "src/clean.ts"]);
+        write_ast_stub(root, 0, "");
+
+        let (result, stderr) = capture_stderr(|stderr| {
+            run_gate_with_stderr(Mode::Staged, &config, Some(Tier::Fast), None, stderr)
+        });
+        assert_eq!(result.code, 2, "stderr:\n{stderr}");
+        assert!(
+            stderr.contains("path participation") || stderr.contains("path canary"),
+            "stderr:\n{stderr}"
+        );
+        assert!(!stderr.contains("SLOPGATE: clean"), "stderr:\n{stderr}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn scanner_stderr_blocks_staged_gate_even_with_zero_status() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+        let config = setup_repo_with_ast(root);
+        fs::write(root.join("src/clean.ts"), "export const clean = 1;\n").unwrap();
+        git_ok(root, &["init"]);
+        git_ok(root, &["add", "src/clean.ts"]);
+        write_ast_stub(root, 0, "No such file or directory\n");
+
+        let (result, stderr) = capture_stderr(|stderr| {
+            run_gate_with_stderr(Mode::Staged, &config, Some(Tier::Fast), None, stderr)
+        });
+        assert_eq!(result.code, 2, "stderr:\n{stderr}");
+        assert!(
+            stderr.contains("No such file or directory"),
+            "stderr:\n{stderr}"
+        );
+        assert!(!stderr.contains("SLOPGATE: clean"), "stderr:\n{stderr}");
     }
 
     fn capture_stderr<F>(f: F) -> (GateResult, String)
@@ -708,11 +938,83 @@ mod tests {
         config.gate.staged = ["critical"].iter().map(|s| s.to_string()).collect();
         fs::write(root.join("src/bad.ts"), "const x = foo as any;\n").unwrap();
 
-        let snap = snapshot_violations(&config);
+        let SnapshotResult::Violations(snap) = snapshot_violations(&config) else {
+            panic!("snapshot should succeed");
+        };
         assert!(
             snap.is_empty(),
             "high-severity as-any should be filtered by critical-only staged gate"
         );
+    }
+
+    #[test]
+    fn configured_checker_detect_panic_is_fatal_for_full_snapshot() {
+        fn detect_panic(_: &ResolvedConfig, _: &Value) -> crate::checkers::index::DetectResult {
+            panic!("detect failure");
+        }
+        fn run_unused(
+            _: &ResolvedConfig,
+            _: &Value,
+            _: crate::checkers::index::CheckerRunOpts<'_>,
+        ) -> crate::checkers::index::CheckerRunResult {
+            unreachable!()
+        }
+
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+        let mut config = setup_repo(root);
+        config
+            .checkers
+            .insert("detect-panic".into(), serde_json::json!({}));
+        let checkers = [Checker {
+            id: "detect-panic",
+            detect: detect_panic,
+            run: run_unused,
+        }];
+
+        let collected =
+            collect_violations_with_checkers(Mode::Full, &config, Tier::Commit, None, &checkers);
+        assert!(collected.fatal);
+        assert!(collected
+            .notices
+            .iter()
+            .any(|notice| notice.contains("detect-panic detect crashed")));
+    }
+
+    #[test]
+    fn configured_non_applicable_checker_is_not_fatal_for_full_snapshot() {
+        fn detect_non_applicable(
+            _: &ResolvedConfig,
+            _: &Value,
+        ) -> crate::checkers::index::DetectResult {
+            crate::checkers::index::DetectResult {
+                available: false,
+                reason: Some("no applicable config".into()),
+            }
+        }
+        fn run_unused(
+            _: &ResolvedConfig,
+            _: &Value,
+            _: crate::checkers::index::CheckerRunOpts<'_>,
+        ) -> crate::checkers::index::CheckerRunResult {
+            unreachable!()
+        }
+
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+        let mut config = setup_repo(root);
+        config
+            .checkers
+            .insert("non-applicable".into(), serde_json::json!({}));
+        let checkers = [Checker {
+            id: "non-applicable",
+            detect: detect_non_applicable,
+            run: run_unused,
+        }];
+
+        let collected =
+            collect_violations_with_checkers(Mode::Full, &config, Tier::Commit, None, &checkers);
+        assert!(!collected.fatal);
     }
 
     #[test]

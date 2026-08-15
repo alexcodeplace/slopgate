@@ -26,12 +26,12 @@ fn repo_root() -> PathBuf {
         .to_path_buf()
 }
 
-fn ast_grep_available() -> bool {
-    Command::new("ast-grep")
-        .arg("--version")
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
+fn local_ast_grep_available(repo: &Path) -> bool {
+    #[cfg(windows)]
+    let local_ast_grep = repo.join("node_modules/.bin/ast-grep.cmd");
+    #[cfg(not(windows))]
+    let local_ast_grep = repo.join("node_modules/.bin/ast-grep");
+    local_ast_grep.is_file()
 }
 
 fn strip_ansi(s: &str) -> String {
@@ -113,13 +113,11 @@ fn gate_output(repo: &Path, file: &str) -> (i32, String) {
 
 #[test]
 fn gate_output_matches_js_oracle_golden() {
-    if !ast_grep_available() {
-        eprintln!(
-            "SKIP parity_golden: ast-grep not available (AST canary parity cannot be checked)"
-        );
-        return;
-    }
     let repo = repo_root();
+    assert!(
+        local_ast_grep_available(&repo),
+        "repository tests require pinned local ast-grep; run npm ci"
+    );
     let golden_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden");
     for (name, file) in [
         ("canary", "rules/baseline/fixtures/src/canary.tsx"),

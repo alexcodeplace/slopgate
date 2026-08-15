@@ -615,27 +615,19 @@ mod tests {
                 copy_dir_all(&from_path, &dst.join(to));
             }
         }
-    }
-
-    fn ast_grep_available() -> bool {
-        Command::new("ast-grep")
-            .arg("--version")
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .map(|s| s.success())
-            .unwrap_or(false)
-            || slopgate_repo_with_fixtures()
-                .join("node_modules/.bin/ast-grep")
-                .exists()
+        let node_modules = src.join("node_modules");
+        assert!(
+            node_modules.join(".bin/ast-grep").is_file(),
+            "repository tests require pinned local ast-grep; run npm ci"
+        );
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&node_modules, dst.join("node_modules")).unwrap();
+        #[cfg(windows)]
+        std::os::windows::fs::symlink_dir(&node_modules, dst.join("node_modules")).unwrap();
     }
 
     #[test]
     fn self_test_passes_on_real_config() {
-        if !ast_grep_available() {
-            eprintln!("SKIP self_test_passes_on_real_config: ast-grep not available");
-            return;
-        }
         let tmp = tempfile::tempdir().unwrap();
         sync_repo_tree(tmp.path());
         let config = build_selftest_config(tmp.path());
@@ -714,10 +706,6 @@ mod tests {
 
     #[test]
     fn project_pack_canary_exercised_by_self_test() {
-        if !ast_grep_available() {
-            eprintln!("SKIP project_pack_canary_exercised_by_self_test: ast-grep not available");
-            return;
-        }
         let dir = tempfile::tempdir().unwrap();
         let config = build_project_pack_selftest_config(dir.path(), PROJ_SELFTEST_JSON);
         assert!(
@@ -733,10 +721,6 @@ mod tests {
 
     #[test]
     fn project_pack_broken_canary_fails_self_test() {
-        if !ast_grep_available() {
-            eprintln!("SKIP project_pack_broken_canary_fails_self_test: ast-grep not available");
-            return;
-        }
         let dir = tempfile::tempdir().unwrap();
         let proj_json = r#"{"proj":[{"id":"proj-selftest","severity":"high","pattern":"FORBIDDEN_TOKEN","resolution":"remove it","canary":"this is clean text"}]}"#;
         let config = build_project_pack_selftest_config(dir.path(), proj_json);

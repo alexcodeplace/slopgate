@@ -6,7 +6,7 @@
   "license": "MIT",
   "author": "Alex <git@alex.org.il>",
   "repository": { "type": "git", "url": "git+https://github.com/alexcodeplace/slopgate.git" },
-  "homepage": "https://github.com/alexcodeplace/slopgate#readme",
+  "homepage": "https://github.com/alexcodeplace/slopgate",
   "bugs": { "url": "https://github.com/alexcodeplace/slopgate/issues" },
   "bin": { "slopgate": "bin/slopgate" },
   "files": [
@@ -16,6 +16,12 @@
   "engines": { "node": ">=18" },
   "scripts": {
     "self-test": "node bin/slopgate --self-test --config rules/baseline/selftest.config.toml",
-    "test": "cargo test --workspace"
+    "test": "cargo test --workspace --all-features"
+  },
+  "devDependencies": {
+    "@ast-grep/cli": "0.39.5"
+  },
+  "allowScripts": {
+    "@ast-grep/cli@0.39.5": true
   }
 }

@@ -21,7 +21,7 @@ use crate::checkers::depcruise::run_depcruise_json;
 use crate::checkers::shared::ensure_cache_dir;
 use crate::config::ResolvedConfig;
 use crate::enumerate::{list_source_files, EnumerateCtx, EnumerateMode};
-use crate::gate::snapshot_violations;
+use crate::gate::{snapshot_violations, SnapshotResult};
 use crate::ratchet::load_baseline;
 use crate::stats::query::{aggregate, Row};
 use crate::stats::store::{project_stats_path, read_rows, ProjectStatsConfig};
@@ -622,9 +622,10 @@ fn run_audit_inner(config: &ResolvedConfig, since_days: u32, json: bool) -> Stri
     let header = format!("SLOPGATE AUDIT — {project} — window {since_days}d");
     let repo_root = Path::new(&config.repo_root);
 
-    let outer: Result<(), String> = {
+    let outer: Result<(), String> = (|| {
         let ctx = enumerate_ctx(config);
-        let files = list_source_files(&ctx, EnumerateMode::Walk);
+        let files =
+            list_source_files(&ctx, EnumerateMode::Walk).map_err(|error| error.to_string())?;
         let mut sources: HashMap<String, String> = HashMap::new();
         for f in &files {
             let path = repo_root.join(f);
@@ -738,11 +739,18 @@ fn run_audit_inner(config: &ResolvedConfig, since_days: u32, json: bool) -> Stri
                 let rel_baseline = path_relative(&config.repo_root, &config.baseline_path);
                 let hist = json_entry_history(repo_root, &rel_baseline, "entries");
                 let burndown = build_burndown(&hist);
-                let current_count = snapshot_violations(config).len();
-                sections.push(AuditSection {
-                    title: "Ratchet progress + burn-down".into(),
-                    lines: ratchet_lines(bl.entries.len(), current_count, &burndown),
-                });
+                match snapshot_violations(config) {
+                    SnapshotResult::Violations(snapshot) => {
+                        sections.push(AuditSection {
+                            title: "Ratchet progress + burn-down".into(),
+                            lines: ratchet_lines(bl.entries.len(), snapshot.len(), &burndown),
+                        });
+                    }
+                    SnapshotResult::Fatal => {
+                        notices
+                            .push("ratchet progress skipped (scanner infrastructure error)".into());
+                    }
+                }
             }
         }
 
@@ -795,7 +803,7 @@ fn run_audit_inner(config: &ResolvedConfig, since_days: u32, json: bool) -> Stri
         }
 
         Ok(())
-    };
+    })();
 
     if let Err(e) = outer {
         notices.push(format!("audit error: {e}"));
