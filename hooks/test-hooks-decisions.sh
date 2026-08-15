@@ -70,7 +70,7 @@ hardcoded=$(grep -l '/usr/bin/\(bun\|node\)' "$HERE"/baseline-guard.sh "$HERE"/c
 if [ -z "$hardcoded" ]; then echo "PASS (0) no hook hardcodes an interpreter path"; pass=$((pass+1));
 else echo "FAIL hooks hardcode an interpreter path: $hardcoded"; fail=$((fail+1)); fi
 
-warn=$(printf '%s' '{"tool_name":"Edit","tool_input":{"file_path":"/x/src/app.ts"}}' \
+warn=$(printf '%s' '{"tool_name":"Edit","tool_input":{"file_path":"/x/.slopgate/baseline.json"}}' \
   | env -i HOME="$SANDBOX" PATH=/nonexistent SLOPGATE_SYSTEM_RUNTIME= \
     /bin/bash "$HERE/baseline-guard.sh" 2>&1 >/dev/null)
 rc=$?
