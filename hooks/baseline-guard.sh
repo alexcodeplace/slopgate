@@ -4,7 +4,7 @@
 # The common call carries no such substring, so a pure-bash check answers it without a
 # runtime start (measured: ~67ms runtime boot -> ~5ms). Payload with the literal falls
 # through to the real guard, verdict semantics unchanged.
-payload=$(</dev/stdin)
+payload=""; IFS= read -rd '' payload || true
 case "$payload" in
   *slopgate*) ;;
   *) exit 0 ;;
