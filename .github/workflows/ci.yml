@@ -37,6 +37,10 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: ${{ matrix.node }}
+      - name: Install npm runtime dependencies
+        run: npm install
+      - name: Verify public package version surface
+        run: node bin/slopgate --version | grep -Fx "slopgate 0.3.4"
       - name: Build engine
         run: cargo build --release --locked --target x86_64-unknown-linux-gnu -p slopgate-rs
       - name: Stage binary into vendor/

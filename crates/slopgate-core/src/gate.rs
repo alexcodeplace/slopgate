@@ -37,6 +37,7 @@ pub enum Tier {
 pub struct CollectResult {
     pub violations: Vec<Violation>,
     pub notices: Vec<String>,
+    pub infra_errors: Vec<String>,
 }
 
 /// Result of [`run_gate`].
@@ -107,6 +108,25 @@ fn iso_now() -> String {
         .unwrap_or_else(|| "1970-01-01T00:00:00.000Z".to_string())
 }
 
+fn classify_ast_diagnostics(
+    ast: &crate::ast_engine::AstGrepScanResult,
+) -> (Vec<String>, Vec<String>) {
+    let mut notices = Vec::new();
+    let mut infra_errors = Vec::new();
+    if !ast.available {
+        infra_errors.push(ast.errors.join("; "));
+        return (notices, infra_errors);
+    }
+    for error in &ast.errors {
+        if error.contains("using PATH binary (version not pinned") {
+            notices.push(format!("ast-grep: {error}"));
+        } else {
+            infra_errors.push(format!("ast-grep: {error}"));
+        }
+    }
+    (notices, infra_errors)
+}
+
 fn push_ast_violations(config: &ResolvedConfig, violations: &mut Vec<Violation>, ast_v: Violation) {
     if config.ast_disable.contains(&ast_v.id) {
         return;
@@ -161,6 +181,7 @@ pub fn collect_violations(
         return CollectResult {
             violations: vec![],
             notices,
+            infra_errors: vec![],
         };
     }
 
@@ -178,13 +199,8 @@ pub fn collect_violations(
     emit_stage_progress("ast", "start", None);
     let ast = run_ast_grep_scan(config, ast_files, &AstGrepScanOpts::default());
     emit_stage_progress("ast", "end", Some(ast_started.elapsed().as_millis()));
-    if !ast.available {
-        notices.push(ast.errors.join("; "));
-    } else {
-        for e in &ast.errors {
-            notices.push(format!("ast-grep: {e}"));
-        }
-    }
+    let (ast_notices, infra_errors) = classify_ast_diagnostics(&ast);
+    notices.extend(ast_notices);
     for v in ast.violations {
         push_ast_violations(config, &mut violations, v);
     }
@@ -311,6 +327,7 @@ pub fn collect_violations(
     CollectResult {
         violations,
         notices,
+        infra_errors,
     }
 }
 
@@ -400,10 +417,20 @@ pub fn run_gate_with_stderr(
     let CollectResult {
         violations: collected,
         notices,
+        infra_errors,
     } = collect_violations(mode, config, eff_tier, file_target);
 
     for n in notices {
         gate_stderr.notice(&n);
+    }
+    if !infra_errors.is_empty() {
+        for e in infra_errors {
+            gate_stderr.writeln(&format!("✖ SLOPGATE: infrastructure failure: {e}"));
+        }
+        return GateResult {
+            violations: vec![],
+            code: 2,
+        };
     }
 
     let mut violations = apply_gate_filters(collected, config, mode, Some(gate_stderr));
@@ -457,15 +484,29 @@ pub fn run_gate_with_stderr(
 }
 
 /// Full-repo commit-tier snapshot, filtered like the gate (severity + suppressions).
-pub fn snapshot_violations(config: &ResolvedConfig) -> Vec<Violation> {
+/// Refuses to produce a snapshot when a required rule engine is unavailable or failed.
+pub fn snapshot_violations_checked(config: &ResolvedConfig) -> Result<Vec<Violation>, Vec<String>> {
     let CollectResult {
         violations,
         notices,
+        infra_errors,
     } = collect_violations(Mode::Full, config, Tier::Commit, None);
     for n in notices {
         let _ = writeln!(std::io::stderr(), "⚠ SLOPGATE: {n}");
     }
-    apply_gate_filters_simple(violations, config, Mode::Staged)
+    if !infra_errors.is_empty() {
+        for e in &infra_errors {
+            let _ = writeln!(std::io::stderr(), "✖ SLOPGATE: infrastructure failure: {e}");
+        }
+        return Err(infra_errors);
+    }
+    Ok(apply_gate_filters_simple(violations, config, Mode::Staged))
+}
+
+/// Compatibility wrapper for non-mutating callers. Prefer `snapshot_violations_checked`
+/// when an incomplete snapshot could cause destructive state changes.
+pub fn snapshot_violations(config: &ResolvedConfig) -> Vec<Violation> {
+    snapshot_violations_checked(config).unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -518,6 +559,33 @@ mod tests {
         let result = f(&mut gate_stderr);
         let stderr = String::from_utf8(buf.into_inner()).unwrap();
         (result, stderr)
+    }
+
+    #[test]
+    fn missing_ast_engine_is_fatal_not_advisory() {
+        let ast = crate::ast_engine::AstGrepScanResult {
+            available: false,
+            violations: vec![],
+            errors: vec!["ast-grep binary not found".into()],
+        };
+        let (notices, infra) = classify_ast_diagnostics(&ast);
+        assert!(notices.is_empty());
+        assert_eq!(infra, vec!["ast-grep binary not found"]);
+    }
+
+    #[test]
+    fn unpinned_path_ast_engine_is_advisory_only() {
+        let ast = crate::ast_engine::AstGrepScanResult {
+            available: true,
+            violations: vec![],
+            errors: vec![
+                "ast-grep: using PATH binary (version not pinned — results may differ from CI)"
+                    .into(),
+            ],
+        };
+        let (notices, infra) = classify_ast_diagnostics(&ast);
+        assert!(infra.is_empty());
+        assert_eq!(notices.len(), 1);
     }
 
     #[test]

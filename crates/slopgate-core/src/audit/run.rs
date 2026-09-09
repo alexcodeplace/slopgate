@@ -21,7 +21,7 @@ use crate::checkers::depcruise::run_depcruise_json;
 use crate::checkers::shared::ensure_cache_dir;
 use crate::config::ResolvedConfig;
 use crate::enumerate::{list_source_files, EnumerateCtx, EnumerateMode};
-use crate::gate::snapshot_violations;
+use crate::gate::snapshot_violations_checked;
 use crate::ratchet::load_baseline;
 use crate::stats::query::{aggregate, Row};
 use crate::stats::store::{project_stats_path, read_rows, ProjectStatsConfig};
@@ -738,11 +738,16 @@ fn run_audit_inner(config: &ResolvedConfig, since_days: u32, json: bool) -> Stri
                 let rel_baseline = path_relative(&config.repo_root, &config.baseline_path);
                 let hist = json_entry_history(repo_root, &rel_baseline, "entries");
                 let burndown = build_burndown(&hist);
-                let current_count = snapshot_violations(config).len();
-                sections.push(AuditSection {
-                    title: "Ratchet progress + burn-down".into(),
-                    lines: ratchet_lines(bl.entries.len(), current_count, &burndown),
-                });
+                match snapshot_violations_checked(config) {
+                    Ok(current) => sections.push(AuditSection {
+                        title: "Ratchet progress + burn-down".into(),
+                        lines: ratchet_lines(bl.entries.len(), current.len(), &burndown),
+                    }),
+                    Err(errors) => notices.push(format!(
+                        "ratchet progress skipped (required scanner failed: {})",
+                        errors.join("; ")
+                    )),
+                }
             }
         }
 

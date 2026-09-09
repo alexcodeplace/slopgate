@@ -11,7 +11,7 @@
 //   2. <pkg>/vendor/<platform>-<arch>/slopgate-rs     (bundled prebuilt; npm-install path)
 //   3. <pkg>/target/release/slopgate-rs               (cargo build --release; dev)
 import { spawnSync } from 'node:child_process';
-import { existsSync, realpathSync } from 'node:fs';
+import { existsSync, realpathSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import os from 'node:os';
@@ -34,6 +34,26 @@ try {
 
 const selfPath = fileURLToPath(import.meta.url);
 const pkgRoot = join(dirname(selfPath), '..');
+
+// Report the public package version, not the Rust engine's internal crate version.
+if (process.argv.length === 3 && ['--version', '-V'].includes(process.argv[2])) {
+  try {
+    const { version } = JSON.parse(readFileSync(join(pkgRoot, 'package.json'), 'utf8'));
+    process.stdout.write(`slopgate ${version}\n`);
+    process.exit(0);
+  } catch (error) {
+    process.stderr.write(`slopgate: failed to read package version: ${error.message}\n`);
+    process.exit(1);
+  }
+}
+
+// Runtime dependencies such as ast-grep live inside this npm package. Make
+// their bins visible to the native engine even when slopgate is installed
+// globally and the target project has no node_modules of its own.
+const depBin = join(pkgRoot, 'node_modules', '.bin');
+const pathKey = Object.keys(process.env).find((key) => key.toLowerCase() === 'path') || 'PATH';
+process.env[pathKey] = process.env[pathKey] ? `${depBin}${process.platform === 'win32' ? ';' : ':'}${process.env[pathKey]}` : depBin;
+
 const binName = process.platform === 'win32' ? 'slopgate-rs.exe' : 'slopgate-rs';
 const host = `${process.platform}-${process.arch}`;
 

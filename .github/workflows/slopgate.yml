@@ -5,14 +5,13 @@ on:
       slopgate-version:
         required: false
         type: string
-        default: 0.2.0
+        default: 0.3.4
       runner-json:
         required: false
         type: string
-        default: '["self-hosted"]'
+        default: '["ubuntu-latest"]'
 jobs:
   slopgate:
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ${{ fromJSON(inputs.runner-json) }}
     permissions:
       contents: read

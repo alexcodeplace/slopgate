@@ -1,21 +1,37 @@
 {
   "name": "@alexcodeplace/slopgate",
-  "version": "0.2.0",
+  "version": "0.3.4",
   "type": "module",
-  "description": "Global code-quality / anti-slop gate — engine shared, rules per-project.",
+  "description": "Global code-quality / anti-slop gate \u2014 engine shared, rules per-project.",
   "license": "MIT",
   "author": "Alex <git@alex.org.il>",
-  "repository": { "type": "git", "url": "git+https://github.com/alexcodeplace/slopgate.git" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/alexcodeplace/slopgate.git"
+  },
   "homepage": "https://github.com/alexcodeplace/slopgate#readme",
-  "bugs": { "url": "https://github.com/alexcodeplace/slopgate/issues" },
-  "bin": { "slopgate": "bin/slopgate" },
+  "bugs": {
+    "url": "https://github.com/alexcodeplace/slopgate/issues"
+  },
+  "bin": {
+    "slopgate": "bin/slopgate"
+  },
   "files": [
-    "bin", "hooks", "rules", "skills", "vendor",
+    "bin",
+    "hooks",
+    "rules",
+    "skills",
+    "vendor",
     "!bin/slopgate-rs"
   ],
-  "engines": { "node": ">=18" },
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "self-test": "node bin/slopgate --self-test --config rules/baseline/selftest.config.toml",
     "test": "cargo test --workspace"
+  },
+  "dependencies": {
+    "@ast-grep/cli": "0.45.3"
   }
 }

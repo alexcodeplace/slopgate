@@ -35,12 +35,12 @@ fn baseline_ast_dir() -> String {
         .into_owned()
 }
 
-fn checker_fixtures_dir(config: &ResolvedConfig) -> PathBuf {
-    config
-        .fixtures_dirs
-        .first()
-        .map(|dir| Path::new(dir).join("checker-outputs"))
-        .unwrap_or_else(|| Path::new(&config.config_dir).join("fixtures/checker-outputs"))
+fn checker_fixtures_dir(_config: &ResolvedConfig) -> PathBuf {
+    // Parser fixtures validate Slopgate's own checker adapters, not project behavior.
+    // Always use the fixtures shipped with the engine. Project `fixtures` are for
+    // project AST-rule canaries and must not be required to duplicate Slopgate's
+    // internal parser contract corpus.
+    crate::init::run::engine_root().join("rules/baseline/fixtures/checker-outputs")
 }
 
 fn stringify_tsc_output(errors: &[TscError]) -> String {
@@ -338,9 +338,10 @@ pub fn run_self_test(config: &ResolvedConfig) -> i32 {
 
     if !ast.available {
         eprint(&format!(
-            "WARN ast-grep unavailable — bucket-B self-test skipped: {}",
+            "FAIL ast-grep unavailable — AST rules were NOT verified: {}",
             ast.errors.join("; ")
         ));
+        failed += 1;
     } else if !ast.violations.iter().any(|v| v.id == "slopgate-canary") {
         for e in &ast.errors {
             eprint(&format!("FAIL ast: {e}"));
@@ -364,7 +365,7 @@ pub fn run_self_test(config: &ResolvedConfig) -> i32 {
 
     if !ast.available {
         if !project_ast_dirs.is_empty() {
-            eprint("WARN ast-grep unavailable — project ast rules not verified");
+            eprint("FAIL ast-grep unavailable — project AST rules were NOT verified");
         }
     } else {
         for dir in project_ast_dirs {
@@ -650,28 +651,41 @@ mod tests {
     }
 
     #[test]
-    fn checker_fixtures_resolve_from_isolated_project_config() {
-        use crate::config::resolve_config;
-
+    fn checker_fixtures_always_resolve_from_engine_distribution() {
         let repo = tempfile::tempdir().unwrap();
-        assert!(Command::new("git")
-            .args(["init", "--quiet"])
-            .current_dir(repo.path())
-            .status()
-            .unwrap()
-            .success());
-
         let config_dir = repo.path().join(".slopgate");
-        let checker_dir = config_dir.join("fixtures/checker-outputs");
-        fs::create_dir_all(&checker_dir).unwrap();
-        write_temp_file(
-            &config_dir.join("config.toml"),
-            "roots = []\nfixtures = \"./fixtures\"\n",
-        );
-
-        let config = resolve_config(&config_dir.join("config.toml").to_string_lossy()).unwrap();
-        assert_eq!(checker_fixtures_dir(&config), checker_dir);
-        assert!(!repo.path().join("rules").exists());
+        fs::create_dir_all(&config_dir).unwrap();
+        let config = ResolvedConfig {
+            repo_root: repo.path().to_string_lossy().into_owned(),
+            config_dir: config_dir.to_string_lossy().into_owned(),
+            roots: vec![],
+            roots_rel: vec![],
+            exts: HashSet::new(),
+            skip_dirs: HashSet::new(),
+            patterns: vec![],
+            ast_rule_dirs: vec![],
+            checkers: BTreeMap::new(),
+            ast_disable: HashSet::new(),
+            baseline_path: config_dir
+                .join("baseline.json")
+                .to_string_lossy()
+                .into_owned(),
+            suppressions_path: config_dir
+                .join("suppressions.json")
+                .to_string_lossy()
+                .into_owned(),
+            fixtures_dirs: vec![config_dir.join("fixtures").to_string_lossy().into_owned()],
+            checker_concurrency: 1,
+            gate: GateAllow {
+                file: HashSet::new(),
+                staged: HashSet::new(),
+            },
+            ux_ast_severity: BTreeMap::new(),
+            ux_ast_all: HashSet::new(),
+        };
+        let expected =
+            crate::init::run::engine_root().join("rules/baseline/fixtures/checker-outputs");
+        assert_eq!(checker_fixtures_dir(&config), expected);
     }
 
     /// Resolve a project pack via `config.toml`, then isolate the self-test surface:

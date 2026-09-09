@@ -41,10 +41,10 @@ A global code-quality / anti-slop gate for Claude Code and git. Engine is shared
 ## Install
 
 ```bash
-npm install -g slopgate
+npm install -g @alexcodeplace/slopgate@0.3.4
 ```
 
-The matching prebuilt native engine for your platform (linux / macOS / Windows × x64 / arm64) is pulled in automatically as an optional dependency — no toolchain or build step required.
+The matching prebuilt native engine for your platform is included in the package, and the pinned `ast-grep` runtime needed for structural rules is installed as a package dependency. No Rust toolchain or separate scanner install is required.
 
 Then onboard a project:
 
@@ -90,7 +90,7 @@ slopgate baseline --prune --config .slopgate/config.toml
 
 ### Run self-test (validate the engine against bundled fixtures):
 ```bash
-slopgate --self-test --config "$(npm root -g)/slopgate/rules/baseline/selftest.config.toml"
+slopgate --self-test --config "$(npm root -g)/@alexcodeplace/slopgate/rules/baseline/selftest.config.toml"
 ```
 
 ### Run immutable full-repository CI gate:
@@ -113,7 +113,7 @@ jobs:
     uses: alexcodeplace/slopgate/.github/workflows/slopgate.yml@v1
 ```
 
-Self-hosted jobs reject fork pull requests before checkout. Use repository-owned branches or isolated disposable runners for untrusted forks.
+The reusable workflow defaults to GitHub-hosted `ubuntu-latest`, so fork pull requests run in an isolated disposable runner. If you override `runner-json` to use a persistent self-hosted runner, do not execute untrusted fork code there.
 
 ### Install or reinstall hooks:
 ```bash
@@ -365,7 +365,7 @@ skipDirs = ["node_modules", "dist"]      # dirs to skip
 
 # Rule packs
 baseline = ["no-stubs", "ts-suppress", "as-any"]  # built-in baseline packs to enable (opt-in)
-rules = []                               # project regex rule packs — must be [] (PHASE-2, not yet supported)
+rules = ["./rules/project.json"]          # optional project-owned regex packs
 astRules = "./rules/ast"                 # dir of .yml AST rules (optional)
 astDisable = []                          # rule ids to disable (escape hatch)
 
@@ -464,7 +464,7 @@ Point `astRules` at the directory holding them:
 astRules = "./rules/ast"  # auto-loads all .yml files in this dir
 ```
 
-> **Note:** Custom **project regex rule packs** (the `rules = [...]` field) are **not yet supported** by the native engine. `rules` must currently be `[]`; a non-empty value errors with `slopgate: project rule pack "<path>" cannot be loaded by the native TOML resolver (PHASE-2: project rule packs)`. Project regex packs are planned (PHASE-2). For now, use ast-grep YAML for custom rules, or one of the built-in baseline/stack packs.
+Project-owned regex rule packs are supported as JSON files listed in `rules = ["./rules/my-pack.json"]`. Use regex rules for precise line/token patterns and ast-grep YAML for structural code shapes.
 
 ---
 
@@ -472,7 +472,7 @@ astRules = "./rules/ast"  # auto-loads all .yml files in this dir
 
 ### Regex Rules
 
-> **Note:** Authoring *custom project* regex rule packs is **not yet supported** by the native engine (PHASE-2 — see [Project-Owned Rules](#project-owned-rules)). The shape below describes how the **built-in** regex packs are defined (compiled into the engine); it is reference, not a workflow you can wire in via `rules` today. Use ast-grep YAML for custom rules.
+Custom project regex packs use the same keyed JSON shape as the built-in packs and are loaded from paths listed in `rules = [...]` in `.slopgate/config.toml`.
 
 Patterns are regex strings with flags (i, m, s, etc.). A pattern matches any line containing the regex.
 
@@ -724,7 +724,7 @@ Tool crash / timeout → `⚠ skipped: <id> (<reason>)` warning, gate continues 
 
 - **Git-only** — no other VCS support
 - **No auto-fix** — violations are reported, not automatically corrected
-- **`slopgate audit` command** — planned for v2 (non-gating architecture-health report: hotspots, module shape, co-change coupling, ratchet progress tracking)
+- **`slopgate audit` is advisory** — it reports architecture/ratchet health but does not gate commits
 - **Embeddings-based semantic duplicate detection** — planned, not in v1
 - **API-surface diff gate** — track breaking changes to public exports (future)
 - **LLM-judge skill** — on-demand deep review of architectural debt (separate sub-project)

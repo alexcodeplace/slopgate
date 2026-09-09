@@ -1,7 +1,7 @@
 use serde_json::Value;
 use slopgate_core::audit::run::run_audit;
 use slopgate_core::config::resolve_config;
-use slopgate_core::gate::{run_gate, snapshot_violations, Mode, Tier};
+use slopgate_core::gate::{run_gate, snapshot_violations_checked, Mode, Tier};
 use slopgate_core::harvest::{check as check_harvest, record as record_defect, DefectRecord};
 use slopgate_core::help::HELP_TEXT;
 use slopgate_core::init::run::{engine_root, run_init_io};
@@ -449,7 +449,18 @@ fn dispatch(
                 write_slopgate_err(stderr, "slopgate: no valid baseline to prune");
                 return Ok(2);
             }
-            let snap = snapshot_violations(&config);
+            let snap = match snapshot_violations_checked(&config) {
+                Ok(v) => v,
+                Err(errors) => {
+                    for e in errors {
+                        write_slopgate_err(
+                            stderr,
+                            &format!("slopgate: baseline aborted — required scanner failed: {e}"),
+                        );
+                    }
+                    return Ok(2);
+                }
+            };
             let current: HashSet<String> = snap
                 .iter()
                 .map(|v| fingerprint_violation(v, None))
@@ -490,7 +501,18 @@ fn dispatch(
                 error: None,
             }
         };
-        let snap = snapshot_violations(&config);
+        let snap = match snapshot_violations_checked(&config) {
+            Ok(v) => v,
+            Err(errors) => {
+                for e in errors {
+                    write_slopgate_err(
+                        stderr,
+                        &format!("slopgate: baseline aborted — required scanner failed: {e}"),
+                    );
+                }
+                return Ok(2);
+            }
+        };
         let n = write_baseline(baseline_path, &snap, &iso_timestamp_now())?;
         if exists {
             let fps: HashSet<String> = snap
@@ -664,9 +686,10 @@ fn dispatch(
         let result =
             slopgate_core::gate::run_gate_with_stderr(Mode::Full, &config, tier, None, &mut sink);
         let diagnostics = String::from_utf8_lossy(captured.get_ref());
-        let infra_failed = ["binary not found", "skipped:", " crashed:", "timed out"]
-            .iter()
-            .any(|marker| diagnostics.contains(marker));
+        let infra_failed = result.code == 2
+            || ["binary not found", "skipped:", " crashed:", "timed out"]
+                .iter()
+                .any(|marker| diagnostics.contains(marker));
         let exit_code = if infra_failed { 2 } else { result.code };
         if format == "json" {
             let status = if infra_failed {

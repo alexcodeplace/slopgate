@@ -938,7 +938,10 @@ mod tests {
                 Path::new(&cmd).starts_with(&main_canon),
                 "hook not anchored at main checkout: {cmd}"
             );
-            assert!(!Path::new(&cmd).starts_with(&wt), "hook anchored in worktree: {cmd}");
+            assert!(
+                !Path::new(&cmd).starts_with(&wt),
+                "hook anchored in worktree: {cmd}"
+            );
             assert!(Path::new(&cmd).is_file(), "hook path not durable: {cmd}");
         }
     }
