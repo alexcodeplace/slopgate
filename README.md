@@ -123,10 +123,17 @@ slopgate baseline --update --config .slopgate/config.toml
 slopgate baseline --prune --config .slopgate/config.toml
 ```
 
-### Run self-test (validate the engine against bundled fixtures):
+### Run self-test against the source fixtures:
+
+Install the published CLI first. Its fixture configuration uses repository-relative paths, so run it from a source checkout rather than pointing directly into the globally installed package:
+
 ```bash
-slopgate --self-test --config "$(npm root -g)/@alexcodeplace/slopgate/rules/baseline/selftest.config.toml"
+git clone https://github.com/alexcodeplace/slopgate.git slopgate-selftest
+cd slopgate-selftest
+slopgate --self-test --config rules/baseline/selftest.config.toml
 ```
+
+This uses the installed native CLI with the checkout's fixtures; it does not require rebuilding Rust. Directly using the packaged `rules/baseline/selftest.config.toml` outside a Git checkout currently resolves the fixture root incorrectly and exits nonzero. Do not report that error as a passed self-test. Normal project checks still use your project's `.slopgate/config.toml`.
 
 ### Run immutable full-repository CI gate:
 ```bash
