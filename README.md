@@ -6,6 +6,37 @@ A global code-quality / anti-slop gate for Claude Code and git. Engine is shared
 
 ---
 
+## Start here: stop repeating the same code-review fixes
+
+Use Slopgate when a coding agent keeps introducing patterns your project already forbids: unsafe type casts, empty error handlers, accidental secrets, duplicated code, or imports across an architectural boundary. Project-owned rules make that feedback repeatable instead of requiring another reminder in every chat.
+
+For example, enable the `as-any` pack to catch a new unsafe cast immediately after an edit; add a dependency-cruiser rule to keep UI code away from database modules; or adopt a ratchet baseline in an older repository so existing debt does not conceal new regressions. These are static checks, not a replacement for running the app or reviewing a change.
+
+### First successful check
+
+Install the pinned package below, then run `slopgate init .` from the repository you want to protect. Review the generated `.slopgate/config.toml`, existing hook changes and detected checker dependencies. Create the **initial** baseline only after reviewing what it will accept. Run `slopgate --staged --config .slopgate/config.toml` on a small staged change. Exit `0` means the configured gate passed; exit `1` means findings need attention; exit `2` means configuration or required AST infrastructure failed.
+
+In normal use, let the edit and commit hooks run, read the reported file/rule, fix the cause, and rerun. Do not update the baseline or add suppressions merely to hide a new failure. `baseline --prune` **writes** a reduced baseline containing only unresolved entries; `--update` takes a new full snapshot, including current violations.
+
+### Ask an agent to install and configure it
+
+Copy this into a coding agent that can access your project:
+
+```text
+Install and configure Slopgate for this repository using
+https://github.com/alexcodeplace/slopgate and its current README.
+First inspect the OS, Node/npm, Git status, existing hooks, project commands
+and coding rules. Explain any required system-wide changes before making them.
+Install the documented release, run slopgate init for this repository, and
+review the generated configuration without overwriting unrelated hooks.
+Enable checks that fit the actual project and report any missing checker tools.
+Ask before creating or updating a baseline; never absorb new violations just
+to get a green result. Run the bundled self-test and a small disposable
+pass/fail example, then show me the normal staged-check command, the changed
+files, and how to undo only your setup. Do not commit or push my project,
+disable checks, delete files, or use --no-verify to make the demonstration pass.
+```
+
 ## Features
 
 - **Two-tier gate**
@@ -14,12 +45,16 @@ A global code-quality / anti-slop gate for Claude Code and git. Engine is shared
   
 - **Ratchet baseline** — snapshot violations at adoption time; only NEW violations fail the gate. Track debt paydown over time.
 
-- **Six commit-tier checkers**
+- **Commit-tier checkers**
   - **tsc** — TypeScript type errors (full-project scope)
   - **knip** — dead/unused code (exports, files, dependencies)
   - **jscpd** — copy-paste duplication (token-level)
   - **dependency-cruiser** — architecture rules (cycles, orphans, layer boundaries)
   - **type-coverage** — propagation of `any` type (per-expression tracking)
+  - **leakscan** — secret scanning
+  - **shellcheck** — shell-script diagnostics
+  - **actionlint** — GitHub Actions workflow diagnostics
+  - **typos** — spelling mistakes in source and text
   - **diff-shape** — wide commits spanning too many directories (encourages focused changes)
 
 - **Shared regex + AST rule packs** — fast-tier and commit-tier both run these
@@ -154,7 +189,7 @@ Run commit-tier gate on staged files. Used by git pre-commit hook and Claude Cod
 **Exit codes:**
 - `0` — no violations (or all baselined/suppressed)
 - `1` — violations block the commit
-- `2` — config error or missing argument
+- `2` — configuration, missing argument, or required AST infrastructure failure
 
 **Output:**
 - Violations grouped by source (regex, ast, checker:tsc, etc.)
@@ -183,14 +218,14 @@ Manage the ratchet baseline.
 **Flags:**
 - `--config <path>` (required)
 - `--update` — re-snapshot all current violations (overwrites baseline)
-- `--prune` — remove entries whose fingerprint no longer occurs (dry-run only)
-- Both flags can be combined; `--prune --update` prunes then updates
+- `--prune` — write a baseline retaining only fingerprints that still occur
+- Do not combine these for debt paydown: `--update` selects a full re-snapshot, including when `--prune` is also present
 
 **Behavior:**
 - No flags, file missing → create baseline with current violations
 - No flags, file exists → error (refuses overwrite; use `--update`)
 - `--update` → snapshot all violations in full commit tier scan
-- `--prune` → drop resolved fingerprints (non-destructive; just removes old entries)
+- `--prune` → scan, then rewrite the baseline without resolved fingerprints; it does not add new violations
 
 ---
 
@@ -242,7 +277,7 @@ Runs on every Edit/Write to a `.ts`, `.tsx`, or `.astro` file.
 Runs before `git commit` or when `--staged` is called manually.
 
 **Scope:** All staged files + full repo (for checkers like tsc, knip that need graph context)
-**Engines:** Regex patterns + AST rules + six heavy checkers
+**Engines:** Regex patterns + AST rules + configured commit-tier checkers
 **Baseline:** Consulted; only NEW violations block commit
 **Latency:** 5–30 seconds (tsc + knip dominate)
 **Feedback:** Commit blocked or passes
@@ -442,7 +477,6 @@ Opt-in via `stack = ["cloudflare"]`:
 **Planned (v2+):**
 - Depth rules — pass-through-fn, delegating-wrapper (Ousterhout symptoms)
 - Test-slop rules — test-no-assertion, test-skip
-- Custom project **regex** rule packs (the `rules = [...]` field — see [Project-Owned Rules](#project-owned-rules))
 
 ### Project-Owned Rules
 
@@ -638,7 +672,7 @@ regex › as-any-cast
 exit code: 1 (commit blocked)
 ```
 
-Fix it to `const x = y as unknown;` or a proper type, then commit.
+Validate and narrow `y`, or give it the correct supported type, then rerun the check. Replacing one assertion with another is not evidence that the value is safe.
 
 ### Example 2: Allow Pre-Existing Copy-Paste, Block New Ones
 
@@ -716,7 +750,7 @@ Each checker has a per-tool timeout (configurable):
 - depcruise: 60s
 - type-coverage: 120s
 
-Tool crash / timeout → `⚠ skipped: <id> (<reason>)` warning, gate continues (fail-open on infra). Violations still block; missing tools don't.
+Required AST infrastructure is fail-closed in 0.3.4: an unavailable ast-grep engine or structural-scan error produces exit `2`; fix the runtime instead of treating it as a clean scan. Optional commit-tier checker adapters can still report unavailable tools or execution failures as skipped/notices. Review those messages: a green result is not proof that an unavailable optional checker ran.
 
 ---
 
