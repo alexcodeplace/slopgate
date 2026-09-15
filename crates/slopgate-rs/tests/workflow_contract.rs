@@ -2,11 +2,19 @@ use std::fs;
 use std::path::Path;
 
 #[test]
-fn reusable_workflow_rejects_fork_prs_and_runs_full_chain() {
+fn reusable_workflow_defaults_to_disposable_github_runner_and_runs_full_chain() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let workflow = fs::read_to_string(root.join(".github/workflows/slopgate.yml")).unwrap();
     assert!(workflow.contains("workflow_call:"));
-    assert!(workflow.contains("github.event.pull_request.head.repo.full_name == github.repository"));
+    assert!(workflow.contains("runs-on: ubuntu-24.04"));
+    assert!(workflow.contains("slopgate-version:"));
+    assert!(workflow.contains("required: true"));
+    assert!(workflow.contains("slopgate capabilities"));
+    assert!(workflow.contains("Explicit project tool provisioning"));
+    assert!(!workflow.contains("runner-json"));
+    assert!(
+        !workflow.contains("github.event.pull_request.head.repo.full_name == github.repository")
+    );
     assert!(workflow.contains("persist-credentials: false"));
     let self_test = workflow.find("slopgate --self-test").unwrap();
     let harvest = workflow.find("slopgate harvest --check").unwrap();

@@ -218,7 +218,7 @@ fn dispatch(
         return Ok(0);
     }
 
-    if has(args, "--version") {
+    if has(args, "--version") || has(args, "-V") {
         writeln_stdout(
             stdout,
             &format!(

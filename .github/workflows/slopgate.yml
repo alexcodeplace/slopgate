@@ -3,28 +3,63 @@ on:
   workflow_call:
     inputs:
       slopgate-version:
+        description: Explicit released Slopgate version implementing universal-gate-v1.
+        required: true
+        type: string
+      setup-script:
+        description: Optional repository-owned Bash script that provisions locked project dependencies before scanning.
         required: false
         type: string
-        default: 0.2.0
-      runner-json:
-        required: false
-        type: string
-        default: '["self-hosted"]'
+        default: ''
+
+permissions:
+  contents: read
+
 jobs:
   slopgate:
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ${{ fromJSON(inputs.runner-json) }}
-    permissions:
-      contents: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
-      - name: Install pinned slopgate
-        run: npm install --global "@alexcodeplace/slopgate@${{ inputs.slopgate-version }}"
-      - name: Verify rule engines
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22'
+      - name: Explicit project tool provisioning
+        if: inputs.setup-script != ''
+        env:
+          SETUP_SCRIPT: ${{ inputs.setup-script }}
+        run: |
+          python3 - <<'PY'
+          import os
+          import subprocess
+          from pathlib import Path
+          root = Path.cwd().resolve()
+          script = (root / os.environ['SETUP_SCRIPT']).resolve(strict=True)
+          if not script.is_relative_to(root) or not script.is_file():
+              raise SystemExit('setup-script must identify a repository-owned file')
+          subprocess.run(['bash', '--', str(script)], check=True)
+          PY
+      - name: Install explicitly pinned Slopgate
+        env:
+          SLOPGATE_VERSION: ${{ inputs.slopgate-version }}
+        run: |
+          [[ "$SLOPGATE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]
+          npm install --global --ignore-scripts "@alexcodeplace/slopgate@$SLOPGATE_VERSION"
+      - name: Verify selected engine capability contract
+        run: |
+          slopgate capabilities > "$RUNNER_TEMP/slopgate-capabilities.json"
+          node - "$RUNNER_TEMP/slopgate-capabilities.json" <<'JS'
+          const fs = require('node:fs');
+          const capabilities = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+          if (capabilities.engine?.specification !== 'universal-gate-v1' || capabilities.externalProtocol?.version !== 1) {
+            throw new Error('The selected Slopgate executable does not implement the required contract');
+          }
+          JS
+      - name: Verify rule engines and exact project fixtures
         run: slopgate --self-test --config .slopgate/config.toml
-      - name: Enforce twice-found rule harvesting
+      - name: Enforce repeated-defect rule harvesting
         run: slopgate harvest --check --config .slopgate/config.toml
       - name: Full-repository immutable gate
         run: slopgate scan --scope repo --tier commit --format github --config .slopgate/config.toml

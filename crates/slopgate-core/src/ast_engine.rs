@@ -10,8 +10,7 @@ use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-const MISSING_BIN_MSG: &str =
-    "ast-grep binary not found (npm i -g @ast-grep/cli) — bucket-B rules SKIPPED";
+const MISSING_BIN_MSG: &str = "ast-grep binary not found — AST rules cannot be evaluated";
 
 /// Outcome of [`run_ast_grep_scan`].
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -827,7 +826,7 @@ mod tests {
             "src/example.test.tsx".to_string(),
         ];
         let got = run_ast_grep_scan(&config, Some(&files), &AstGrepScanOpts::default());
-        assert!(got.available);
+        assert!(got.available, "ast scan unavailable: {:?}", got.errors);
         assert!(got.violations.is_empty());
         assert!(got.errors.is_empty());
     }

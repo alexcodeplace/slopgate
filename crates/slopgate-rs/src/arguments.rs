@@ -27,6 +27,7 @@ const FLAGS: &[&str] = &[
     "--staged",
     "--update",
     "--version",
+    "-V",
 ];
 const COMMANDS: &[&str] = &[
     "agent-hooks",

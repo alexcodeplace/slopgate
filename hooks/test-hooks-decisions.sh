@@ -83,5 +83,20 @@ if (. "$HERE/runtime.sh"; SLOPGATE_RUNTIME="$HERE/baseline-guard.sh" \
   echo "FAIL a hook path is accepted as the runtime"; fail=$((fail+1));
 else echo "PASS (0) a hook path is rejected as the runtime"; pass=$((pass+1)); fi
 
+# Claude Code hands hooks a SOCKET stdin; open("/dev/stdin") on a socket fails ENXIO,
+# so the payload read must consume fd 0 directly (read builtin), never reopen the path.
+sock_err=$(python3 - "$HERE/baseline-guard.sh" <<'PYEOF' 2>&1
+import socket, subprocess, sys
+a, b = socket.socketpair()
+b.send(b'{"tool_name":"Edit","tool_input":{"file_path":"/x/.slopgate/baseline.json"}}')
+b.shutdown(socket.SHUT_WR)
+r = subprocess.run(["bash", sys.argv[1]], stdin=a.fileno(), capture_output=True, text=True, timeout=30)
+sys.stderr.write(r.stderr)
+sys.exit(0 if (r.returncode == 2 and "/dev/stdin" not in r.stderr) else 1)
+PYEOF
+)
+if [ $? -eq 0 ]; then echo "PASS (0) socket stdin still blocks baseline edit"; pass=$((pass+1));
+else echo "FAIL socket stdin: $sock_err"; fail=$((fail+1)); fi
+
 echo "---- pass=$pass fail=$fail ----"
 [ "$fail" -eq 0 ]

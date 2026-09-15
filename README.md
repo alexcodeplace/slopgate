@@ -2,7 +2,7 @@
 
 A deterministic, language-neutral code-policy gate. One Rust coordinator runs shared text/structural checks and specialized adapters, applies reviewed project policy, and returns one trustworthy result.
 
-This tree implements the pre-1.0 **0.3.0 universal-gate contract**. Do not assume a globally installed older binary has these capabilities. Use `slopgate capabilities` to inspect the selected executable, source digest and adapter contract.
+This tree implements the pre-1.0 **0.4.0 universal-gate contract**. Do not assume a globally installed older binary has these capabilities. Use `slopgate capabilities` to inspect the selected executable, source digest and adapter contract.
 
 ## Architecture
 
@@ -27,7 +27,7 @@ cargo test --workspace --locked
 cargo run --locked -p slopgate-architecture -- --root .
 ```
 
-CI uses Rust 1.95.0, provisioned TypeScript 5.9.3 and ast-grep 0.45.2 for its fixture tests. Native platform tests and real compiler acceptance are separate from mocked-output parser tests. Tool installation is an explicit setup action; a scan never downloads a missing checker.
+CI uses Rust 1.95.0, provisioned TypeScript 5.9.3 and ast-grep 0.45.3 for its fixture tests. Native platform tests and real compiler acceptance are separate from mocked-output parser tests. Tool installation is an explicit setup action; a scan never downloads a missing checker.
 
 The npm distribution uses `bin/slopgate` to select a prebuilt executable under `vendor/<platform>-<arch>`. The native executable can also run directly without Node. Node is required only for the npm launcher and adapters that use Node tools. An explicit `SLOPGATE_BIN` is authoritative: a missing or recursive override is an error, not permission to use a stale fallback binary.
 
