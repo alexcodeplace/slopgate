@@ -26,6 +26,8 @@ if (!platform) throw new Error('Unsupported test-tool platform');
 const nativeDirectory = join(root, 'node_modules', '@ast-grep', platform);
 if (!existsSync(join(nativeDirectory, process.platform === 'win32' ? 'ast-grep.exe' : 'ast-grep'))) throw new Error('Pinned native ast-grep binary is missing');
 const paths = [nativeDirectory, join(root, 'node_modules', '.bin')];
-if (process.env.GITHUB_PATH) appendFileSync(process.env.GITHUB_PATH, paths.join('\n') + '\n');
+// GitHub prepends appended entries in reverse order. Only the native directory
+// is needed by CI; exposing npm's .bin ahead of it invokes an unapproved wrapper.
+if (process.env.GITHUB_PATH) appendFileSync(process.env.GITHUB_PATH, nativeDirectory + '\n');
 if (process.env.GITHUB_ENV) appendFileSync(process.env.GITHUB_ENV, `SLOPGATE_TEST_TOOLS=${root}\nSLOPGATE_REQUIRE_COMPILERS=1\n`);
 console.log(JSON.stringify({ toolsRoot: root, prependPath: paths, versions: { typescript: '5.9.3', astGrep: '0.45.3' } }));

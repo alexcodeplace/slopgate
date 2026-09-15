@@ -198,6 +198,13 @@ class GateAcceptance(unittest.TestCase):
         self.scan(0, timeout=5)
         self.assertLess(time.monotonic() - started, 4.0)
 
+    def test_exited_adapter_has_no_surviving_descendant(self) -> None:
+        marker = self.base / "surviving-child.txt"
+        self.adapter("cleanup-proof", survivorMarker=str(marker))
+        self.scan(0, timeout=5)
+        time.sleep(1.2)
+        self.assertFalse(marker.exists(), "adapter returned, but a descendant continued running")
+
     def test_unknown_checker_unknown_config_and_missing_rule_directory_fail(self) -> None:
         for config in ('[checkers.typo-in-checker-name]\n', 'checkerConcurency = 5\n', 'astRules = "./missing"\n', 'checkerConcurrency = 0\n', '[adapters.bad]\nexecutable="x"\ntimeoutMs=0\n'):
             with self.subTest(config=config):

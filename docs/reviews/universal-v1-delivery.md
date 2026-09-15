@@ -27,3 +27,7 @@ Complete Linux reruns, release benchmarks, packaged-launcher tests, native Windo
 ## External activation boundary
 
 Independent approval and least-privileged credentials are still required. At inspection, the sole collaborator and available agent identity were both `alexcodeplace`, with administrator privileges. The hosting controls described in `docs/architecture/activation.md` must be independently configured and verified before claiming that agents cannot override their own review gate. No implementation agent may approve its own specification or bypass that prerequisite.
+
+## Hosted cross-platform review findings
+
+First hosted run 35016554644 on c95f354 passed quality, architecture, workflow lint and performance checks. Native-platform workspace jobs correctly blocked on three integration defects rather than reporting a false pass: GitHub PATH ordering selected the npm AST wrapper instead of the provisioned binary; Darwin reported EPERM when only the retained zombie group leader remained; Windows unit fixtures supplied forbidden command shims instead of native executables. Repairs keep failure policies intact: expose the native CI directory explicitly, accept Darwin's zombie-only case only after a bounded native membership query, and compile genuine Windows fixture executables. A new cross-platform acceptance case proves descendants cannot continue after adapter completion. The repaired run must pass before this checkpoint is promoted to final delivery evidence.

@@ -85,7 +85,7 @@ fn resolve_local_bin(repo_root: &Path) -> Option<PathBuf> {
 /// Windows: `node_modules/.bin/ast-grep` is a POSIX sh shim that CreateProcess
 /// rejects (os error 193). Prefer the platform package's `ast-grep.exe` —
 /// a sibling of the resolved `@ast-grep/cli` dir under both npm hoisting and
-/// pnpm's virtual store — then the `.cmd` shim, which std spawns via cmd.exe.
+/// pnpm's virtual store — then an explicitly provisioned native `.exe`. Command shims are not executed.
 #[cfg(windows)]
 fn resolve_local_bin(repo_root: &Path) -> Option<PathBuf> {
     let arch = match std::env::consts::ARCH {
@@ -107,7 +107,7 @@ fn resolve_local_bin(repo_root: &Path) -> Option<PathBuf> {
             }
         }
     }
-    let shim = repo_root.join("node_modules/.bin/ast-grep.cmd");
+    let shim = repo_root.join("node_modules/.bin/ast-grep.exe");
     shim.exists().then_some(shim)
 }
 
@@ -461,8 +461,27 @@ mod tests {
     fn write_stub(bin_dir: &Path, stdout: &str) -> PathBuf {
         #[cfg(windows)]
         {
-            let stub = bin_dir.join("ast-grep.cmd");
-            fs::write(&stub, format!("@echo off\r\necho {stdout}\r\n")).unwrap();
+            // The production core deliberately rejects .cmd scripts. Exercise
+            // the same native executable boundary here instead of bypassing it.
+            let stub = bin_dir.join("ast-grep.exe");
+            let source = bin_dir.join("ast_fixture.rs");
+            fs::write(
+                &source,
+                format!("fn main() {{ println!(\"{{}}\", {stdout:?}); }}"),
+            )
+            .unwrap();
+            let compiled = std::process::Command::new("rustc")
+                .args(["--edition=2021", "--crate-name", "slopgate_ast_fixture"])
+                .arg(&source)
+                .arg("-o")
+                .arg(&stub)
+                .output()
+                .unwrap();
+            assert!(
+                compiled.status.success(),
+                "native AST fixture compilation: {}",
+                String::from_utf8_lossy(&compiled.stderr)
+            );
             stub
         }
         #[cfg(not(windows))]
@@ -580,7 +599,7 @@ mod tests {
         }]);
 
         let got = parse_ast_grep_json(&json);
-        assert!(got.errors.is_empty());
+        assert!(got.errors.is_empty(), "AST errors: {:?}", got.errors);
         assert_eq!(got.violations.len(), 1);
 
         let v = &got.violations[0];
@@ -607,7 +626,7 @@ mod tests {
         }]);
 
         let got = parse_ast_grep_json(&json);
-        assert!(got.errors.is_empty());
+        assert!(got.errors.is_empty(), "AST errors: {:?}", got.errors);
         assert_eq!(got.violations.len(), 1);
         assert_eq!(got.violations[0].severity, "medium");
         assert_eq!(got.violations[0].category, "convention");
@@ -778,7 +797,7 @@ mod tests {
         let got = run_ast_grep_scan(&config, Some(&files), &AstGrepScanOpts::default());
         assert!(got.available);
         assert!(got.violations.is_empty());
-        assert!(got.errors.is_empty());
+        assert!(got.errors.is_empty(), "AST errors: {:?}", got.errors);
     }
 
     #[test]
@@ -828,6 +847,6 @@ mod tests {
         let got = run_ast_grep_scan(&config, Some(&files), &AstGrepScanOpts::default());
         assert!(got.available, "ast scan unavailable: {:?}", got.errors);
         assert!(got.violations.is_empty());
-        assert!(got.errors.is_empty());
+        assert!(got.errors.is_empty(), "AST errors: {:?}", got.errors);
     }
 }

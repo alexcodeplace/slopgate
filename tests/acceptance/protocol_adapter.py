@@ -34,6 +34,8 @@ elif behavior == "flood":
     while True:
         os.write(1, b"x" * 8192)
         os.write(2, b"y" * 8192)
+elif behavior == "cleanup-proof":
+    subprocess.Popen([sys.executable, "-c", "import pathlib,sys,time; time.sleep(1); pathlib.Path(sys.argv[1]).write_text('survived')", settings["survivorMarker"]])
 elif behavior == "descendant":
     child = subprocess.Popen([sys.executable, "-c", "import time;time.sleep(60)"])
     if settings.get("childPid"):

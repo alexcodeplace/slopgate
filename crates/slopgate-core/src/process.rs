@@ -125,6 +125,41 @@ fn leader_exited_without_reaping(id: u32) -> std::io::Result<bool> {
     Ok(info.si_signo != 0)
 }
 
+/// Darwin may return EPERM for killpg when the retained zombie leader is the
+/// only group member. Accept that case only after a bounded native membership
+/// query proves there is no other process. We do not ignore permission errors
+/// for live or unknown descendants, and retain the leader PID during inspection.
+#[cfg(target_os = "macos")]
+fn group_has_only_exited_leader(leader: u32) -> std::io::Result<bool> {
+    const PROC_PGRP_ONLY: u32 = 2; // Apple's bsd/sys/proc_info.h public selector.
+    let mut pids = [0 as libc::pid_t; 512];
+    let capacity = std::mem::size_of_val(&pids) as libc::c_int;
+    // SAFETY: __error points to this thread's errno. proc_listpids is given an
+    // aligned writable PID array and its exact byte capacity. No shared process
+    // state or environment is mutated; the call cannot write outside the array.
+    let (bytes, errno) = unsafe {
+        *libc::__error() = 0;
+        let bytes = libc::proc_listpids(PROC_PGRP_ONLY, leader, pids.as_mut_ptr().cast(), capacity);
+        (bytes, *libc::__error())
+    };
+    if bytes < 0 || (bytes == 0 && errno != 0) {
+        return Err(std::io::Error::from_raw_os_error(if errno == 0 {
+            libc::EIO
+        } else {
+            errno
+        }));
+    }
+    if bytes >= capacity || bytes as usize % std::mem::size_of::<libc::pid_t>() != 0 {
+        return Err(std::io::Error::other(
+            "process-group membership query is truncated or malformed",
+        ));
+    }
+    let count = bytes as usize / std::mem::size_of::<libc::pid_t>();
+    Ok(pids[..count]
+        .iter()
+        .all(|pid| *pid > 0 && *pid as u32 == leader))
+}
+
 fn execute(
     bin: &Path,
     args: &[&str],
@@ -185,6 +220,8 @@ fn execute(
     drop(command);
     let mut error = None;
     let mut exit = None;
+    #[cfg(target_os = "macos")]
+    let mut observed_leader_exit = false;
     #[allow(unused_mut)]
     let mut owns_group = true;
     loop {
@@ -205,7 +242,13 @@ fn execute(
         }
         #[cfg(any(target_os = "linux", target_os = "macos", target_os = "freebsd"))]
         match leader_exited_without_reaping(child.id()) {
-            Ok(true) => break,
+            Ok(true) => {
+                #[cfg(target_os = "macos")]
+                {
+                    observed_leader_exit = true;
+                }
+                break;
+            }
             Ok(false) => {}
             Err(reason) if reason.kind() == std::io::ErrorKind::Interrupted => {}
             Err(reason) => {
@@ -245,8 +288,13 @@ fn execute(
         Ok(())
     } {
         // ESRCH / InvalidInput after an already-reaped group is harmless.
-        #[cfg(unix)]
-        let gone = reason.raw_os_error() == Some(3);
+        #[cfg(all(unix, not(target_os = "macos")))]
+        let gone = reason.raw_os_error() == Some(libc::ESRCH);
+        #[cfg(target_os = "macos")]
+        let gone = reason.raw_os_error() == Some(libc::ESRCH)
+            || (reason.raw_os_error() == Some(libc::EPERM)
+                && observed_leader_exit
+                && group_has_only_exited_leader(child.id()).unwrap_or(false));
         #[cfg(not(unix))]
         let gone = reason.kind() == std::io::ErrorKind::InvalidInput;
         if !gone && error.is_none() {
