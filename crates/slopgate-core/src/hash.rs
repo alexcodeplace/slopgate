@@ -2,6 +2,7 @@
 use regex::Regex;
 use sha1::Sha1;
 use sha2::{Digest as Sha2Digest, Sha256};
+use std::sync::OnceLock;
 
 /// sha1-hex of the trimmed line. Mirrors suppressions.mjs lineHash.
 pub fn line_hash(line: &str) -> String {
@@ -12,8 +13,9 @@ pub fn line_hash(line: &str) -> String {
 
 /// Replace each maximal run of ASCII digits with a single '#'. Mirrors /\d+/g → '#'.
 fn digit_norm(s: &str) -> String {
-    Regex::new(r"(?-u:\d)+")
-        .expect("digit regex")
+    static DIGITS: OnceLock<Regex> = OnceLock::new();
+    DIGITS
+        .get_or_init(|| Regex::new(r"(?-u:\d)+").expect("digit regex"))
         .replace_all(s, "#")
         .into_owned()
 }

@@ -1,0 +1,56 @@
+name: Trusted specification drift
+
+on:
+  pull_request_target:
+    branches: [main]
+    types: [opened, reopened, synchronize, ready_for_review]
+
+permissions:
+  contents: read
+  statuses: write
+
+jobs:
+  trusted-drift:
+    name: Trusted specification metadata
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      # Never checkout the candidate. Only the protected base owns executable
+      # review logic; candidate source and policy are inspected as Git objects.
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Fetch candidate objects without checking them out
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          [[ "$PR_NUMBER" =~ ^[0-9]+$ ]]
+          [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+          git fetch --no-tags origin "refs/pull/$PR_NUMBER/head"
+          test "$(git rev-parse FETCH_HEAD)" = "$HEAD_SHA"
+      - name: Review candidate metadata using the trusted base implementation
+        id: review
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python3 scripts/spec_drift.py --base "$BASE_SHA" --head "$HEAD_SHA"
+      - name: Publish the trusted status on the exact candidate revision
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          REVIEW_OUTCOME: ${{ steps.review.outcome }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+          state=failure
+          if [ "$REVIEW_OUTCOME" = success ]; then state=success; fi
+          gh api --method POST "repos/$REPOSITORY/statuses/$HEAD_SHA" \
+            -f state="$state" \
+            -f context='slopgate/trusted-spec-drift' \
+            -f description='Trusted-base metadata review; independent human approval is still required.' \
+            -f target_url="$RUN_URL"

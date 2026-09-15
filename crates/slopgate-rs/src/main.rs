@@ -1,19 +1,24 @@
+mod arguments;
+mod doctor;
+use arguments::{has, val_of};
 use serde_json::Value;
-use slopgate_core::audit::run::run_audit;
+use slopgate_adapters::audit::run::run_audit;
+use slopgate_adapters::checkers::index::CHECKERS;
+use slopgate_adapters::init::run::{engine_root, run_init_io};
+use slopgate_adapters::selftest::run_self_test;
 use slopgate_core::config::resolve_config;
 use slopgate_core::gate::{run_gate, snapshot_violations, Mode, Tier};
 use slopgate_core::harvest::{check as check_harvest, record as record_defect, DefectRecord};
 use slopgate_core::help::HELP_TEXT;
-use slopgate_core::init::run::{engine_root, run_init_io};
 use slopgate_core::install::agent_hooks::{
     home_dir, install_agent_hooks, remove_agent_hooks, status_agent_hooks, status_symbol, AGENTS,
 };
 use slopgate_core::install::hooks::{install_pre_commit_hook, HookInstallAction};
 use slopgate_core::install::skills::{default_skills_dest_in, install_skills, SkillInstallAction};
 use slopgate_core::ratchet::{
-    fingerprint_violation, load_baseline, write_baseline, write_baseline_raw, BaselineEntry,
+    filter_new, fingerprint_violation, load_baseline, write_baseline, write_baseline_raw,
+    BaselineEntry,
 };
-use slopgate_core::selftest::run_self_test;
 use slopgate_core::stats::query::{
     aggregate, aggregate_dashboard, format_dashboard, format_stats, Row, DIMENSIONS,
 };
@@ -24,13 +29,15 @@ use std::io::Write;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-fn has(args: &[String], flag: &str) -> bool {
-    args.iter().any(|a| a == flag)
+fn github_data(value: &str) -> String {
+    value
+        .replace('%', "%25")
+        .replace('\r', "%0D")
+        .replace('\n', "%0A")
 }
 
-fn val_of<'a>(args: &'a [String], flag: &str) -> Option<&'a str> {
-    let i = args.iter().position(|a| a == flag)?;
-    args.get(i + 1).map(String::as_str)
+fn github_property(value: &str) -> String {
+    github_data(value).replace(':', "%3A").replace(',', "%2C")
 }
 
 fn write_slopgate_err(stderr: &mut dyn Write, msg: &str) {
@@ -153,7 +160,13 @@ fn require_config(args: &[String], stderr: &mut dyn Write) -> ConfigResult {
         return ConfigResult::Exit(2);
     };
     match resolve_config(config_path) {
-        Ok(config) => ConfigResult::Ok(Box::new(config)),
+        Ok(config) => match slopgate_core::gate::validate_registry(&config, CHECKERS) {
+            Ok(()) => ConfigResult::Ok(Box::new(config)),
+            Err(errors) => {
+                write_top_level_err(stderr, &errors.join("; "));
+                ConfigResult::Exit(2)
+            }
+        },
         Err(e) => {
             write_top_level_err(stderr, &e);
             ConfigResult::Exit(2)
@@ -183,7 +196,7 @@ fn run_with_io_and_home(
         Ok(code) => code,
         Err(e) => {
             write_top_level_err(stderr, &e);
-            1
+            2
         }
     }
 }
@@ -194,6 +207,7 @@ fn dispatch(
     stderr: &mut dyn Write,
     home: &Path,
 ) -> Result<i32, String> {
+    arguments::validate(args)?;
     let user_args = args.get(1..).unwrap_or(&[]);
     if user_args.is_empty()
         || has(args, "--help")
@@ -204,14 +218,39 @@ fn dispatch(
         return Ok(0);
     }
 
-    if args.get(1).is_some_and(|a| a == "--version") {
+    if has(args, "--version") {
         writeln_stdout(
             stdout,
-            &format!("slopgate-rs {}", env!("CARGO_PKG_VERSION")),
+            &format!(
+                "slopgate-rs {} ({}; source {})",
+                env!("CARGO_PKG_VERSION"),
+                env!("SLOPGATE_BUILD_REVISION"),
+                env!("SLOPGATE_SOURCE_DIGEST")
+            ),
         );
         return Ok(0);
     }
 
+    if has(args, "capabilities") {
+        writeln_stdout(
+            stdout,
+            &serde_json::to_string_pretty(&doctor::capabilities())
+                .map_err(|error| error.to_string())?,
+        );
+        return Ok(0);
+    }
+    if has(args, "doctor") {
+        let config = match require_config(args, stderr) {
+            ConfigResult::Ok(config) => config,
+            ConfigResult::Exit(code) => return Ok(code),
+        };
+        let (report, code) = doctor::inspect(&config);
+        writeln_stdout(
+            stdout,
+            &serde_json::to_string_pretty(&report).map_err(|error| error.to_string())?,
+        );
+        return Ok(code);
+    }
     if has(args, "init") {
         let dir = val_of(args, "init")
             .map(str::to_string)
@@ -266,11 +305,7 @@ fn dispatch(
     }
 
     if has(args, "agent-hooks") {
-        let sub = args
-            .iter()
-            .position(|a| a == "agent-hooks")
-            .and_then(|i| args.get(i + 1))
-            .map(String::as_str);
+        let sub = val_of(args, "agent-hooks");
         let valid_subs = ["install", "reinstall", "remove", "status"];
         let agent_ids: Option<Vec<String>> = val_of(args, "--agent").map(|raw| {
             raw.split(',')
@@ -449,19 +484,35 @@ fn dispatch(
                 write_slopgate_err(stderr, "slopgate: no valid baseline to prune");
                 return Ok(2);
             }
-            let snap = snapshot_violations(&config);
-            let current: HashSet<String> = snap
-                .iter()
-                .map(|v| fingerprint_violation(v, None))
-                .collect();
-            let old_count = bl.entries.len();
+            let snap = match snapshot_violations(&config, CHECKERS) {
+                Ok(snap) => snap,
+                Err(errors) => {
+                    write_slopgate_err(
+                        stderr,
+                        &format!("slopgate: incomplete baseline scan: {}", errors.join("; ")),
+                    );
+                    return Ok(2);
+                }
+            };
+            let mut current: HashMap<String, u32> = HashMap::new();
+            for finding in &snap {
+                *current
+                    .entry(fingerprint_violation(finding, None))
+                    .or_default() += 1;
+            }
+            let old_count: u32 = bl.entries.values().map(|entry| entry.count).sum();
             let kept: HashMap<String, BaselineEntry> = bl
                 .entries
                 .into_iter()
-                .filter(|(fp, _)| current.contains(fp))
+                .filter_map(|(fingerprint, mut entry)| {
+                    current.get(&fingerprint).map(|count| {
+                        entry.count = entry.count.min(*count);
+                        (fingerprint, entry)
+                    })
+                })
                 .collect();
-            let dropped = old_count - kept.len();
-            let kept_count = kept.len();
+            let kept_count: u32 = kept.values().map(|entry| entry.count).sum();
+            let dropped = old_count - kept_count;
             write_baseline_raw(baseline_path, &kept, &iso_timestamp_now())?;
             let entry_word = if dropped == 1 { "y" } else { "ies" };
             writeln_stdout(
@@ -490,25 +541,30 @@ fn dispatch(
                 error: None,
             }
         };
-        let snap = snapshot_violations(&config);
+        if let Some(error) = &old.error {
+            write_slopgate_err(
+                stderr,
+                &format!("slopgate: refusing to overwrite malformed baseline: {error}"),
+            );
+            return Ok(2);
+        }
+        let snap = match snapshot_violations(&config, CHECKERS) {
+            Ok(snap) => snap,
+            Err(errors) => {
+                write_slopgate_err(
+                    stderr,
+                    &format!("slopgate: incomplete baseline scan: {}", errors.join("; ")),
+                );
+                return Ok(2);
+            }
+        };
         let n = write_baseline(baseline_path, &snap, &iso_timestamp_now())?;
         if exists {
             let fps: HashSet<String> = snap
                 .iter()
                 .map(|v| fingerprint_violation(v, None))
                 .collect();
-            let mut seen = HashSet::new();
-            let added: Vec<_> = snap
-                .iter()
-                .filter(|v| {
-                    let fp = fingerprint_violation(v, None);
-                    if old.entries.contains_key(&fp) || seen.contains(&fp) {
-                        return false;
-                    }
-                    seen.insert(fp);
-                    true
-                })
-                .collect();
+            let added = filter_new(&snap, &old.entries, &HashMap::new()).fresh;
             let removed = old.entries.keys().filter(|fp| !fps.contains(*fp)).count();
             let mut by_rule: HashMap<String, u32> = HashMap::new();
             for v in &added {
@@ -554,7 +610,7 @@ fn dispatch(
     }
 
     if has(args, "defect") {
-        if !args.windows(2).any(|w| w == ["defect", "record"]) {
+        if val_of(args, "defect") != Some("record") {
             write_slopgate_err(stderr, "slopgate: defect usage: defect record --class <id> --file <path> --line <n> --source <name> [--fingerprint <id>]");
             return Ok(2);
         }
@@ -655,19 +711,22 @@ fn dispatch(
             return Ok(2);
         }
         if format == "human" {
-            return Ok(run_gate(Mode::Full, &config, tier, None).code);
+            return Ok(run_gate(Mode::Full, &config, tier, None, CHECKERS).code);
         }
         let mut captured = std::io::Cursor::new(Vec::new());
         let mut sink = slopgate_core::gate::GateStderr {
             writer: &mut captured,
         };
-        let result =
-            slopgate_core::gate::run_gate_with_stderr(Mode::Full, &config, tier, None, &mut sink);
-        let diagnostics = String::from_utf8_lossy(captured.get_ref());
-        let infra_failed = ["binary not found", "skipped:", " crashed:", "timed out"]
-            .iter()
-            .any(|marker| diagnostics.contains(marker));
-        let exit_code = if infra_failed { 2 } else { result.code };
+        let result = slopgate_core::gate::run_gate_with_stderr(
+            Mode::Full,
+            &config,
+            tier,
+            None,
+            &mut sink,
+            CHECKERS,
+        );
+        let infra_failed = result.code == 2;
+        let exit_code = result.code;
         if format == "json" {
             let status = if infra_failed {
                 "error"
@@ -676,12 +735,21 @@ fn dispatch(
             } else {
                 "violations"
             };
-            writeln_stdout(stdout, &serde_json::json!({"schemaVersion":1,"status":status,"exitCode":exit_code,"violations":result.violations}).to_string());
+            writeln_stdout(stdout, &serde_json::json!({"schemaVersion":1,"status":status,"exitCode":exit_code,"infraFailed":infra_failed,"violations":result.violations,"errors":result.errors,"coverage":result.coverage}).to_string());
         } else {
             if infra_failed {
                 writeln_stdout(
                     stdout,
                     "::error title=slopgate/infrastructure::required scanner unavailable or failed",
+                );
+            }
+            for error in &result.errors {
+                writeln_stdout(
+                    stdout,
+                    &format!(
+                        "::error title=slopgate/infrastructure::{}",
+                        github_data(error)
+                    ),
                 );
             }
             for v in &result.violations {
@@ -693,7 +761,9 @@ fn dispatch(
                     stdout,
                     &format!(
                         "::error file={},line={},title=slopgate/{}::{msg}",
-                        v.file, v.line, v.id
+                        github_property(&v.file),
+                        v.line,
+                        github_property(&v.id)
                     ),
                 );
             }
@@ -702,7 +772,7 @@ fn dispatch(
     }
 
     if has(args, "--staged") {
-        let result = run_gate(Mode::Staged, &config, tier, None);
+        let result = run_gate(Mode::Staged, &config, tier, None, CHECKERS);
         if result.code == 1 {
             let record_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 record_incidents(&result.violations, &config, "staged");
@@ -725,7 +795,7 @@ fn dispatch(
     }
 
     if let Some(file_target) = val_of(args, "--file") {
-        let result = run_gate(Mode::File, &config, tier, Some(file_target));
+        let result = run_gate(Mode::File, &config, tier, Some(file_target), CHECKERS);
         return Ok(result.code);
     }
 
@@ -987,10 +1057,7 @@ mod tests {
     fn stats_by_without_value_returns_two() {
         let (code, _, err) = run_capture(vec!["slopgate-rs".into(), "stats".into(), "--by".into()]);
         assert_eq!(code, 2);
-        assert_eq!(
-            err,
-            "slopgate: --by must be rule|model|project|severity|engine|category\n"
-        );
+        assert_eq!(err, "slopgate: --by requires a value\n");
     }
 
     #[test]
@@ -1000,7 +1067,7 @@ mod tests {
         args.push("bogus".into());
         let (code, _, err) = run_capture(args);
         assert_eq!(code, 2);
-        assert_eq!(err, "slopgate: unknown command — run 'slopgate --help'\n");
+        assert_eq!(err, "slopgate: unknown command \"bogus\"\n");
     }
 
     #[test]
@@ -1116,5 +1183,13 @@ mod tests {
             "--self-test".into(),
         ]);
         assert_eq!(code, 0);
+    }
+    #[test]
+    fn github_annotations_escape_file_properties_and_message_boundaries() {
+        assert_eq!(github_property("src/a,b:c\n.rs"), "src/a%2Cb%3Ac%0A.rs");
+        assert_eq!(
+            github_data("bad%\r\n::error::injected"),
+            "bad%25%0D%0A::error::injected"
+        );
     }
 }

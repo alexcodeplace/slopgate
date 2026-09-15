@@ -18,21 +18,14 @@ pub fn is_allowed(sev: &str, allow: &HashSet<String>) -> bool {
     allow.contains(sev)
 }
 
-/// dependency-cruiser raw severity → slopgate severity (`depcruise.mjs` SEVERITY_MAP).
-pub fn map_depcruise(raw: &str) -> Option<&'static str> {
-    match raw {
-        "error" => Some("critical"),
-        "warn" => Some("high"),
-        _ => None,
-    }
-}
-
 /// leakscan pass-through map (`leakscan.mjs` SEVERITY_MAP); unknown → dropped.
 pub fn map_passthrough(raw: &str) -> Option<&'static str> {
     match raw {
         "critical" => Some("critical"),
         "high" => Some("high"),
         "medium" => Some("medium"),
+        "low" => Some("low"),
+        "info" => Some("info"),
         _ => None,
     }
 }
@@ -52,13 +45,6 @@ mod tests {
         let a = default_allow();
         assert!(is_allowed("critical", &a));
         assert!(!is_allowed("medium", &a)); // unhappy
-    }
-
-    #[test]
-    fn depcruise_map() {
-        assert_eq!(map_depcruise("error"), Some("critical"));
-        assert_eq!(map_depcruise("warn"), Some("high"));
-        assert_eq!(map_depcruise("info"), None); // dropped
     }
 
     #[test]

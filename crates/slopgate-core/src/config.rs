@@ -5,7 +5,6 @@ use indexmap::IndexMap;
 use serde::Deserialize;
 use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GateAllow {
@@ -22,8 +21,13 @@ pub struct ResolvedConfig {
     pub exts: HashSet<String>,
     pub skip_dirs: HashSet<String>,
     pub patterns: Vec<Pattern>,
+    pub project_rule_ids: HashSet<String>,
+    pub project_ast_dirs: Vec<String>,
     pub ast_rule_dirs: Vec<String>,
     pub checkers: BTreeMap<String, serde_json::Value>,
+    pub external_adapters: BTreeMap<String, crate::protocol::ExternalAdapterConfig>,
+    pub ast_enabled: bool,
+    pub ast_binary: Option<String>,
     pub ast_disable: HashSet<String>,
     pub baseline_path: String,
     pub suppressions_path: String,
@@ -35,7 +39,7 @@ pub struct ResolvedConfig {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct RawConfig {
     #[serde(default)]
     roots: Vec<String>,
@@ -47,7 +51,13 @@ struct RawConfig {
     stack: Vec<String>,
     #[serde(default)]
     rules: Vec<String>,
+    #[serde(default)]
+    rule_overrides: Vec<String>,
     ast_rules: Option<String>,
+    ast_enabled: Option<bool>,
+    ast_binary: Option<String>,
+    #[serde(default)]
+    adapters: BTreeMap<String, crate::protocol::ExternalAdapterConfig>,
     #[serde(default)]
     ast_disable: Vec<String>,
     #[serde(default)]
@@ -61,6 +71,7 @@ struct RawConfig {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct RawGate {
     #[serde(default)]
     file: Vec<String>,
@@ -68,16 +79,32 @@ struct RawGate {
     staged: Vec<String>,
 }
 
-fn git_root(from_dir: &Path) -> Option<PathBuf> {
-    Command::new("git")
-        .args(["rev-parse", "--show-toplevel"])
-        .current_dir(from_dir)
-        .output()
-        .ok()
-        .filter(|o| o.status.success())
-        .and_then(|o| String::from_utf8(o.stdout).ok())
-        .map(|s| s.trim().to_string())
-        .map(PathBuf::from)
+fn repository_root(config_dir: &Path) -> Result<PathBuf, String> {
+    let directory = config_dir
+        .canonicalize()
+        .map_err(|error| format!("config directory: {error}"))?;
+    for parent in directory.ancestors() {
+        match std::fs::symlink_metadata(parent.join(".git")) {
+            Ok(_) => return Ok(parent.to_path_buf()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(format!("repository discovery: {error}")),
+        }
+    }
+    let assets = crate::assets::engine_root();
+    if let Ok(assets) = assets.canonicalize() {
+        if directory.starts_with(&assets) {
+            return Ok(assets);
+        }
+    }
+    // Standalone non-Git projects are valid for file/full scans. Only the
+    // conventional policy directory implies its parent is the project root.
+    if directory
+        .file_name()
+        .is_some_and(|name| name == ".slopgate" || name == ".slop-gate")
+    {
+        return Ok(directory.parent().unwrap_or(&directory).to_path_buf());
+    }
+    Ok(directory)
 }
 
 fn resolve_path(config_dir: &Path, rel: &str) -> PathBuf {
@@ -119,7 +146,9 @@ fn process_checkers(raw: BTreeMap<String, toml::Value>) -> BTreeMap<String, serd
     let mut out = BTreeMap::new();
     for (name, v) in raw {
         match &v {
-            toml::Value::Boolean(false) => continue,
+            toml::Value::Boolean(false) => {
+                out.insert(name, serde_json::Value::Bool(false));
+            }
             toml::Value::Boolean(true) => {
                 out.insert(name, serde_json::json!({}));
             }
@@ -167,6 +196,12 @@ pub fn validate_pattern(p: &Pattern) -> Result<(), String> {
                 if p.id.is_empty() { "?" } else { &p.id }
             ));
         }
+    }
+    if !matches!(
+        p.severity.as_str(),
+        "critical" | "high" | "medium" | "low" | "info"
+    ) {
+        return Err(format!("slopgate: invalid severity for rule {}", p.id));
     }
     validate_pattern_str(&p.pattern, p.flags.as_deref())
 }
@@ -229,6 +264,7 @@ fn resolve_inner(
         }
     }
 
+    let mut project_rule_ids = HashSet::new();
     for rel_path in &raw.rules {
         let abs = resolve_path(&config_dir, rel_path);
         let pack = packs::load_project_pack(&abs)?;
@@ -236,6 +272,7 @@ fn resolve_inner(
             for p in patterns_in {
                 validate_pattern(p)
                     .map_err(|e| format!("{e} (from project:{pack_name} in {})", abs.display()))?;
+                project_rule_ids.insert(p.id.clone());
                 patterns.push(p.clone());
             }
         }
@@ -272,19 +309,46 @@ fn resolve_inner(
     }
 
     // Dedupe by id: last value wins, first-occurrence order (JS Map semantics).
+    let approved_overrides: HashSet<&str> = raw.rule_overrides.iter().map(String::as_str).collect();
+    let mut used_overrides = HashSet::new();
     let mut by_id: IndexMap<String, Pattern> = IndexMap::new();
-    for p in patterns {
-        by_id.insert(p.id.clone(), p);
+    for pattern in patterns {
+        if let Some(existing) = by_id.get(&pattern.id) {
+            if existing != &pattern {
+                if !approved_overrides.contains(pattern.id.as_str()) {
+                    return Err(format!("slopgate: rule ID {} is redefined; explicitly declare it in reviewed ruleOverrides before overriding a policy", pattern.id));
+                }
+                used_overrides.insert(pattern.id.clone());
+            }
+        }
+        by_id.insert(pattern.id.clone(), pattern);
+    }
+    for id in &raw.rule_overrides {
+        if !used_overrides.contains(id) {
+            return Err(format!("slopgate: unused ruleOverrides declaration: {id}"));
+        }
     }
     let patterns: Vec<Pattern> = by_id.into_values().collect();
 
-    let engine = crate::init::run::engine_root();
+    for (id, adapter) in &raw.adapters {
+        adapter.validate(id)?;
+    }
+    if raw.checker_concurrency.is_some_and(|n| n == 0 || n > 64) {
+        return Err("slopgate: checkerConcurrency must be 1..64".into());
+    }
+    let engine = crate::assets::engine_root();
     let mut ast_rule_dirs = vec![engine.join("rules/baseline/ast")];
+    let mut project_ast_dirs = Vec::new();
     if let Some(ast_rules) = &raw.ast_rules {
         let abs = resolve_path(&config_dir, ast_rules);
-        if abs.is_dir() {
-            ast_rule_dirs.push(abs);
+        if !abs.is_dir() {
+            return Err(format!(
+                "slopgate: configured AST rule directory does not exist: {}",
+                abs.display()
+            ));
         }
+        project_ast_dirs.push(abs.to_string_lossy().into_owned());
+        ast_rule_dirs.push(abs);
     }
     if ux_enabled_ast {
         ast_rule_dirs.push(engine.join("rules/ux/ast"));
@@ -302,15 +366,19 @@ fn resolve_inner(
         .map(|r| path_to_string(repo_root.join(r)))
         .collect();
 
-    let exts: HashSet<String> = raw
-        .exts
-        .unwrap_or_else(|| vec![".ts".into(), ".tsx".into(), ".astro".into()])
-        .into_iter()
-        .collect();
+    let exts: HashSet<String> = raw.exts.unwrap_or_default().into_iter().collect();
 
     let skip_dirs: HashSet<String> = raw
         .skip_dirs
-        .unwrap_or_else(|| vec!["node_modules".into(), "dist".into(), "tests".into()])
+        .unwrap_or_else(|| {
+            vec![
+                ".git".into(),
+                "node_modules".into(),
+                "dist".into(),
+                "target".into(),
+                ".worktrees".into(),
+            ]
+        })
         .into_iter()
         .collect();
 
@@ -326,6 +394,14 @@ fn resolve_inner(
         .map(|g| g.staged.iter().cloned().collect())
         .unwrap_or_else(|| ["critical", "high"].iter().map(|s| s.to_string()).collect());
 
+    for value in gate_file.iter().chain(gate_staged.iter()) {
+        if !matches!(
+            value.as_str(),
+            "critical" | "high" | "medium" | "low" | "info"
+        ) {
+            return Err(format!("slopgate: invalid gate severity {value}"));
+        }
+    }
     let suppressions_path = raw
         .suppressions
         .as_ref()
@@ -342,6 +418,13 @@ fn resolve_inner(
     };
 
     let baseline_path = path_to_string(config_dir.join("baseline.json"));
+    let ast_binary = raw.ast_binary.map(|binary| {
+        if Path::new(&binary).is_absolute() {
+            binary
+        } else {
+            path_to_string(resolve_path(&config_dir, &binary))
+        }
+    });
     Ok(ResolvedConfig {
         repo_root: path_to_string(repo_root),
         config_dir: path_to_string(config_dir),
@@ -350,8 +433,13 @@ fn resolve_inner(
         exts,
         skip_dirs,
         patterns,
+        project_rule_ids,
+        project_ast_dirs,
         ast_rule_dirs: ast_rule_dirs.into_iter().map(path_to_string).collect(),
         checkers,
+        external_adapters: raw.adapters,
+        ast_enabled: raw.ast_enabled.unwrap_or(true),
+        ast_binary,
         ast_disable: raw.ast_disable.into_iter().collect(),
         baseline_path,
         suppressions_path,
@@ -385,77 +473,39 @@ pub fn resolve_config(path: &str) -> Result<ResolvedConfig, String> {
         ));
     }
     let config_dir = abs_config.parent().unwrap_or(Path::new(".")).to_path_buf();
-    let repo_root = git_root(&config_dir)
-        .unwrap_or_else(|| config_dir.parent().unwrap_or(&config_dir).to_path_buf());
+    let repo_root = repository_root(&config_dir)?;
 
     let contents = std::fs::read_to_string(&abs_config)
         .map_err(|e| format!("slopgate: read config {}: {e}", abs_config.display()))?;
-    if let Some(msg) = legacy_js_config_error(&abs_config, &contents) {
-        return Err(msg);
-    }
-    let raw: RawConfig = toml::from_str(&contents).map_err(|e| {
-        if let Some(msg) = legacy_js_config_error_on_parse_failure(&abs_config, &contents) {
-            msg
-        } else {
-            format!("slopgate: parse config {}: {e}", abs_config.display())
-        }
-    })?;
+
+    let raw: RawConfig = toml::from_str(&contents).map_err(|error| format!("slopgate: parse config {}: {error}. The configuration must be TOML; use explicit init/migration for legacy formats.", abs_config.display()))?;
     resolve_inner(raw, config_dir, repo_root)
-}
-
-/// True when `contents` reads as a JavaScript module rather than TOML — the
-/// signature of a pre-TOML legacy `config.mjs` (`export default {…}` /
-/// `module.exports = {…}`). Used to turn a cryptic TOML parse error into an
-/// actionable migration message.
-fn looks_like_js_config(contents: &str) -> bool {
-    contents.contains("export default") || contents.contains("module.exports")
-}
-
-/// Actionable error when the config path is a legacy JavaScript config (by
-/// extension). The engine reads TOML only; a `.mjs`/`.cjs`/`.js` config is the
-/// pre-rebrand format and a stale pre-commit hook can still point a TOML engine
-/// at it (the "parsed as TOML and aborts" failure). Returns `None` for `.toml`.
-fn legacy_js_config_error(abs_config: &Path, contents: &str) -> Option<String> {
-    let ext = abs_config
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("")
-        .to_ascii_lowercase();
-    let is_js_ext = matches!(ext.as_str(), "mjs" | "cjs" | "js");
-    if is_js_ext || (ext != "toml" && looks_like_js_config(contents)) {
-        return Some(legacy_migration_message(abs_config));
-    }
-    None
-}
-
-/// Fallback for a `.toml`-named file whose body is actually JavaScript (a stale
-/// hook renamed the path but the file was never migrated). Only fires when the
-/// TOML parse already failed.
-fn legacy_js_config_error_on_parse_failure(abs_config: &Path, contents: &str) -> Option<String> {
-    if looks_like_js_config(contents) {
-        Some(legacy_migration_message(abs_config))
-    } else {
-        None
-    }
-}
-
-fn legacy_migration_message(abs_config: &Path) -> String {
-    format!(
-        "slopgate: {} is a legacy JavaScript config; the engine reads TOML.\n  \
-         Run `slopgate init` in the repo to migrate it to .slopgate/config.toml, \
-         then remove the stale pre-commit hook block (re-run `slopgate init` rewrites it).",
-        abs_config.display()
-    )
 }
 
 /// Resolve inline TOML (unit tests). Uses `.` as `config_dir` and git/cwd for `repo_root`.
 pub fn resolve_config_str(toml_src: &str) -> Result<ResolvedConfig, String> {
     let config_dir = PathBuf::from(".");
-    let repo_root = git_root(&config_dir)
-        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+    let repo_root = repository_root(&config_dir)?;
     let raw: RawConfig =
         toml::from_str(toml_src).map_err(|e| format!("slopgate: parse config: {e}"))?;
     resolve_inner(raw, config_dir, repo_root)
+}
+
+impl crate::stats::store::ProjectStatsConfig for ResolvedConfig {
+    fn config_dir(&self) -> &Path {
+        Path::new(&self.config_dir)
+    }
+}
+
+/// Resolve generated TOML against its final paths before committing it to disk.
+pub fn resolve_config_text_at(
+    contents: &str,
+    config_dir: &Path,
+    repo_root: &Path,
+) -> Result<ResolvedConfig, String> {
+    let raw: RawConfig =
+        toml::from_str(contents).map_err(|error| format!("slopgate: parse config: {error}"))?;
+    resolve_inner(raw, config_dir.to_path_buf(), repo_root.to_path_buf())
 }
 
 #[cfg(test)]
@@ -692,7 +742,8 @@ mod tests {
         write_temp_file(
             &config_dir.join("config.toml"),
             r#"baseline = ["raw-hex"]
-rules = ["./rules/proj.json"]"#,
+rules = ["./rules/proj.json"]
+ruleOverrides = ["raw-hex-color"]"#,
         );
         let cfg = resolve_config(&config_dir.join("config.toml").to_string_lossy()).unwrap();
         let matches: Vec<_> = cfg

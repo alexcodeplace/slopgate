@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "crates": {
+    "slopgate-core": {
+      "path": "crates/slopgate-core",
+      "localDependencies": [],
+      "externalDependencies": ["serde", "serde_json", "sha1", "sha2", "regex", "fancy-regex", "walkdir", "tempfile", "toml", "indexmap", "process-wrap", "time", "libc"]
+    },
+    "slopgate-adapters": {
+      "path": "crates/slopgate-adapters",
+      "localDependencies": ["slopgate-core"],
+      "externalDependencies": ["serde", "serde_json", "sha1", "sha2", "regex", "walkdir", "tempfile", "toml", "indexmap"]
+    },
+    "slopgate-rs": {
+      "path": "crates/slopgate-rs",
+      "localDependencies": ["slopgate-core", "slopgate-adapters"],
+      "externalDependencies": ["serde_json", "tempfile", "sha2"]
+    },
+    "leakscan": {
+      "path": "tools/leakscan",
+      "localDependencies": [],
+      "externalDependencies": ["globset", "oxc", "serde", "serde_json", "walkdir"]
+    },
+    "slopgate-architecture": {
+      "path": "tools/architecture-guard",
+      "localDependencies": [],
+      "externalDependencies": ["serde", "serde_json", "toml", "syn", "quote", "proc-macro2", "walkdir", "tempfile"]
+    }
+  },
+  "forbiddenCoreLiterals": [".ts", ".tsx", ".mts", ".cts", ".py", ".rs", ".astro", "ts", "tsx", "mts", "cts", "python", "TypeScript", "typescript", "tsc", "knip", "depcruise", "cargo-check"],
+  "processOwner": "crates/slopgate-core/src/process.rs",
+  "specification": "docs/specs/universal-gate-v1.md",
+  "traceability": "docs/architecture/traceability.json"
+}

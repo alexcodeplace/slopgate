@@ -64,16 +64,29 @@ pub fn check(config: &ResolvedConfig) -> Result<Vec<String>, String> {
     let fixtures = Path::new(&config.config_dir).join("fixtures");
     let mut unmet = vec![];
     for (class, _) in classes.into_iter().filter(|(_, v)| v.len() >= 2) {
-        let rule = config
-            .ast_rule_dirs
-            .iter()
-            .any(|dir| Path::new(dir).join(format!("{class}.yml")).is_file());
-        let invalid = ["ts", "tsx"]
-            .iter()
-            .any(|ext| fixtures.join(format!("{class}.invalid.{ext}")).is_file());
-        let valid = ["ts", "tsx"]
-            .iter()
-            .any(|ext| fixtures.join(format!("{class}.valid.{ext}")).is_file());
+        let rule = config.patterns.iter().any(|pattern| pattern.id == class)
+            || config
+                .ast_rule_dirs
+                .iter()
+                .any(|dir| Path::new(dir).join(format!("{class}.yml")).is_file());
+        let entries = match fs::read_dir(&fixtures) {
+            Ok(entries) => entries
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| error.to_string())?,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => vec![],
+            Err(error) => return Err(error.to_string()),
+        };
+        let has_case = |kind: &str| {
+            entries.iter().any(|entry| {
+                entry.path().is_file()
+                    && entry
+                        .file_name()
+                        .to_str()
+                        .is_some_and(|name| name.starts_with(&format!("{class}.{kind}.")))
+            })
+        };
+        let invalid = has_case("invalid");
+        let valid = has_case("valid");
         if !(rule && invalid && valid) {
             unmet.push(class);
         }
@@ -88,7 +101,7 @@ mod tests {
     use tempfile::TempDir;
 
     fn config(dir: &TempDir) -> ResolvedConfig {
-        let mut c = resolve_config_str("roots = [\"src\"]\nastRules = \"./rules/ast\"\n").unwrap();
+        let mut c = resolve_config_str("roots = [\"src\"]\n").unwrap();
         c.config_dir = dir.path().join(".slopgate").to_string_lossy().into_owned();
         c.repo_root = dir.path().to_string_lossy().into_owned();
         c.ast_rule_dirs = vec![dir

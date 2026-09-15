@@ -1,169 +1,272 @@
-//! Source file enumeration. Mirrors `src/enumerate.mjs` `listSourceFiles`.
-
-use regex::Regex;
+//! Deterministic, fallible, language-neutral source discovery (SG-SCOPE-001).
+use crate::process::run_tool;
 use std::collections::HashSet;
-use std::path::{Path, PathBuf};
-use std::process::Command;
-use std::sync::OnceLock;
+use std::path::{Component, Path, PathBuf};
 use walkdir::WalkDir;
 
-/// Minimal config surface for enumeration (decoupled from `config.rs` until T15).
 #[derive(Debug, Clone)]
 pub struct EnumerateCtx {
     pub repo_root: PathBuf,
-    /// Absolute scan roots (as in resolved config).
     pub roots: Vec<PathBuf>,
-    /// Repo-relative root paths as written in config.
     pub roots_rel: Vec<String>,
-    /// Allowed extensions including the dot (e.g. `.ts`).
+    /// Empty means all extensions. Discovery is not a claim of parser coverage.
     pub exts: HashSet<String>,
-    /// Directory names to skip during full walk (matched on `file_name()` only).
     pub skip_dirs: HashSet<String>,
 }
 
-/// How to list source files.
+#[derive(Debug, Clone, Copy)]
 pub enum EnumerateMode<'a> {
-    /// Single file: resolve path, apply root/ext/exists filters.
     File(&'a str),
-    /// Staged paths from `git diff --cached --name-only`, excluding deletions.
     Staged,
-    /// Recurse all `roots`, honoring `skip_dirs` and extension filters.
     Walk,
 }
 
-/// Repo-relative source paths matching the JS `listSourceFiles` contract.
-pub fn list_source_files(ctx: &EnumerateCtx, mode: EnumerateMode<'_>) -> Vec<String> {
-    match mode {
-        EnumerateMode::File(file) => list_single_file(ctx, file),
-        EnumerateMode::Staged => list_staged(ctx),
-        EnumerateMode::Walk => list_walk(ctx),
+pub fn git_paths(repo_root: &Path, args: &[&str]) -> Result<Vec<String>, String> {
+    let output = run_tool(Path::new("git"), args, Some(repo_root), Some(10_000));
+    if !output.ok || output.status != Some(0) {
+        return Err(format!(
+            "git discovery failed: {} {}",
+            output.error.unwrap_or_default(),
+            output.stderr.trim()
+        ));
     }
-}
-
-fn list_single_file(ctx: &EnumerateCtx, file: &str) -> Vec<String> {
-    let rel = resolve_rel(ctx, file);
-    let Some(rel) = rel else {
-        return vec![];
-    };
-    if !under_root(&rel, &ctx.roots_rel) {
-        return vec![];
+    if !output.stdout.is_empty() && !output.stdout.ends_with('\0') {
+        return Err("git returned a non-NUL-terminated path list".to_string());
     }
-    let ext = ext_with_dot(Path::new(&rel));
-    if !ext.as_ref().is_some_and(|e| ctx.exts.contains(e)) {
-        return vec![];
-    }
-    if !ctx.repo_root.join(&rel).exists() {
-        return vec![];
-    }
-    vec![rel]
-}
-
-fn list_staged(ctx: &EnumerateCtx) -> Vec<String> {
-    let output = Command::new("git")
-        .args(["diff", "--cached", "--name-only", "--diff-filter=d"])
-        .current_dir(&ctx.repo_root)
-        .output();
-
-    let Ok(output) = output else {
-        return vec![];
-    };
-    if !output.status.success() {
-        return vec![];
-    }
-
-    let raw = String::from_utf8_lossy(&output.stdout);
-    raw.lines()
-        .filter(|line| !line.is_empty())
-        .filter(|f| {
-            under_root(f, &ctx.roots_rel)
-                && ext_with_dot(Path::new(f))
-                    .as_ref()
-                    .is_some_and(|e| ctx.exts.contains(e))
+    output
+        .stdout
+        .split_terminator('\0')
+        .map(|file| {
+            if file.is_empty()
+                || Path::new(file).is_absolute()
+                || Path::new(file).components().any(|p| {
+                    matches!(
+                        p,
+                        Component::ParentDir | Component::RootDir | Component::Prefix(_)
+                    )
+                })
+            {
+                Err(format!(
+                    "git returned an invalid repository-relative path: {file:?}"
+                ))
+            } else {
+                Ok(file.to_string())
+            }
         })
-        .map(str::to_string)
         .collect()
 }
 
-fn list_walk(ctx: &EnumerateCtx) -> Vec<String> {
-    let mut files = Vec::new();
+/// Identify the complete proposed tree, including configuration and deletions.
+/// Comparing before and after analysis detects an adapter or concurrent writer
+/// that changed and staged inputs while leaving a superficially clean worktree.
+pub fn staged_identity(repo_root: &Path) -> Result<String, String> {
+    let result = run_tool(
+        Path::new("git"),
+        &["write-tree"],
+        Some(repo_root),
+        Some(10_000),
+    );
+    let identity = result.stdout.trim();
+    if !result.ok
+        || result.status != Some(0)
+        || ![40, 64].contains(&identity.len())
+        || !identity.bytes().all(|byte| byte.is_ascii_hexdigit())
+    {
+        return Err(format!(
+            "cannot identify proposed commit tree: {} {}",
+            result.error.unwrap_or_default(),
+            result.stderr
+        ));
+    }
+    Ok(identity.to_string())
+}
 
-    for root in &ctx.roots {
-        if !root.exists() {
-            continue;
+/// Conservative v1 snapshot policy. Checking an internally inconsistent
+/// worktree is not evidence about the index. Never stash or rewrite user files.
+pub fn require_consistent_staged_tree(repo_root: &Path) -> Result<(), String> {
+    let dirty = git_paths(repo_root, &["diff", "--name-only", "-z", "--no-ext-diff"])?;
+    if !dirty.is_empty() {
+        return Err(format!("staged snapshot is inconsistent: {} tracked path(s) have unstaged changes; stage or separately commit them before checking", dirty.len()));
+    }
+    let untracked = git_paths(
+        repo_root,
+        &["ls-files", "--others", "--exclude-standard", "-z"],
+    )?;
+    if !untracked.is_empty() {
+        return Err(format!("staged snapshot contains {} untracked analysis input(s); stage them or explicitly exclude generated files", untracked.len()));
+    }
+    Ok(())
+}
+
+pub fn list_source_files(
+    ctx: &EnumerateCtx,
+    mode: EnumerateMode<'_>,
+) -> Result<Vec<String>, String> {
+    let root = ctx
+        .repo_root
+        .canonicalize()
+        .map_err(|error| format!("repository root cannot be resolved: {error}"))?;
+    let mut files = match mode {
+        EnumerateMode::File(file) => {
+            let rel = resolve_rel(ctx, file)?;
+            if !applicable(ctx, &rel) {
+                return Ok(vec![]);
+            }
+            validate_source(&root, &rel)?;
+            vec![rel]
         }
-        for entry in WalkDir::new(root).into_iter().filter_entry(|e| {
-            if e.file_type().is_dir() {
-                if let Some(name) = e.file_name().to_str() {
-                    return !ctx.skip_dirs.contains(name);
+        EnumerateMode::Staged => {
+            let files = git_paths(
+                &root,
+                &[
+                    "diff",
+                    "--cached",
+                    "--name-only",
+                    "--diff-filter=ACMR",
+                    "--no-ext-diff",
+                    "-z",
+                ],
+            )?;
+            let mut selected = Vec::new();
+            for file in files {
+                if applicable(ctx, &file) {
+                    validate_source(&root, &file)?;
+                    selected.push(file);
                 }
             }
-            true
-        }) {
-            let Ok(entry) = entry else {
-                continue;
-            };
-            if !entry.file_type().is_file() {
-                continue;
-            }
-            let file_name = entry.file_name().to_str().unwrap_or("");
-            let ext = ext_with_dot(Path::new(file_name));
-            if !ext.as_ref().is_some_and(|e| ctx.exts.contains(e)) {
-                continue;
-            }
-            let rel = entry
-                .path()
-                .strip_prefix(&ctx.repo_root)
-                .ok()
-                .map(path_to_posix);
-            let Some(rel) = rel else {
-                continue;
-            };
-            files.push(rel);
+            selected
         }
-    }
-
+        EnumerateMode::Walk => {
+            let mut selected = Vec::new();
+            for configured in &ctx.roots {
+                let scan_root = configured
+                    .canonicalize()
+                    .map_err(|error| format!("source root {}: {error}", configured.display()))?;
+                if !scan_root.starts_with(&root) {
+                    return Err(format!(
+                        "source root escapes repository: {}",
+                        configured.display()
+                    ));
+                }
+                for entry in WalkDir::new(configured).into_iter().filter_entry(|entry| {
+                    !(entry.file_type().is_dir()
+                        && entry
+                            .file_name()
+                            .to_str()
+                            .is_some_and(|name| ctx.skip_dirs.contains(name)))
+                }) {
+                    let entry =
+                        entry.map_err(|error| format!("source enumeration failed: {error}"))?;
+                    if entry.file_type().is_dir() {
+                        continue;
+                    }
+                    let rel = entry
+                        .path()
+                        .strip_prefix(&ctx.repo_root)
+                        .map_err(|error| format!("source root mismatch: {error}"))?;
+                    let rel = path_to_posix(rel)?;
+                    if !applicable(ctx, &rel) {
+                        continue;
+                    }
+                    validate_source(&root, &rel)?;
+                    selected.push(rel);
+                    if selected.len() > 1_000_000 {
+                        return Err("source enumeration exceeds one million files".into());
+                    }
+                }
+            }
+            selected
+        }
+    };
     files.sort();
-    files
+    files.dedup();
+    Ok(files)
 }
 
-fn resolve_rel(ctx: &EnumerateCtx, file: &str) -> Option<String> {
-    let path = Path::new(file);
-    if path.is_absolute() {
-        path.strip_prefix(&ctx.repo_root).ok().map(path_to_posix)
-    } else {
-        Some(file.replace('\\', "/"))
+fn validate_source(root: &Path, rel: &str) -> Result<(), String> {
+    let file = root.join(rel);
+    let resolved = file
+        .canonicalize()
+        .map_err(|error| format!("source {rel:?} cannot be read: {error}"))?;
+    if !resolved.starts_with(root) {
+        return Err(format!(
+            "source {rel:?} escapes repository through a symlink"
+        ));
     }
+    if !resolved.is_file() {
+        return Err(format!("source {rel:?} is not a regular file"));
+    }
+    Ok(())
 }
 
-fn under_root(rel: &str, roots_rel: &[String]) -> bool {
-    roots_rel
-        .iter()
-        .any(|r| rel == r || rel.starts_with(&format!("{r}/")))
+fn applicable(ctx: &EnumerateCtx, rel: &str) -> bool {
+    let allowed_extension = ctx.exts.is_empty()
+        || Path::new(rel)
+            .extension()
+            .and_then(|s| s.to_str())
+            .is_some_and(|ext| ctx.exts.contains(&format!(".{ext}")));
+    under_root(rel, &ctx.roots_rel)
+        && allowed_extension
+        && !rel
+            .split('/')
+            .take(rel.split('/').count().saturating_sub(1))
+            .any(|part| ctx.skip_dirs.contains(part))
 }
 
-fn ext_with_dot(path: &Path) -> Option<String> {
-    path.extension()
-        .and_then(|e| e.to_str())
-        .map(|e| format!(".{e}"))
+fn resolve_rel(ctx: &EnumerateCtx, file: &str) -> Result<String, String> {
+    let file = Path::new(file);
+    let rel = if file.is_absolute() {
+        file.strip_prefix(&ctx.repo_root)
+            .map_err(|_| "source is outside repository".to_string())?
+    } else {
+        file
+    };
+    if rel.components().any(|part| {
+        matches!(
+            part,
+            Component::ParentDir | Component::RootDir | Component::Prefix(_)
+        )
+    }) {
+        return Err("source path contains traversal".into());
+    }
+    let normalized: PathBuf = rel
+        .components()
+        .filter(|part| !matches!(part, Component::CurDir))
+        .collect();
+    path_to_posix(&normalized)
 }
 
-fn path_to_posix(path: &Path) -> String {
-    path.to_string_lossy().replace('\\', "/")
+fn under_root(rel: &str, roots: &[String]) -> bool {
+    roots.iter().any(|raw| {
+        let root = raw.trim_end_matches('/').trim_start_matches("./");
+        root.is_empty() || root == "." || rel == root || rel.starts_with(&format!("{root}/"))
+    })
 }
 
-/// Matches `*.test.ts`/`*.test.tsx`. Enumeration itself no longer excludes these —
-/// callers that need the historical "skip test files" default (checkers consuming
-/// the shared file list) apply this explicitly; regex-pack patterns may opt in via
-/// `Pattern.scan_test_files`.
+fn path_to_posix(path: &Path) -> Result<String, String> {
+    let value = path.to_str().ok_or_else(|| {
+        "non-UTF-8 source path is not representable in JSON diagnostics".to_string()
+    })?;
+    #[cfg(windows)]
+    let value = value.replace('\\', "/");
+    Ok(value.to_string())
+}
+
+/// A language-neutral naming convention for rule-owned test scoping. This does
+/// not itself exclude tests from discovery or any checker.
 pub fn is_test_file(path: &str) -> bool {
-    static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r"\.test\.(ts|tsx)$").unwrap())
-        .is_match(path)
+    let name = path.rsplit('/').next().unwrap_or(path);
+    name.contains(".test.")
+        || name.contains(".spec.")
+        || path.split('/').any(|part| part == "__tests__")
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn list_source_files(ctx: &EnumerateCtx, mode: EnumerateMode<'_>) -> Vec<String> {
+        super::list_source_files(ctx, mode).expect("fixture discovery")
+    }
     use std::fs;
     use std::process::Command as ProcCommand;
 
@@ -236,8 +339,7 @@ mod tests {
         write_tree(dir.path());
         let ctx = fixture_ctx(dir.path());
 
-        let got = list_source_files(&ctx, EnumerateMode::File("src/missing.ts"));
-        assert!(got.is_empty());
+        assert!(super::list_source_files(&ctx, EnumerateMode::File("src/missing.ts")).is_err());
     }
 
     #[test]
@@ -267,8 +369,7 @@ mod tests {
         write_tree(dir.path());
         let ctx = fixture_ctx(dir.path());
 
-        let got = list_source_files(&ctx, EnumerateMode::Staged);
-        assert!(got.is_empty());
+        assert!(super::list_source_files(&ctx, EnumerateMode::Staged).is_err());
     }
 
     #[test]
@@ -343,8 +444,7 @@ mod tests {
         git(dir.path(), &["add", "src/staged-then-gone.tsx"]);
         fs::remove_file(dir.path().join("src/staged-then-gone.tsx")).unwrap();
 
-        let got = list_source_files(&ctx, EnumerateMode::Staged);
-        assert_eq!(got, vec!["src/staged-then-gone.tsx"]);
+        assert!(super::list_source_files(&ctx, EnumerateMode::Staged).is_err());
     }
 
     #[test]

@@ -23,7 +23,7 @@ if (process.env.SLOPGATE_SHIM_ACTIVE === '1') {
   process.stderr.write(
     'slopgate: recursive shim invocation detected (SLOPGATE_BIN points back at the slopgate launcher?) — aborting.\n',
   );
-  process.exit(1);
+  process.exit(2);
 }
 process.env.SLOPGATE_SHIM_ACTIVE = '1';
 
@@ -51,7 +51,10 @@ const candidates = [
   join(pkgRoot, 'target', 'release', binName),
 ].filter(Boolean);
 
-const bin = candidates.find((p) => existsSync(p) && !isSelf(p));
+const explicit = process.env.SLOPGATE_BIN;
+const bin = explicit
+  ? (existsSync(explicit) && !isSelf(explicit) ? explicit : undefined)
+  : candidates.find((p) => existsSync(p) && !isSelf(p));
 if (!bin) {
   process.stderr.write(
     `slopgate: native engine binary not found for ${host}.\n` +
@@ -59,12 +62,12 @@ if (!bin) {
     `  For development, build the engine with \`cargo build --release\`.\n` +
     `  looked in: ${candidates.join(', ') || '(none)'}\n`,
   );
-  process.exit(1);
+  process.exit(2);
 }
 
 const r = spawnSync(bin, process.argv.slice(2), { stdio: 'inherit' });
 if (r.error) {
   process.stderr.write(`slopgate: failed to exec engine (${bin}): ${r.error.message}\n`);
-  process.exit(1);
+  process.exit(2);
 }
-process.exit(r.status ?? 1);
+process.exit(r.status ?? 2);

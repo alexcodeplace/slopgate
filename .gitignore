@@ -49,3 +49,20 @@ bin/slopgate-rs
 
 # scratch / demo workspaces
 tmp/
+
+# Architecture and its acceptance evidence are versioned policy.
+!/AGENTS.md
+!/docs/specs/**
+!/docs/architecture/**
+!/docs/adr/**
+!/docs/reviews/**
+!/docs/adapter-protocol.md
+
+!/tests/**
+!/tools/architecture-guard/**
+!/scripts/**
+!/.github/CODEOWNERS
+!/.slopgate/config.toml
+!/.slopgate/rules/**
+
+!/.gitattributes

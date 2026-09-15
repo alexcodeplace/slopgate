@@ -4,11 +4,11 @@
 //! is always preserved (block inserted before first `exec`, else appended).
 
 use crate::error::SlopError;
+use crate::process::BoundedCommand as Command;
 use regex::Regex;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 pub const MARKER_BEGIN: &str = "# slopgate-hook v1 BEGIN";
 pub const MARKER_END: &str = "# slopgate-hook v1 END";
