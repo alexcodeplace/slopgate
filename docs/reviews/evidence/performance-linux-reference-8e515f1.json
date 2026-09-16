@@ -1,0 +1,141 @@
+{
+  "schemaVersion": 1,
+  "machine": {
+    "system": "Linux-7.1.13+deb14-amd64-x86_64-with-glibc2.43",
+    "architecture": "x86_64",
+    "logicalCpus": 8,
+    "python": "3.14.7"
+  },
+  "binarySha256": "09a78c01a40e169e370adcc674a5d31d14f1c8318fe963b54273761f13432467",
+  "workloads": {
+    "native-file": {
+      "samples": 31,
+      "medianMs": 6.347,
+      "p95Ms": 9.305,
+      "minMs": 5.943,
+      "maxMs": 9.684
+    },
+    "native-file-with-ast": {
+      "samples": 21,
+      "medianMs": 17.445,
+      "p95Ms": 19.944,
+      "minMs": 17.025,
+      "maxMs": 20.286
+    },
+    "long-line-negative": {
+      "samples": 15,
+      "medianMs": 6.057,
+      "p95Ms": 6.399,
+      "minMs": 5.921,
+      "maxMs": 6.399
+    },
+    "long-line-positive": {
+      "samples": 15,
+      "medianMs": 7.426,
+      "p95Ms": 10.829,
+      "minMs": 6.479,
+      "maxMs": 10.829
+    },
+    "native-repository": {
+      "samples": 9,
+      "medianMs": 21.612,
+      "p95Ms": 27.839,
+      "minMs": 21.029,
+      "maxMs": 27.839,
+      "files": 1001,
+      "lines": 32032,
+      "sourceBytes": 1101100,
+      "filesPerSecond": 46316.5
+    },
+    "typescript-incremental": {
+      "samples": 5,
+      "medianMs": 369.154,
+      "p95Ms": 401.615,
+      "minMs": 358.785,
+      "maxMs": 401.615
+    }
+  },
+  "limits": {
+    "version": 1,
+    "referenceGoal": "Native small-file median below 100 ms. Limits include CI hardware-noise headroom. External compiler work is measured separately and is not promised to be instantaneous.",
+    "workloads": {
+      "native-file": {
+        "medianMs": 100,
+        "p95Ms": 300
+      },
+      "long-line-negative": {
+        "medianMs": 100,
+        "p95Ms": 300
+      },
+      "long-line-positive": {
+        "medianMs": 100,
+        "p95Ms": 300
+      },
+      "native-repository": {
+        "medianMs": 2000,
+        "p95Ms": 6000
+      },
+      "typescript-incremental": {
+        "medianMs": 10000,
+        "p95Ms": 20000
+      },
+      "native-file-with-ast": {
+        "medianMs": 100,
+        "p95Ms": 300
+      }
+    }
+  },
+  "notes": "First observed launch is not a physical cold-disk benchmark. Semantic checker time is reported separately; no cross-run Slopgate result cache is enabled.",
+  "firstObservedNativeLaunchMs": 6.738,
+  "provenance": {
+    "executable": "/home/user/slopgate-builds/universal-20260915/target/release/slopgate-rs",
+    "revision": "8e515f1e3ba029818c03d45d809097dcb082a1d7",
+    "sourceDigest": "2b8e53aed6e838edd19b68c322b97b4f0127191c9d52ab0ceb846487b01d49fa",
+    "specification": "universal-gate-v1",
+    "version": "0.4.0"
+  },
+  "structuralFirstObservedMs": 17.137,
+  "astGrepVersion": "ast-grep 0.45.3",
+  "typescriptFirstCheckMs": 937.957,
+  "typescriptAdapterOnly": {
+    "samples": 5,
+    "medianMs": 367,
+    "p95Ms": 400,
+    "minMs": 357,
+    "maxMs": 400
+  },
+  "typescriptVersion": "Version 5.9.3",
+  "comparison": {
+    "baselineBinarySha256": "816aac72e658c5c0e7b22b6138cf031cce2716b4837a03417737476d65704997",
+    "matchingMachineMetadata": true,
+    "ratios": {
+      "native-file": {
+        "medianMs": 1.119,
+        "p95Ms": 1.602
+      },
+      "native-file-with-ast": {
+        "medianMs": 1.01,
+        "p95Ms": 1.128
+      },
+      "long-line-negative": {
+        "medianMs": 1.031,
+        "p95Ms": 1.067
+      },
+      "long-line-positive": {
+        "medianMs": 1.193,
+        "p95Ms": 1.634
+      },
+      "native-repository": {
+        "medianMs": 0.977,
+        "p95Ms": 0.92
+      },
+      "typescript-incremental": {
+        "medianMs": 1.229,
+        "p95Ms": 1.25
+      }
+    },
+    "note": "Ratios are measured observations, not proof of identical CPU load or physical cold-cache state. Absolute checked budgets remain authoritative."
+  },
+  "rustcVersion": "rustc 1.95.0 (59807616e 2026-04-14)",
+  "failures": []
+}

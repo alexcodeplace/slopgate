@@ -1,0 +1,24 @@
+{
+  "repository": "alexcodeplace/slopgate",
+  "checkpoint": "8e515f1e3ba029818c03d45d809097dcb082a1d7",
+  "pullRequest": 22,
+  "readOnly": true,
+  "mainBranchProtection": {
+    "verified": false,
+    "httpStatus": 404,
+    "message": "Branch not protected"
+  },
+  "repositoryRulesets": [],
+  "collaborators": [
+    {
+      "login": "alexcodeplace",
+      "role": "admin",
+      "administration": true,
+      "maintenance": true
+    }
+  ],
+  "independentApprovals": [],
+  "verifierExitCode": 2,
+  "activationComplete": false,
+  "requiredAction": "Independent human code-owner review/bootstrap and separate least-privileged non-owner agent identity; then activate and verify hosted protections."
+}
