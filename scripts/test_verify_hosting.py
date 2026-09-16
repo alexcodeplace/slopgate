@@ -18,6 +18,7 @@ class HostingContract(unittest.TestCase):
     def setUp(self) -> None:
         self.policy = json.loads((ROOT / "docs/architecture/hosting-protection.json").read_text())
         self.protection = copy.deepcopy(self.policy)
+        self.protection["required_status_checks"]["contexts"] = [entry["context"] for entry in self.policy["required_status_checks"]["checks"]]
         for key in ("enforce_admins", "required_conversation_resolution", "allow_force_pushes", "allow_deletions"):
             self.protection[key] = {"enabled": self.protection[key]}
         self.people = [{"login": "authorized-owner", "type": "User", "role_name": "admin",
@@ -27,6 +28,13 @@ class HostingContract(unittest.TestCase):
 
     def issues(self) -> list[str]:
         return VERIFIER.problems(self.policy, self.protection, self.people, "authorized-owner", self.owners, self.workflow)
+
+    def test_policy_is_a_direct_rest_payload_with_one_status_selector(self) -> None:
+        # The API rejects supplying contexts and checks together (oneOf).
+        required = self.policy["required_status_checks"]
+        self.assertIn("checks", required)
+        self.assertNotIn("contexts", required)
+        self.assertTrue(required["checks"])
 
     def test_owner_authorized_single_actor_policy_passes_with_trust_limit_disclosed(self) -> None:
         self.assertEqual(self.issues(), [])

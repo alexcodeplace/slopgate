@@ -23,11 +23,12 @@ def problems(policy: dict, protection: dict, collaborators: list[dict], agent: s
     if checks.get("strict") is not True:
         errors.append("Status checks must require an up-to-date branch")
     actual = set(checks.get("contexts", [])) | {entry.get("context") for entry in checks.get("checks", [])}
-    missing = set(policy["required_status_checks"]["contexts"]) - actual
+    expected_contexts = {entry["context"] for entry in policy["required_status_checks"]["checks"]}
+    missing = expected_contexts - actual
     if missing:
         errors.append("Missing required checks: " + ", ".join(sorted(missing)))
     required_apps = {entry["context"]: entry["app_id"] for entry in policy["required_status_checks"].get("checks", [])}
-    if set(required_apps) != set(policy["required_status_checks"]["contexts"]):
+    if not required_apps or len(required_apps) != len(policy["required_status_checks"]["checks"]):
         errors.append("Expected policy must bind every required context to an explicit GitHub App")
     actual_apps = {entry.get("context"): entry.get("app_id") for entry in checks.get("checks", [])}
     for context, app_id in required_apps.items():
