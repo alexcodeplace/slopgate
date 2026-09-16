@@ -1,6 +1,6 @@
 # Universal gate v1 delivery evidence
 
-Current authorization: the owner explicitly authorized autonomous self-review and merge under ADR 0004. The historical activation blocker recorded below is superseded, not a current requirement. Final merge and hosted verification evidence will be recorded separately.
+Current delivery: PR #22 is merged and the eight-check hosted gate is active. The owner authorized autonomous self-review under ADR 0004. See [activation-complete.md](activation-complete.md) for exact merge, all-green main CI, live negative/positive enforcement proof and actual settings. The older activation observations below are historical, not an outstanding blocker.
 
 Status: implementation and automated verification completed for the source revision below. Independent human approval, protected-base bootstrap and least-privileged agent access are not active. This document is evidence, not approval to merge or a claim that repository administrators cannot bypass their own controls.
 
@@ -79,10 +79,10 @@ These were implementation self-review and test-driven repair passes, not an inde
 
 **Governance and drift.** Mutation tests reject forbidden imports, compound imports, whole-standard-library aliases, conditional/qualified source inclusion, unsafe code outside its reviewed owner and dependency-boundary violations. Workspace inheritance follows Cargo path semantics. Protected drift coverage includes embedded policy, packaging, hooks and verification/provisioning scripts. Candidate metadata is read from Git blobs by the trusted base script, never executed with elevated workflow permissions. The hosting verifier rejects arbitrary status producers, missing/inactive trusted workflow, self-owned policy, custom roles and unverified owner access.
 
-## Remaining human-controlled activation blocker
+## Historical activation observation, superseded by ADR 0004
 
 Read-only inspection at this checkpoint returned `Branch not protected` (HTTP 404) for main, no repository rulesets, and one collaborator: `alexcodeplace`, with admin/maintain permissions. The same identity is exposed to the implementation tools. PR 22 has no independent approving review. Running `scripts/verify-hosting.py --repo alexcodeplace/slopgate --agent-login alexcodeplace` correctly returned exit 2 with `verified=false`.
 
-A separate human reviewer/code owner with write access and dedicated non-admin, non-owner agent credentials are required. The human must review and merge the bootstrap, activate App-bound required checks and review protections, and verify the trusted-base drift status using the documented disposable-PR test. See `docs/architecture/activation.md` and `docs/architecture/hosting-protection.json`.
+That checkpoint proposed a separate human reviewer and non-admin credentials. The owner subsequently rejected this assistant-added prerequisite and authorized self-review and merge in ADR 0004. The bootstrap, full protected gate and disposable-PR verification are now completed, as recorded in `activation-complete.md`.
 
-No agent has self-approved, merged this PR, modified repository protections or published a release. Automated code correctness is not a substitute for that independent authority boundary. The overall user goal is therefore not marked DONE.
+At that historical checkpoint no merge or hosting activation had happened. The later owner-authorized normal merge and verified activation supersede that state; there was no fabricated independent approval or administrative bypass. Release publication remains a separate action.
