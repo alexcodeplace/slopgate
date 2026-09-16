@@ -16,7 +16,7 @@ slopgate-rs: CLI and composition root
 
 External executable adapters use a versioned JSON protocol and can be implemented in any language. Adding a language does not require inventing a new architecture or putting its compiler into the core. File discovery is not proof of parser or semantic coverage.
 
-The authoritative contract is [universal-gate-v1](docs/specs/universal-gate-v1.md). Dependency and source boundaries are checked by the syntax-aware architecture guard. Policy changes require an ADR and owner-authorized substantive review. ADR 0004 permits the assistant to review and merge after required CI, without a second human approver. [Hosting activation](docs/architecture/activation.md) explains the external controls needed to make those checks mandatory.
+The authoritative contract is [universal-gate-v1](docs/specs/universal-gate-v1.md). Dependency and source boundaries are checked by the syntax-aware architecture guard. Policy changes require an ADR and owner-authorized substantive review. ADR 0004 permits the assistant to review and merge after required CI, without a second human approver. [Hosting activation](docs/architecture/activation.md) documents how the protected checks are bootstrapped and verified on GitHub.
 
 ## Build and verify
 
@@ -130,10 +130,10 @@ The coordinator batches work, bounds concurrency, amortizes pattern/glob compila
 
 ```bash
 python3 scripts/benchmark.py --binary target/release/slopgate-rs \
-  --semantic --output artifacts/performance.json
+  --semantic --structural --output artifacts/performance.json
 ```
 
-The benchmark records binary provenance, hardware, sample counts, medians and p95s. Native file/repository work and actual TypeScript checking are measured separately. Reviewed CI budgets fail on regressions rather than disabling checks. See [delivery evidence](docs/reviews/universal-v1-delivery.md) for executed results and remaining activation prerequisites; do not treat a target latency as a measured guarantee.
+The benchmark records binary provenance, hardware, sample counts, medians and p95s. Native file/repository work and actual TypeScript checking are measured separately. Reviewed CI budgets fail on regressions rather than disabling checks. See [activation-complete](docs/reviews/activation-complete.md) and the [delivery evidence](docs/reviews/universal-v1-delivery.md) for executed results, live enforcement proof and measured limitations; do not treat a target latency as a universal guarantee.
 
 ## Trust boundary
 
