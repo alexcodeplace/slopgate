@@ -3,7 +3,7 @@
 
 Candidate files are read as Git blobs and never imported, checked out or executed.
 Passing means an ADR accompanies a protected change, NOT that an agent approved it.
-Independent code-owner approval remains a protected-branch hosting requirement.
+Owner-authorized review and mandatory protected-branch checks remain required. A separate human approval is not a prerequisite under ADR 0004.
 """
 from __future__ import annotations
 import argparse
@@ -14,7 +14,7 @@ from pathlib import Path
 
 PROTECTED = re.compile(r"^(?:\.github/|AGENTS\.md$|\.gitignore$|\.gitattributes$|package(?:-lock)?\.json$|(?:.*/)?Cargo\.(?:toml|lock)$|docs/(?:specs|architecture)/|tools/architecture-guard/|crates/slopgate-core/src/rules/|rules/|\.slopgate/|hooks/|bin/|scripts/|tests/acceptance/)")
 ADR = re.compile(r"^docs/adr/\d{4}-[a-z0-9-]+\.md$")
-HEADINGS = ("Decision", "Compatibility", "Performance", "Verification", "Human approval")
+HEADINGS = ("Decision", "Compatibility", "Performance", "Verification", "Review authorization")
 
 
 def git(repository: Path, *arguments: str) -> bytes:
@@ -44,8 +44,9 @@ def blob(repository: Path, revision: str, path: str) -> str:
 
 def valid_adr(contents: str) -> bool:
     for heading in HEADINGS:
-        match = re.search(r"(?ms)^## " + re.escape(heading) + r"\s*\n(.+?)(?=^## |\Z)", contents)
-        if not match or len(match.group(1).strip()) < 40:
+        alternatives = (heading, "Human approval") if heading == "Review authorization" else (heading,)
+        matches = [re.search(r"(?ms)^## " + re.escape(title) + r"\s*\n(.+?)(?=^## |\Z)", contents) for title in alternatives]
+        if not any(match and len(match.group(1).strip()) >= 40 for match in matches):
             return False
     return True
 
@@ -60,7 +61,7 @@ def review(repository: Path, base: str, head: str) -> dict:
     decisions = [path for path in paths(repository, base, head, added=True) if ADR.fullmatch(path)]
     valid = [path for path in decisions if valid_adr(blob(repository, head, path))]
     passed = not changed or bool(valid)
-    return {"schemaVersion": 1, "status": "passed" if passed else "blocked", "base": base, "head": head, "protectedChanges": changed, "decisionRecords": valid, "humanApprovalStillRequired": bool(changed), "reason": "Protected changes require a new ADR with decision, compatibility, performance, verification and independent human approval sections." if not passed else "Metadata reviewed; this result does not grant human approval."}
+    return {"schemaVersion": 1, "status": "passed" if passed else "blocked", "base": base, "head": head, "protectedChanges": changed, "decisionRecords": valid, "reviewRequired": bool(changed), "independentHumanApprovalRequired": False, "approvalMode": "owner-authorized-autonomous", "reason": "Protected changes require a new ADR with decision, compatibility, performance, verification and review-authorization sections." if not passed else "Metadata reviewed; substantive review and required checks are still necessary."}
 
 
 def main() -> None:

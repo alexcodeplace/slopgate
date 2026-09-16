@@ -84,4 +84,4 @@ V1 deliberately does not cache external adapter results. Tool-owned incremental 
 
 ## Security boundary
 
-External adapters are trusted project tools, not sandboxed plugins. CI must use disposable workers, read-only repository permissions, no deployment secrets, and independent approval for policy/adapter changes. A repository administrator or a compromised reviewer credential can replace the checks themselves; code-level guards do not remove that hosting trust boundary.
+External adapters are trusted project tools, not sandboxed plugins. CI must use disposable workers, read-only repository permissions, no deployment secrets, and owner-authorized review for policy/adapter changes. ADR 0004 permits autonomous self-review after required CI. A repository administrator or a compromised reviewer credential can replace the checks themselves; code-level guards do not remove that hosting trust boundary.

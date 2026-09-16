@@ -1,5 +1,7 @@
 # ADR 0001: Universal policy coordinator with specialized adapters
 
+Governance update: ADR 0004 supersedes this record's independent-human-review prerequisite. Its technical decisions and historical evidence remain applicable.
+
 Status: implementation proposal requiring independent human approval before merge. This record does not grant its author permission to approve a specification change.
 
 ## Decision

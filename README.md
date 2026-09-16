@@ -16,7 +16,7 @@ slopgate-rs: CLI and composition root
 
 External executable adapters use a versioned JSON protocol and can be implemented in any language. Adding a language does not require inventing a new architecture or putting its compiler into the core. File discovery is not proof of parser or semantic coverage.
 
-The authoritative contract is [universal-gate-v1](docs/specs/universal-gate-v1.md). Dependency and source boundaries are checked by the syntax-aware architecture guard. Policy changes require an ADR and independent human review. [Hosting activation](docs/architecture/activation.md) explains the external controls needed to make those checks mandatory.
+The authoritative contract is [universal-gate-v1](docs/specs/universal-gate-v1.md). Dependency and source boundaries are checked by the syntax-aware architecture guard. Policy changes require an ADR and owner-authorized substantive review. ADR 0004 permits the assistant to review and merge after required CI, without a second human approver. [Hosting activation](docs/architecture/activation.md) explains the external controls needed to make those checks mandatory.
 
 ## Build and verify
 
@@ -137,4 +137,4 @@ The benchmark records binary provenance, hardware, sample counts, medians and p9
 
 ## Trust boundary
 
-Slopgate is not an adapter sandbox or proof of arbitrary behavioral correctness. Run untrusted project tools on disposable CI workers without deployment secrets. Code-owner rules and required checks need server-side enforcement, independent human review and non-admin agent credentials. An agent using the administrator's identity can change the protections themselves; repository code cannot remove that authority.
+Slopgate is not an adapter sandbox or proof of arbitrary behavioral correctness. Run untrusted project tools on disposable CI workers without deployment secrets. Required checks need server-side enforcement. The owner-authorized assistant may review and merge through protected PRs after CI; a second human approval is not required. Least-privileged credentials remain defense in depth, not an activation prerequisite. An agent using the administrator's identity can change the protections themselves; repository code cannot remove that authority.

@@ -38,20 +38,20 @@ class DriftContract(unittest.TestCase):
         self.write("docs/specs/contract.md", "weakened contract\n")
         result = review(self.root, self.base, self.commit("change"))
         self.assertEqual(result["status"], "blocked")
-        self.assertTrue(result["humanApprovalStillRequired"])
+        self.assertTrue(result["reviewRequired"])
 
     def test_deleting_governance_and_adding_empty_adr_is_blocked(self):
         (self.root / "docs/specs/contract.md").unlink()
         self.write("docs/adr/0001-empty.md", "## Decision\nNo details.\n")
         self.assertEqual(review(self.root, self.base, self.commit("delete"))["status"], "blocked")
 
-    def test_complete_adr_is_not_human_approval_and_candidate_code_never_runs(self):
+    def test_complete_adr_does_not_skip_review_and_candidate_code_never_runs(self):
         self.write("docs/specs/contract.md", "changed contract\n")
         self.write("scripts/spec_drift.py", "raise RuntimeError('candidate must not execute')\n")
         self.write("docs/adr/0001-change.md", "\n".join(f"## {heading}\nThis is a detailed review fixture, not approval by an implementation agent.\n" for heading in HEADINGS))
         result = review(self.root, self.base, self.commit("review proposal"))
         self.assertEqual(result["status"], "passed")
-        self.assertTrue(result["humanApprovalStillRequired"])
+        self.assertTrue(result["reviewRequired"])
         self.assertEqual(result["decisionRecords"], ["docs/adr/0001-change.md"])
 
     def test_ref_arguments_are_not_command_line_options(self):

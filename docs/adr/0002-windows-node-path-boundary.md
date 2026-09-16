@@ -1,5 +1,7 @@
 # ADR 0002: Keep canonical ownership checks separate from Node path representation
 
+Governance update: ADR 0004 supersedes this record's independent-human-review prerequisite. Its technical decisions and historical evidence remain applicable.
+
 Status: proposed implementation correction requiring independent human approval with the universal-gate pull request. This does not change or weaken the architecture specification.
 
 ## Decision

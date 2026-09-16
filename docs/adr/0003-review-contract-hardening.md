@@ -1,5 +1,7 @@
 # ADR 0003: Close verified configuration, coverage and governance gaps
 
+Governance update: ADR 0004 supersedes this record's independent-human-review prerequisite. Its technical decisions and historical evidence remain applicable.
+
 Status: implementation review corrections, pending independent human approval. The universal-gate specification is unchanged.
 
 ## Decision

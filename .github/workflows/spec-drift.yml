@@ -52,5 +52,5 @@ jobs:
           gh api --method POST "repos/$REPOSITORY/statuses/$HEAD_SHA" \
             -f state="$state" \
             -f context='slopgate/trusted-spec-drift' \
-            -f description='Trusted-base metadata review; independent human approval is still required.' \
+            -f description='Trusted-base metadata review; owner-authorized review and required CI apply.' \
             -f target_url="$RUN_URL"

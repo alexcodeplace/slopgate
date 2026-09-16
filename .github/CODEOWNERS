@@ -1,5 +1,4 @@
-# All changes require review, including this ownership policy itself.
-# Hosting must enable required code-owner review and latest-push approval.
-# An independent human reviewer and a non-owner, non-admin agent identity are
-# required before the repository can claim independent enforcement.
+# Review routing and audit ownership, including this policy.
+# Owner-authorized automated review/merge is permitted by ADR 0004.
+# Protected-branch checks are mandatory; a second human approval is not.
 * @alexcodeplace

@@ -1,5 +1,7 @@
 # Universal gate v1 delivery evidence
 
+Current authorization: the owner explicitly authorized autonomous self-review and merge under ADR 0004. The historical activation blocker recorded below is superseded, not a current requirement. Final merge and hosted verification evidence will be recorded separately.
+
 Status: implementation and automated verification completed for the source revision below. Independent human approval, protected-base bootstrap and least-privileged agent access are not active. This document is evidence, not approval to merge or a claim that repository administrators cannot bypass their own controls.
 
 ## Provenance and delivery location

@@ -1,30 +1,30 @@
-# Activating the external enforcement boundary
+# Activating the owner-authorized automated gate
 
-The specification, architecture guard, fixture tests and workflows are repository code. They become mandatory only after protected-branch hosting settings enforce them. Do not describe a feature branch containing these files as an already protected production repository.
+The owner explicitly asked the assistant to review and merge this work without requiring another human to read code. ADR 0004 records that authorization and supersedes the earlier assistant-added independent-review prerequisite. Core architecture, feature-correctness tests, performance budgets and fail-closed behavior are unchanged.
 
-## Human-controlled prerequisites
+## Required controls
 
-The agent must use an identity with branch/PR write access but no repository administration, maintenance, review-bypass or organization-rule privileges. That identity must not be a code owner. At least one distinct human code owner must have write access and approve the final pushed revision. Sharing an administrator's credentials between a human and an agent does not provide separation of authority.
+Pull requests remain mandatory. Required quality, architecture, Linux/macOS/Windows, performance, workflow-lint and trusted-base drift checks must all pass on the applicable revision. Checks are bound to the GitHub Actions App (15368); the branch must be up to date and conversations resolved. Force pushes and deletion are disabled, and branch rules apply to administrators. No administrative merge bypass is permitted.
 
-At initial inspection, `alexcodeplace` was the sole collaborator and the available tool identity, with administrator permission. This is an activation blocker, not something an implementation agent can solve by approving its own PR or editing a checksum.
+The approving-review count is intentionally zero, with no mandatory code-owner or latest-push approval. The owner-authorized assistant performs a documented substantive review and may merge through the normal PR endpoint after checking the exact head SHA. CODEOWNERS remains review routing/audit metadata. This is not represented as independent human approval.
 
-## Bootstrap sequence
+## Bootstrap and verification
 
-1. A human reviews ADR 0001, the architecture specification, the proposed CI/ownership files and the completed acceptance/performance evidence.
-2. Configure a separate human reviewer and non-admin, non-owner agent identity. Adjust CODEOWNERS through human review as needed.
-3. Merge the reviewed bootstrap through the repository owner's controlled process. The trusted drift workflow must exist on the trusted base branch before it can enforce subsequent pull requests. Never run candidate code to simulate trusted-base enforcement during bootstrap.
-4. Apply the settings described by `hosting-protection.json`: PRs and code-owner approval, stale-review dismissal, latest-push approval by someone other than its pusher, up-to-date required checks, conversation resolution, no force pushes/deletions, and restrictions applying to administrators. Bind each required status to its expected GitHub App, rather than accepting arbitrary writers of a matching status name. The proposed policy pins the GitHub Actions App (15368), observed on the real passing jobs. The read-only verifier also checks the trusted workflow and protected-base code-owner identities; it refuses to infer team membership or complex pattern coverage.
-5. Run `python3 scripts/verify-hosting.py --repo alexcodeplace/slopgate --agent-login <dedicated-agent-account>`. This is read-only and must not report success while required settings or independent identities are missing. GitHub App installations and organization-level bypass roles require an administrator's additional review.
-6. Open a disposable PR that changes a protected policy without an ADR and confirm that the trusted status blocks it. Add a complete ADR and confirm that this does not bypass the separate human approval requirement. Verify that changing the candidate drift script or workflow cannot replace the trusted-base check. Close the test PR without merging policy weakening.
+1. Record the owner's authorization, review the actual implementation and evidence, and resolve review findings. Run all CI jobs at the final head.
+2. Activate the seven ordinary App-bound CI requirements before merging the bootstrap. Do not require a trusted-base status that cannot yet run because its workflow has not reached main.
+3. Merge the reviewed PR using the exact verified head SHA, without an admin bypass. Verify main's CI and files.
+4. Immediately activate the complete policy in `hosting-protection.json`, adding `slopgate/trusted-spec-drift` after the base workflow exists. Verify the settings through the read-only checker.
+5. Open a disposable PR with a protected change and no ADR. Confirm the trusted-base status fails and GitHub reports the PR blocked. Candidate review code must never be executed with elevated permissions. Add a complete ADR and restore candidate review code, confirm the trusted status and normal checks pass, then close the probe without merging the synthetic policy change.
+6. Run `python3 scripts/verify-hosting.py --repo alexcodeplace/slopgate --agent-login alexcodeplace` and record the settings, test-PR result, merge SHA and final CI evidence.
 
-## What the checks prove
+## Honest limits
 
-The syntax-aware guard checks declared crate dependencies, concrete-checker isolation, resource ownership and requirement-to-evidence references. Unit and acceptance tests check behavior, including representative attempts to violate those boundaries. The trusted-base drift check reads candidate Git blobs as data and requires a new decision record for protected changes. It does not grant approval.
+These controls prevent normal workflow drift and accidental ungated merges; they are not a sandbox or proof of arbitrary correctness. An administrator capable of rewriting repository protections can change them. GitHub Actions App binding authenticates the App, not an isolated workflow principal. The verifier reports privileged/shared credentials as a limitation, not as a fictional unresolvable code blocker. It must not call missing protections or skipped checks a success.
 
-The system is not a mathematical proof of arbitrary program correctness, an adapter sandbox, or a defense against an administrator who can remove hosting rules. Runtime adapter code and dependency build scripts must run only on disposable CI workers without deployment secrets. A required unavailable checker is an incomplete result, not clean code.
+Untrusted adapters and dependency build scripts run on disposable CI workers without deployment secrets. Least-privileged credentials are useful defense in depth but are not a prerequisite the owner has accepted for this delivery. A new independent reviewer must not be demanded as substitute for the authorized assistant's own review.
 
-## Documentation sources
+## Sources
 
-- GitHub protected branches: https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches
-- GitHub workflow trigger security: https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#pull_request_target
-- Hosted runner architectures: https://github.com/actions/runner-images
+GitHub branch-protection API: https://docs.github.com/en/rest/branches/branch-protection
+GitHub pull-request merge API: https://docs.github.com/en/rest/pulls/pulls
+Trusted trigger behavior: https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#pull_request_target

@@ -99,6 +99,19 @@ class GateAcceptance(unittest.TestCase):
                 self.assertTrue(data["errors"])
                 self.assertEqual(next(c for c in data["coverage"] if c["id"] == "example")["status"], "error")
 
+    @unittest.skipIf(os.name == "nt", "POSIX named-pipe source validation")
+    def test_protocol_cannot_block_on_a_named_pipe_source(self) -> None:
+        self.adapter("fail")
+        source = self.root / "src/source.data"
+        source.unlink()
+        os.mkfifo(source)
+        # Keep the pipe outside discovery so this reaches response normalization
+        # rather than merely testing the source enumerator's existing safeguard.
+        self.write("safe/clean.data", "clean\n")
+        config = self.root / ".slopgate/config.toml"
+        config.write_text(config.read_text().replace('["src"]', '["safe"]'))
+        self.scan(2, timeout=5)
+
     def test_protocol_finding_is_blocking_and_provenance_is_owned_by_gate(self) -> None:
         self.adapter("fail")
         data = self.scan(1)

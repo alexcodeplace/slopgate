@@ -257,6 +257,14 @@ pub fn parse_response(
                     "adapter {id}: finding escapes repository through a symlink"
                 ));
             }
+            // A checker may name a path that was not selected for source scanning.
+            // Refuse FIFOs, devices and directories before opening: an otherwise
+            // valid response must not block indefinitely on a named pipe.
+            if !canonical.is_file() {
+                return Err(format!(
+                    "adapter {id}: finding source must be a regular file"
+                ));
+            }
             let mut bytes = Vec::new();
             std::fs::File::open(file)
                 .map_err(|error| error.to_string())?
