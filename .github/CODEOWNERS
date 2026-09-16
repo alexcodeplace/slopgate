@@ -1,0 +1,4 @@
+# Review routing and audit ownership, including this policy.
+# Owner-authorized automated review/merge is permitted by ADR 0004.
+# Protected-branch checks are mandatory; a second human approval is not.
+* @alexcodeplace

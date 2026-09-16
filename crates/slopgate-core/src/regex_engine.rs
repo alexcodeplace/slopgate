@@ -2,16 +2,172 @@
 //! Uses `fancy-regex` for lookaround/backref parity with JS RegExp.
 
 use crate::config::ResolvedConfig;
-use crate::glob::path_matches_globs;
+use crate::glob::CompiledGlobs;
 use crate::report::Violation;
 use crate::rules::packs::Pattern;
 use fancy_regex::{Regex, RegexBuilder};
 use std::collections::HashMap;
+use std::io::Read;
 use std::path::Path;
+
+/// Linear-time matching is preferred. Compatibility features retain an explicit
+/// work limit and a proven necessary-literal prefilter, never a rule-ID shortcut.
+#[derive(Debug)]
+enum Matcher {
+    Linear(regex::Regex),
+    Compatibility {
+        regex: Regex,
+        necessary: Vec<regex::Regex>,
+    },
+}
+
+fn normalized_pattern(pattern: &str, flags: &str) -> Result<String, String> {
+    if pattern.len() > 64 * 1024 {
+        return Err("regex pattern exceeds 64 KiB".into());
+    }
+    if flags.chars().any(|flag| !"giyums".contains(flag)) {
+        return Err(format!("unsupported regex flag in {flags:?}"));
+    }
+    let mut body = translate_js_unicode_escapes(pattern);
+    if !flags.contains('u') {
+        body = asciiize_shorthands(&body);
+    }
+    Ok(body)
+}
+
+/// Every returned literal must occur in every successful match. Optional and
+/// alternative branches contribute no proof. Advanced control-flow constructs
+/// disable the optimization for the whole expression. This is a necessary test,
+/// not a replacement for the configured expression.
+fn mandatory_literals(expr: &fancy_regex::Expr) -> Option<Vec<(String, bool)>> {
+    use fancy_regex::Expr;
+    match expr {
+        Expr::Empty
+        | Expr::Any { .. }
+        | Expr::Assertion(_)
+        | Expr::Delegate { .. }
+        | Expr::GeneralNewline { .. } => Some(vec![]),
+        Expr::Literal { val, casei } => Some(vec![(val.clone(), *casei)]),
+        Expr::Group(child) => mandatory_literals(child),
+        Expr::AtomicGroup(child) => mandatory_literals(child),
+        Expr::Repeat { child, lo, .. } => {
+            let literals = mandatory_literals(child)?;
+            Some(if *lo > 0 { literals } else { vec![] })
+        }
+        Expr::LookAround(child, _) => {
+            mandatory_literals(child)?;
+            Some(vec![])
+        }
+        Expr::Alt(children) => {
+            for child in children {
+                mandatory_literals(child)?;
+            }
+            Some(vec![])
+        }
+        Expr::Concat(children) => {
+            let mut literals = Vec::new();
+            let mut consecutive: Option<(String, bool)> = None;
+            for child in children {
+                if let Expr::Literal { val, casei } = child {
+                    if let Some((buffer, flag)) = &mut consecutive {
+                        if flag == casei {
+                            buffer.push_str(val);
+                            continue;
+                        }
+                    }
+                    if let Some(previous) = consecutive.take() {
+                        literals.push(previous);
+                    }
+                    consecutive = Some((val.clone(), *casei));
+                } else {
+                    if let Some(previous) = consecutive.take() {
+                        literals.push(previous);
+                    }
+                    literals.extend(mandatory_literals(child)?);
+                }
+            }
+            if let Some(previous) = consecutive {
+                literals.push(previous);
+            }
+            Some(literals)
+        }
+        // Backreferences, subroutines, conditionals and backtracking control
+        // verbs are valid compatibility expressions, but have no proof here.
+        _ => None,
+    }
+}
+
+fn compile_matcher(pattern: &str, flags: &str) -> Result<Matcher, String> {
+    let body = normalized_pattern(pattern, flags)?;
+    let mut linear = regex::RegexBuilder::new(&body);
+    linear
+        .case_insensitive(flags.contains('i'))
+        .dot_matches_new_line(flags.contains('s'))
+        .multi_line(flags.contains('m'))
+        .size_limit(8 * 1024 * 1024);
+    if let Ok(regex) = linear.build() {
+        return Ok(Matcher::Linear(regex));
+    }
+    let regex = compile_line_regex(pattern, flags)?;
+    let parse_body = if flags.contains('i') {
+        format!("(?i:{body})")
+    } else {
+        body
+    };
+    let mut literals = fancy_regex::Expr::parse_tree(&parse_body)
+        .ok()
+        .and_then(|tree| mandatory_literals(&tree.expr))
+        .unwrap_or_default();
+    literals.retain(|(value, _)| value.len() >= 2);
+    literals.sort_by(|a, b| b.0.len().cmp(&a.0.len()).then_with(|| a.cmp(b)));
+    literals.dedup();
+    let necessary = literals
+        .into_iter()
+        .take(8)
+        .filter_map(|(value, casei)| {
+            regex::RegexBuilder::new(&regex::escape(&value))
+                .case_insensitive(casei)
+                .build()
+                .ok()
+        })
+        .collect();
+    Ok(Matcher::Compatibility { regex, necessary })
+}
+
+impl Matcher {
+    fn is_match(&self, line: &str) -> Result<bool, String> {
+        match self {
+            Self::Linear(regex) => Ok(regex.is_match(line)),
+            Self::Compatibility { regex, necessary } => {
+                if necessary.iter().any(|literal| !literal.is_match(line)) {
+                    return Ok(false);
+                }
+                regex
+                    .is_match(line)
+                    .map_err(|error| format!("regex work limit/execution failure: {error}"))
+            }
+        }
+    }
+}
+
+/// Exercise the same bounded matcher and line-scoped semantics as a real scan.
+pub fn evaluate_text_pattern(pattern: &str, flags: &str, text: &str) -> Result<bool, String> {
+    let matcher = compile_matcher(pattern, flags)?;
+    let mut matched = false;
+    for line in text.split('\n') {
+        matched |= matcher.is_match(line)?;
+    }
+    Ok(matched)
+}
+
+pub const MAX_SOURCE_BYTES: u64 = 16 * 1024 * 1024;
+pub const MAX_LINE_BYTES: usize = 1024 * 1024;
 
 struct CompiledPattern<'a> {
     pattern: &'a Pattern,
-    re: Regex,
+    re: Matcher,
+    include: CompiledGlobs,
+    exclude: CompiledGlobs,
 }
 
 struct LineHit {
@@ -97,7 +253,11 @@ fn translate_js_unicode_escapes(pattern: &str) -> String {
     let mut out = String::with_capacity(pattern.len());
     let mut i = 0;
     while i < bytes.len() {
-        if bytes[i] == b'\\' && i + 1 < bytes.len() && bytes[i + 1] == b'u' {
+        if bytes[i] == b'\\'
+            && i + 1 < bytes.len()
+            && bytes[i + 1] == b'u'
+            && !is_escaped(pattern, i)
+        {
             if i + 2 < bytes.len() && bytes[i + 2] == b'{' {
                 let start = i;
                 i += 3;
@@ -110,30 +270,27 @@ fn translate_js_unicode_escapes(pattern: &str) -> String {
                 out.push_str(&pattern[start..i]);
                 continue;
             }
-            if i + 6 <= bytes.len() {
+            if i + 6 <= bytes.len() && bytes[i + 2..i + 6].iter().all(u8::is_ascii_hexdigit) {
                 let hex = &pattern[i + 2..i + 6];
-                if hex.chars().all(|c| c.is_ascii_hexdigit()) {
-                    let code = u32::from_str_radix(hex, 16).unwrap_or(0);
-                    if (0xD800..=0xDBFF).contains(&code) && i + 12 <= bytes.len() {
-                        let rest = &pattern[i + 6..];
-                        if rest.starts_with("\\u") {
-                            let low_hex = &rest[2..6];
-                            if low_hex.chars().all(|c| c.is_ascii_hexdigit()) {
-                                let low = u32::from_str_radix(low_hex, 16).unwrap_or(0);
-                                if (0xDC00..=0xDFFF).contains(&low) {
-                                    let combined =
-                                        0x10000 + ((code - 0xD800) << 10) + (low - 0xDC00);
-                                    out.push_str(&format!("\\u{{{combined:X}}}"));
-                                    i += 12;
-                                    continue;
-                                }
-                            }
+                let code = u32::from_str_radix(hex, 16).unwrap_or(0);
+                if (0xD800..=0xDBFF).contains(&code) && i + 12 <= bytes.len() {
+                    let rest = &pattern[i + 6..];
+                    if rest.starts_with("\\u")
+                        && rest.as_bytes()[2..6].iter().all(u8::is_ascii_hexdigit)
+                    {
+                        let low_hex = &rest[2..6];
+                        let low = u32::from_str_radix(low_hex, 16).unwrap_or(0);
+                        if (0xDC00..=0xDFFF).contains(&low) {
+                            let combined = 0x10000 + ((code - 0xD800) << 10) + (low - 0xDC00);
+                            out.push_str(&format!("\\u{{{combined:X}}}"));
+                            i += 12;
+                            continue;
                         }
                     }
-                    out.push_str(&format!("\\u{{{code:X}}}"));
-                    i += 6;
-                    continue;
                 }
+                out.push_str(&format!("\\u{{{code:X}}}"));
+                i += 6;
+                continue;
             }
         }
         out.push(pattern[i..].chars().next().unwrap());
@@ -144,24 +301,20 @@ fn translate_js_unicode_escapes(pattern: &str) -> String {
 
 /// Compile a rule regex for line-by-line scanning (never stateful). Never panics.
 pub fn compile_line_regex(pattern: &str, flags: &str) -> Result<Regex, String> {
-    let safe: String = flags.chars().filter(|c| *c != 'g' && *c != 'y').collect();
-    let mut body = translate_js_unicode_escapes(pattern);
-    let unicode = safe.contains('u');
-    if !unicode {
-        body = asciiize_shorthands(&body);
-    }
+    let body = normalized_pattern(pattern, flags)?;
     let mut builder = RegexBuilder::new(&body);
-    builder.case_insensitive(safe.contains('i'));
-    // fancy-regex cannot disable Unicode globally (`(?-u)` unsupported); keep Unicode on
-    // for `[^…]` negated classes and ASCIIize shorthands when JS `u` is absent.
-    builder.unicode_mode(true);
-    builder.dot_matches_new_line(safe.contains('s'));
-    builder.multi_line(safe.contains('m'));
-    builder.build().map_err(|e| e.to_string())
+    builder
+        .case_insensitive(flags.contains('i'))
+        .unicode_mode(true)
+        .dot_matches_new_line(flags.contains('s'))
+        .multi_line(flags.contains('m'))
+        .backtrack_limit(1_000_000);
+    builder.build().map_err(|error| error.to_string())
 }
 
+#[cfg(test)]
 fn regex_matches(re: &Regex, line: &str) -> bool {
-    re.is_match(line).unwrap_or(false)
+    re.is_match(line).expect("fixture regex must complete")
 }
 
 fn violation_text(line: &str) -> String {
@@ -180,26 +333,69 @@ fn violation_text(line: &str) -> String {
 }
 
 /// Two-pass regex scan mirroring `scanRegex` in `regex-engine.mjs`.
-pub fn scan_regex(config: &ResolvedConfig, files: &[String], file_mode: bool) -> Vec<Violation> {
+pub fn scan_regex_checked(
+    config: &ResolvedConfig,
+    files: &[String],
+    file_mode: bool,
+) -> Result<Vec<Violation>, Vec<String>> {
+    let mut errors = Vec::new();
     let mut compiled = Vec::new();
     for p in &config.patterns {
         let min_files = p.min_files.unwrap_or(1);
         if file_mode && min_files > 1 {
             continue;
         }
-        if let Ok(re) = compile_line_regex(&p.pattern, p.flags.as_deref().unwrap_or("")) {
-            compiled.push(CompiledPattern { pattern: p, re });
+        let entry = (|| -> Result<CompiledPattern<'_>, String> {
+            Ok(CompiledPattern {
+                pattern: p,
+                re: compile_matcher(&p.pattern, p.flags.as_deref().unwrap_or(""))?,
+                include: CompiledGlobs::new(p.include_globs.as_deref().unwrap_or(&[]))?,
+                exclude: CompiledGlobs::new(p.exclude_globs.as_deref().unwrap_or(&[]))?,
+            })
+        })();
+        match entry {
+            Ok(entry) => compiled.push(entry),
+            Err(error) => errors.push(format!("rule {}: {error}", p.id)),
         }
     }
+    if !errors.is_empty() {
+        return Err(errors);
+    }
+    if compiled.is_empty() {
+        return Ok(vec![]);
+    }
+    {}
 
     // pass 1: one read per file; hits per pattern id → file → line hits
     let mut hits: HashMap<&str, HashMap<&str, Vec<LineHit>>> = HashMap::new();
+    let mut total_hits = 0usize;
+    let mut excerpt_bytes = 0usize;
     for file in files {
         let path = Path::new(&config.repo_root).join(file);
-        let contents = match std::fs::read_to_string(&path) {
-            Ok(c) => c,
-            Err(_) => continue,
+        let read = (|| -> Result<String, String> {
+            let file = std::fs::File::open(&path).map_err(|error| error.to_string())?;
+            let mut bytes = Vec::new();
+            file.take(MAX_SOURCE_BYTES + 1)
+                .read_to_end(&mut bytes)
+                .map_err(|error| error.to_string())?;
+            if bytes.len() as u64 > MAX_SOURCE_BYTES {
+                return Err("source exceeds 16 MiB regex scan limit".into());
+            }
+            String::from_utf8(bytes).map_err(|error| error.to_string())
+        })();
+        let contents = match read {
+            Ok(content) => content,
+            Err(error) => {
+                errors.push(format!("source {file:?}: {error}"));
+                continue;
+            }
         };
+        if contents.split('\n').any(|line| line.len() > MAX_LINE_BYTES) {
+            errors.push(format!(
+                "source {file:?}: line exceeds 1 MiB regex scan limit"
+            ));
+            continue;
+        }
         let lines: Vec<&str> = contents.split('\n').collect();
 
         for cp in &compiled {
@@ -207,18 +403,36 @@ pub fn scan_regex(config: &ResolvedConfig, files: &[String], file_mode: bool) ->
             if crate::enumerate::is_test_file(file) && !p.scan_test_files.unwrap_or(false) {
                 continue;
             }
-            let include = p.include_globs.as_deref().unwrap_or(&[]);
-            if !include.is_empty() && !path_matches_globs(file, include) {
+            if !cp.include.is_empty() && !cp.include.is_match(file) {
                 continue;
             }
-            let exclude = p.exclude_globs.as_deref().unwrap_or(&[]);
-            if path_matches_globs(file, exclude) {
+            if cp.exclude.is_match(file) {
                 continue;
             }
 
             let mut per_file: Vec<LineHit> = Vec::new();
             for (i, line) in lines.iter().enumerate() {
-                if regex_matches(&cp.re, line) {
+                let matched = match cp.re.is_match(line) {
+                    Ok(matched) => matched,
+                    Err(error) => {
+                        return Err(vec![format!(
+                            "rule {} at {file:?}:{}: {error}",
+                            p.id,
+                            i + 1
+                        )]);
+                    }
+                };
+                if matched {
+                    total_hits += 1;
+                    excerpt_bytes = excerpt_bytes.saturating_add(line.len());
+                    if total_hits > crate::protocol::MAX_DIAGNOSTICS
+                        || excerpt_bytes > 16 * 1024 * 1024
+                    {
+                        return Err(vec![
+                            "regex diagnostics exceed the 10000 finding / 16 MiB excerpt limit"
+                                .into(),
+                        ]);
+                    }
                     per_file.push(LineHit {
                         line: (i + 1) as u32,
                         text: (*line).to_string(),
@@ -267,12 +481,19 @@ pub fn scan_regex(config: &ResolvedConfig, files: &[String], file_mode: bool) ->
             }
         }
     }
-    violations
+    if errors.is_empty() {
+        Ok(violations)
+    } else {
+        Err(errors)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn scan_regex(config: &ResolvedConfig, files: &[String], file_mode: bool) -> Vec<Violation> {
+        scan_regex_checked(config, files, file_mode).expect("fixture scan must complete")
+    }
     use crate::hash::line_hash;
     use crate::rules::packs::{self, Pattern};
     use serde_json::Value;
@@ -465,7 +686,7 @@ staged = ["high"]
     }
 
     #[test]
-    fn scan_regex_skips_unreadable_file_without_panic() {
+    fn scan_regex_reports_unreadable_file_without_panic() {
         let dir = TempDir::new().unwrap();
         let root = dir.path();
         fs::create_dir_all(root.join("src")).unwrap();
@@ -474,9 +695,11 @@ staged = ["high"]
         let config = resolve_config_str_with_root(root, &fs::read_to_string(cfg_path()).unwrap());
 
         let files = vec!["src/missing.ts".to_string(), "src/ok.ts".to_string()];
-        let violations = scan_regex(&config, &files, false);
-        assert_eq!(violations.len(), 1);
-        assert_eq!(violations[0].file, "src/ok.ts");
+        let errors = scan_regex_checked(&config, &files, false).unwrap_err();
+        assert!(errors.iter().any(|error| error.contains("missing.ts")));
+        let findings = scan_regex_checked(&config, &["src/ok.ts".into()], false).unwrap();
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].file, "src/ok.ts");
     }
 
     fn resolve_config_str_with_root(root: &std::path::Path, toml: &str) -> ResolvedConfig {

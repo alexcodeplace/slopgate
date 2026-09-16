@@ -1,0 +1,21 @@
+[package]
+name = "slopgate-adapters"
+version = "0.4.0"
+edition = "2021"
+license = "MIT"
+publish = false
+
+[dependencies]
+slopgate-core = { path = "../slopgate-core" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+regex = { workspace = true }
+walkdir = { workspace = true }
+tempfile = { workspace = true }
+sha1 = { workspace = true }
+sha2 = { workspace = true }
+toml = "1.1.2"
+indexmap = "2"
+
+[target.'cfg(windows)'.dependencies]
+dunce = "=1.0.5"

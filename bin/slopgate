@@ -1,90 +1,88 @@
 #!/usr/bin/env node
-// Launcher: locate the native slopgate engine binary and exec it, passing argv
-// through and propagating the exit code. The engine is Rust (crates/slopgate-rs);
-// this thin node shim is the npm `bin` entry (cross-platform).
-//
-// One package ships every platform binary under vendor/<platform>-<arch>/; npm
-// delivers them all and this shim picks the one matching the host.
-//
-// Resolution order:
-//   1. $SLOPGATE_BIN                                  (explicit override)
-//   2. <pkg>/vendor/<platform>-<arch>/slopgate-rs     (bundled prebuilt; npm-install path)
-//   3. <pkg>/target/release/slopgate-rs               (cargo build --release; dev)
+// Native-engine launcher. The selected binary owns checking and provenance;
+// this shim only resolves the executable and provisioned package dependencies.
 import { spawnSync } from 'node:child_process';
 import { existsSync, realpathSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import os from 'node:os';
 
-// Re-entry guard: if a resolution bug ever routes the engine back to this shim,
-// fail closed instead of forking forever (a self-pointing $SLOPGATE_BIN froze a
-// workstation with an unbounded nice -10 spawn chain).
 if (process.env.SLOPGATE_SHIM_ACTIVE === '1') {
-  process.stderr.write(
-    'slopgate: recursive shim invocation detected (SLOPGATE_BIN points back at the slopgate launcher?) — aborting.\n',
-  );
-  process.exit(1);
+  process.stderr.write('slopgate: recursive shim invocation detected; aborting.\n');
+  process.exit(2);
 }
 process.env.SLOPGATE_SHIM_ACTIVE = '1';
-
-// Git hooks inherit the caller's nice; never let the gate outrank the desktop.
 try {
   if (os.getPriority() < 0) os.setPriority(0);
-} catch {}
+} catch { /* Priority controls are not available on every supported host. */ }
 
 const selfPath = fileURLToPath(import.meta.url);
 const pkgRoot = join(dirname(selfPath), '..');
-
-// Report the public package version, not the Rust engine's internal crate version.
-if (process.argv.length === 3 && ['--version', '-V'].includes(process.argv[2])) {
-  try {
-    const { version } = JSON.parse(readFileSync(join(pkgRoot, 'package.json'), 'utf8'));
-    process.stdout.write(`slopgate ${version}\n`);
-    process.exit(0);
-  } catch (error) {
-    process.stderr.write(`slopgate: failed to read package version: ${error.message}\n`);
-    process.exit(1);
-  }
-}
-
-// Runtime dependencies such as ast-grep live inside this npm package. Make
-// their bins visible to the native engine even when slopgate is installed
-// globally and the target project has no node_modules of its own.
-const depBin = join(pkgRoot, 'node_modules', '.bin');
-const pathKey = Object.keys(process.env).find((key) => key.toLowerCase() === 'path') || 'PATH';
-process.env[pathKey] = process.env[pathKey] ? `${depBin}${process.platform === 'win32' ? ';' : ':'}${process.env[pathKey]}` : depBin;
-
-const binName = process.platform === 'win32' ? 'slopgate-rs.exe' : 'slopgate-rs';
 const host = `${process.platform}-${process.arch}`;
+const binName = process.platform === 'win32' ? 'slopgate-rs.exe' : 'slopgate-rs';
+const nativePackage = {
+  'linux-x64': 'cli-linux-x64-gnu', 'linux-arm64': 'cli-linux-arm64-gnu',
+  'darwin-x64': 'cli-darwin-x64', 'darwin-arm64': 'cli-darwin-arm64',
+  'win32-x64': 'cli-win32-x64-msvc', 'win32-arm64': 'cli-win32-arm64-msvc',
+}[host];
 
-const isSelf = (p) => {
-  try {
-    return realpathSync(p) === realpathSync(selfPath);
-  } catch {
-    return false;
-  }
+// Preserve upstream support for a global installation whose consumer has no
+// node_modules. Prefer the provisioned native AST binary over runtime/.cmd shims.
+const depBin = join(pkgRoot, 'node_modules', '.bin');
+let nativeDependencyDirectory;
+try {
+  const cliRoot = realpathSync(join(pkgRoot, 'node_modules', '@ast-grep', 'cli'));
+  const candidate = join(dirname(cliRoot), nativePackage || 'unsupported-platform');
+  const executable = process.platform === 'win32' ? 'ast-grep.exe' : 'ast-grep';
+  if (existsSync(join(candidate, executable))) nativeDependencyDirectory = candidate;
+} catch { /* A development checkout may provision tooling separately. */ }
+const pathKey = Object.keys(process.env).find((key) => key.toLowerCase() === 'path') || 'PATH';
+process.env[pathKey] = [nativeDependencyDirectory, depBin, process.env[pathKey]]
+  .filter(Boolean).join(process.platform === 'win32' ? ';' : ':');
+
+const isSelf = (path) => {
+  try { return realpathSync(path) === realpathSync(selfPath); }
+  catch { return false; }
 };
-
 const candidates = [
   process.env.SLOPGATE_BIN,
   join(pkgRoot, 'vendor', host, binName),
   join(pkgRoot, 'target', 'release', binName),
 ].filter(Boolean);
-
-const bin = candidates.find((p) => existsSync(p) && !isSelf(p));
+const explicit = process.env.SLOPGATE_BIN;
+const bin = explicit
+  ? (existsSync(explicit) && !isSelf(explicit) ? explicit : undefined)
+  : candidates.find((path) => existsSync(path) && !isSelf(path));
 if (!bin) {
   process.stderr.write(
     `slopgate: native engine binary not found for ${host}.\n` +
-    `  This platform may not be supported, or the package install was incomplete.\n` +
-    `  For development, build the engine with \`cargo build --release\`.\n` +
+    '  An explicit SLOPGATE_BIN must identify a valid native engine, not this launcher.\n' +
+    '  For a development checkout, build with cargo build --release.\n' +
     `  looked in: ${candidates.join(', ') || '(none)'}\n`,
   );
-  process.exit(1);
+  process.exit(2);
 }
 
-const r = spawnSync(bin, process.argv.slice(2), { stdio: 'inherit' });
-if (r.error) {
-  process.stderr.write(`slopgate: failed to exec engine (${bin}): ${r.error.message}\n`);
-  process.exit(1);
+// Resolve and validate the engine even for version queries. Report both public
+// package and selected engine identities rather than disguising a stale override.
+if (process.argv.length === 3 && ['--version', '-V'].includes(process.argv[2])) {
+  const native = spawnSync(bin, ['--version'], { encoding: 'utf8', timeout: 5000 });
+  if (native.error || native.status !== 0) {
+    process.stderr.write(`slopgate: selected engine version probe failed: ${native.error?.message || native.stderr}\n`);
+    process.exit(2);
+  }
+  try {
+    const { version } = JSON.parse(readFileSync(join(pkgRoot, 'package.json'), 'utf8'));
+    process.stdout.write(`slopgate ${version} (${native.stdout.trim()})\n`);
+    process.exit(0);
+  } catch (error) {
+    process.stderr.write(`slopgate: cannot read package identity: ${error.message}\n`);
+    process.exit(2);
+  }
 }
-process.exit(r.status ?? 1);
+const result = spawnSync(bin, process.argv.slice(2), { stdio: 'inherit' });
+if (result.error) {
+  process.stderr.write(`slopgate: failed to execute engine (${bin}): ${result.error.message}\n`);
+  process.exit(2);
+}
+process.exit(result.status ?? 2);

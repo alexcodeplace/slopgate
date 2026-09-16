@@ -2,12 +2,12 @@
 //! subprocess wrapper (never panics), source-line lookup, cache dir, and the
 //! leakscan-style JSON checker seam (spawn + parse split for unit tests).
 
+use crate::process::BoundedCommand as Command;
 use crate::report::Violation;
 use crate::severity::map_passthrough;
 use serde_json::Value;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 pub fn stage_progress_line(stage: &str, event: &str, elapsed_ms: Option<u128>) -> String {
     match elapsed_ms {
@@ -24,21 +24,15 @@ pub fn emit_stage_progress(stage: &str, event: &str, elapsed_ms: Option<u128>) {
     }
 }
 
-/// Outcome of `run_tool` — mirrors the JS `{ ok, error, stdout, stderr, status }` shape.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ToolOut {
-    pub ok: bool,
-    pub error: Option<String>,
-    pub stdout: String,
-    pub stderr: String,
-    pub status: Option<i32>,
-}
+pub use crate::process::{run_tool, ToolOut};
 
 /// Result of `run_json_tool` — never panics; errors collected in `errors`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct JsonToolResult {
+    pub status: Option<i32>,
     pub data: Option<Value>,
     pub errors: Vec<String>,
+    pub warnings: Vec<String>,
 }
 
 /// Mapping options for checker JSON → [`Violation`] (leakscan / native-binary adapters).
@@ -51,71 +45,12 @@ pub struct CheckerMapConfig<'a> {
 }
 
 /// Outcome of `run_checker_json`.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CheckerRunResult {
-    pub violations: Vec<Violation>,
-    pub errors: Vec<String>,
-}
-
-/// Resolve `node_modules/.bin/<name>` under `repo_root` when present.
-pub fn local_bin(repo_root: &Path, name: &str) -> Option<PathBuf> {
-    let p = repo_root.join("node_modules").join(".bin").join(name);
-    if p.exists() {
-        Some(p)
-    } else {
-        None
-    }
-}
+pub use crate::checkers::index::CheckerRunResult;
 
 /// True when a command can be spawned successfully with a cheap probe.
 pub fn command_available(bin: &Path, args: &[&str], cwd: Option<&Path>) -> bool {
-    let mut cmd = Command::new(bin);
-    cmd.args(args);
-    if let Some(cwd) = cwd {
-        cmd.current_dir(cwd);
-    }
-    cmd.output().ok().is_some_and(|o| o.status.success())
-}
-
-/// Resolve a configured/local/PATH tool binary.
-///
-/// `cfg.bin` is authoritative when present. Bare names are resolved via PATH; paths
-/// with separators are resolved relative to the repo root unless already absolute.
-pub fn resolve_tool_bin(
-    repo_root: &Path,
-    cfg: &Value,
-    name: &str,
-    probe_args: &[&str],
-) -> Option<PathBuf> {
-    if let Some(bin) = cfg
-        .get("bin")
-        .and_then(|b| b.as_str())
-        .filter(|s| !s.is_empty())
-    {
-        let candidate = if bin.contains('/') || bin.contains('\\') {
-            let p = Path::new(bin);
-            if p.is_absolute() {
-                p.to_path_buf()
-            } else {
-                repo_root.join(p)
-            }
-        } else {
-            PathBuf::from(bin)
-        };
-        return command_available(&candidate, probe_args, Some(repo_root)).then_some(candidate);
-    }
-
-    let mut candidates = Vec::new();
-    if let Some(local) = local_bin(repo_root, name) {
-        candidates.push(local);
-    }
-    candidates.push(repo_root.join(".slopgate").join("bin").join(name));
-    candidates.push(repo_root.join("bin").join(name));
-    candidates.push(PathBuf::from(name));
-
-    candidates
-        .into_iter()
-        .find(|bin| command_available(bin, probe_args, Some(repo_root)))
+    let result = run_tool(bin, args, cwd, Some(2_000));
+    result.ok && result.status == Some(0)
 }
 
 /// Raw staged file paths from git, without Slopgate root/ext filtering.
@@ -163,40 +98,6 @@ pub fn ensure_cache_dir(config_dir: &Path) -> std::io::Result<PathBuf> {
     Ok(dir)
 }
 
-/// Spawn a subprocess and capture stdout/stderr. Never panics.
-///
-/// `timeout_ms` is accepted for API stability; enforcement is deferred:
-/// // PHASE-2: subprocess timeout via `wait_timeout` (long-running checkers).
-pub fn run_tool(
-    bin: &Path,
-    args: &[&str],
-    cwd: Option<&Path>,
-    _timeout_ms: Option<u64>,
-) -> ToolOut {
-    let mut cmd = Command::new(bin);
-    cmd.args(args);
-    if let Some(cwd) = cwd {
-        cmd.current_dir(cwd);
-    }
-
-    match cmd.output() {
-        Ok(output) => ToolOut {
-            ok: true,
-            error: None,
-            stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
-            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
-            status: output.status.code(),
-        },
-        Err(e) => ToolOut {
-            ok: false,
-            error: Some(e.to_string()),
-            stdout: String::new(),
-            stderr: String::new(),
-            status: None,
-        },
-    }
-}
-
 /// Run a tool that emits JSON on stdout. Never panics.
 pub fn run_json_tool(
     label: &str,
@@ -206,19 +107,32 @@ pub fn run_json_tool(
     timeout_ms: Option<u64>,
 ) -> JsonToolResult {
     let res = run_tool(bin, args, cwd, timeout_ms);
-    if !res.ok {
-        let detail = res.error.unwrap_or_else(|| "spawn failed".to_string());
+    if !res.ok || !matches!(res.status, Some(0 | 1)) {
+        let detail = res.error.unwrap_or_else(|| {
+            format!(
+                "unexpected exit {:?}: {}",
+                res.status,
+                res.stderr.chars().take(400).collect::<String>()
+            )
+        });
         return JsonToolResult {
+            status: res.status,
+            warnings: vec![],
             data: None,
             errors: vec![format!("{label} failed: {detail}")],
         };
     }
-    match serde_json::from_str(&res.stdout) {
+    let parsed: Result<Value, _> = serde_json::from_str(&res.stdout);
+    match parsed {
         Ok(data) => JsonToolResult {
+            status: res.status,
+            warnings: vec![],
             data: Some(data),
             errors: vec![],
         },
         Err(e) => JsonToolResult {
+            status: res.status,
+            warnings: vec![],
             data: None,
             errors: vec![format!("{label} JSON parse error: {e}")],
         },
@@ -296,21 +210,56 @@ pub fn run_checker_json(
 ) -> CheckerRunResult {
     if !bin.exists() {
         return CheckerRunResult {
+            warnings: vec![],
             violations: vec![],
             errors: vec![format!("no {label} binary")],
         };
     }
 
-    let JsonToolResult { data, mut errors } =
-        run_json_tool(label, bin, args, Some(cwd), timeout_ms);
+    let JsonToolResult {
+        status,
+        warnings: _,
+        data,
+        mut errors,
+    } = run_json_tool(label, bin, args, Some(cwd), timeout_ms);
 
     let Some(data) = data else {
         return CheckerRunResult {
+            warnings: vec![],
             violations: vec![],
             errors,
         };
     };
 
+    let findings_array = data.get("violations").and_then(Value::as_array);
+    if findings_array.is_none()
+        || data.get("errors").is_some_and(|value| {
+            value
+                .as_array()
+                .is_none_or(|items| items.iter().any(|item| !item.is_string()))
+        })
+        || findings_array.is_some_and(|items| {
+            items.iter().any(|item| {
+                !item.is_object()
+                    || item
+                        .get("file")
+                        .and_then(Value::as_str)
+                        .is_none_or(str::is_empty)
+                    || item
+                        .get("line")
+                        .and_then(Value::as_u64)
+                        .is_none_or(|line| line == 0 || line > u32::MAX as u64)
+            })
+        })
+        || (status != Some(0) && findings_array.is_some_and(Vec::is_empty))
+    {
+        return CheckerRunResult {
+            errors: vec![format!(
+                "{label}: invalid standardized finding report/exit contract"
+            )],
+            ..Default::default()
+        };
+    }
     if let Some(extra) = data.get("errors").and_then(|e| e.as_array()) {
         for e in extra {
             if let Some(s) = e.as_str() {
@@ -320,6 +269,7 @@ pub fn run_checker_json(
     }
 
     CheckerRunResult {
+        warnings: vec![],
         violations: parse_checker_json(&data, map_cfg),
         errors,
     }
@@ -407,22 +357,6 @@ mod tests {
         assert!(!out.ok);
         assert!(out.error.is_some());
         assert!(out.status.is_none());
-    }
-
-    #[test]
-    fn local_bin_none_when_absent() {
-        let dir = TempDir::new().unwrap();
-        assert!(local_bin(dir.path(), "depcruise").is_none());
-    }
-
-    #[test]
-    fn local_bin_some_when_stub_exists() {
-        let dir = TempDir::new().unwrap();
-        let bin_dir = dir.path().join("node_modules").join(".bin");
-        fs::create_dir_all(&bin_dir).unwrap();
-        let stub = bin_dir.join("depcruise");
-        fs::write(&stub, "#!/bin/sh\n").unwrap();
-        assert_eq!(local_bin(dir.path(), "depcruise"), Some(stub));
     }
 
     #[test]

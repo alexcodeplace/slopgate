@@ -88,7 +88,17 @@ fn strip_ms(s: &str) -> String {
 }
 
 fn normalize(s: &str) -> String {
-    let mut out = strip_ms(&strip_ansi(s));
+    let filtered = s
+        .lines()
+        .filter(|line| {
+            !line.starts_with("SLOPGATE: ast-grep executable")
+                && !line.starts_with("SLOPGATE: sg: ")
+                && !line.starts_with("⚠ SLOPGATE: ast-grep: ast-grep: using PATH binary")
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+        + "\n";
+    let mut out = strip_ms(&strip_ansi(&filtered));
     while out.ends_with("\n\n") {
         out.pop();
     }
