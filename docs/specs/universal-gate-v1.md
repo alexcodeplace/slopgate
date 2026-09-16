@@ -62,3 +62,5 @@ SG-EVIDENCE-001: Map requirements to implementation/tests, record build/commit p
 - TypeScript references: https://www.typescriptlang.org/docs/handbook/project-references.html
 - GitHub protection: https://docs.github.com/repositories/configuring-branches-and-merges-in-your-repository/defining-the-mergeability-of-pull-requests/about-protected-branches
 - Code owners: https://docs.github.com/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+<!-- Disposable activation probe only; never merge this synthetic spec change. -->
