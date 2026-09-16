@@ -193,7 +193,18 @@ pub fn run_adapter(
             errors: vec![],
             warnings: vec![],
         },
-        Err(error) => execution_error(error),
+        Err(error) => {
+            // Keep bounded tool diagnostics when a process exits before writing
+            // its JSON response. Without this, a real crash becomes an opaque
+            // EOF parse error and cannot be diagnosed in CI.
+            let detail: String = output.stderr.chars().take(2_000).collect();
+            let suffix = if detail.trim().is_empty() {
+                String::new()
+            } else {
+                format!("; stderr: {}", detail.trim())
+            };
+            execution_error(format!("{error} (exit {:?}){suffix}", output.status))
+        }
     }
 }
 

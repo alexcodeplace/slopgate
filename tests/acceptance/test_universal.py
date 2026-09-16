@@ -120,6 +120,11 @@ class GateAcceptance(unittest.TestCase):
         self.assertEqual(finding["fullLine"], "clean source")
         self.assertEqual(finding["id"], "example/no-slop")
 
+    def test_malformed_response_retains_bounded_checker_stderr(self) -> None:
+        self.adapter("malformed")
+        data = self.scan(2)
+        self.assertTrue(any("fixture diagnostic: malformed response" in error for error in data["errors"]))
+
     def test_optional_error_is_visible_and_explicit(self) -> None:
         self.adapter("malformed", required=False)
         data = self.scan(0)
@@ -298,10 +303,14 @@ class GateAcceptance(unittest.TestCase):
         for i in range(6):
             config += f'[adapters.check{i}]\nexecutable={json.dumps(sys.executable)}\nargs=["adapter.py"]\n[adapters.check{i}.settings]\nbehavior="concurrency"\nstate={json.dumps(str(state))}\n'
         self.config(config)
-        data = self.scan(0)
-        self.assertEqual(int((state / "maximum").read_text()), 2)
-        ids = [coverage["id"] for coverage in data["coverage"]]
-        self.assertEqual(ids, sorted(ids))
+        # Exercise repeated independent batches so sporadic platform lifecycle
+        # or fixture-lock errors cannot hide behind a single successful launch.
+        for iteration in range(12):
+            with self.subTest(iteration=iteration):
+                data = self.scan(0)
+                self.assertEqual(int((state / "maximum").read_text()), 2)
+                ids = [coverage["id"] for coverage in data["coverage"]]
+                self.assertEqual(ids, sorted(ids))
 
     def test_real_ast_rules_apply_outside_typescript_and_valid_fixture_is_clean(self) -> None:
         if shutil.which("ast-grep") is None:

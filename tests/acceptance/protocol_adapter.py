@@ -18,6 +18,7 @@ if behavior == "fail":
 elif behavior == "error":
     response.update(status="error", errors=["checker could not analyze source"])
 elif behavior == "malformed":
+    sys.stderr.write("fixture diagnostic: malformed response\n")
     sys.stdout.write("{not json")
     sys.exit(0)
 elif behavior == "empty":
