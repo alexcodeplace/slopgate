@@ -4,10 +4,10 @@
 //! invalid JSON is left untouched.
 
 use crate::error::SlopError;
+use crate::process::BoundedCommand as Command;
 use serde_json::{json, Value};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 /// One supported agent CLI and its hooks settings file (under `$HOME`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -104,8 +104,6 @@ pub fn agent_file_path(home: &Path, agent: &AgentDef) -> PathBuf {
 pub fn which(cmd: &str) -> bool {
     Command::new("which")
         .arg(cmd)
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
         .status()
         .map(|s| s.success())
         .unwrap_or(false)

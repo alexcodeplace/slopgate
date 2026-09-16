@@ -1,0 +1,5 @@
+# All changes require review, including this ownership policy itself.
+# Hosting must enable required code-owner review and latest-push approval.
+# An independent human reviewer and a non-owner, non-admin agent identity are
+# required before the repository can claim independent enforcement.
+* @alexcodeplace

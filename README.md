@@ -1,783 +1,140 @@
-# slopgate
+# Slopgate
 
-A global code-quality / anti-slop gate for Claude Code and git. Engine is shared, rules are per-project.
+A deterministic, language-neutral code-policy gate. One Rust coordinator runs shared text/structural checks and specialized adapters, applies reviewed project policy, and returns one trustworthy result.
 
-**What it does:** Catches code quality violations in two tiers — a fast post-edit scan (regex + AST rules, instant feedback) and a heavy commit-tier scan (static type checkers, dead-code analysis, architecture rules, copy-paste detection). A **ratchet baseline** lets legacy repos adopt without flooding — only NEW violations block commits; pre-existing ones are baselined and tracked for paydown.
-
----
-
-## Start here: stop repeating the same code-review fixes
-
-Use Slopgate when a coding agent keeps introducing patterns your project already forbids: unsafe type casts, empty error handlers, accidental secrets, duplicated code, or imports across an architectural boundary. Project-owned rules make that feedback repeatable instead of requiring another reminder in every chat.
-
-For example, enable the `as-any` pack to catch a new unsafe cast immediately after an edit; add a dependency-cruiser rule to keep UI code away from database modules; or adopt a ratchet baseline in an older repository so existing debt does not conceal new regressions. These are static checks, not a replacement for running the app or reviewing a change.
-
-### First successful check
-
-Install the pinned package below, then run `slopgate init .` from the repository you want to protect. Review the generated `.slopgate/config.toml`, existing hook changes and detected checker dependencies. Create the **initial** baseline only after reviewing what it will accept. Run `slopgate --staged --config .slopgate/config.toml` on a small staged change. Exit `0` means the configured gate passed; exit `1` means findings need attention; exit `2` means configuration or required AST infrastructure failed.
-
-In normal use, let the edit and commit hooks run, read the reported file/rule, fix the cause, and rerun. Do not update the baseline or add suppressions merely to hide a new failure. `baseline --prune` **writes** a reduced baseline containing only unresolved entries; `--update` takes a new full snapshot, including current violations.
-
-### Ask an agent to install and configure it
-
-Copy this into a coding agent that can access your project:
-
-```text
-Install and configure Slopgate for this repository using
-https://github.com/alexcodeplace/slopgate and its current README.
-First inspect the OS, Node/npm, Git status, existing hooks, project commands
-and coding rules. Explain any required system-wide changes before making them.
-Install the documented release, run slopgate init for this repository, and
-review the generated configuration without overwriting unrelated hooks.
-Enable checks that fit the actual project and report any missing checker tools.
-Ask before creating or updating a baseline; never absorb new violations just
-to get a green result. Run the bundled self-test and a small disposable
-pass/fail example, then show me the normal staged-check command, the changed
-files, and how to undo only your setup. Do not commit or push my project,
-disable checks, delete files, or use --no-verify to make the demonstration pass.
-```
-
-## Features
-
-- **Two-tier gate**
-  - **Fast tier** (post-edit hook): regex patterns + AST rules, instant feedback as you code
-  - **Commit tier** (pre-commit hook): includes heavy checkers (tsc, knip, jscpd, dependency-cruiser, type-coverage, diff-shape) + AST + regex, blocks commits
-  
-- **Ratchet baseline** — snapshot violations at adoption time; only NEW violations fail the gate. Track debt paydown over time.
-
-- **Commit-tier checkers**
-  - **tsc** — TypeScript type errors (full-project scope)
-  - **knip** — dead/unused code (exports, files, dependencies)
-  - **jscpd** — copy-paste duplication (token-level)
-  - **dependency-cruiser** — architecture rules (cycles, orphans, layer boundaries)
-  - **type-coverage** — propagation of `any` type (per-expression tracking)
-  - **leakscan** — secret scanning
-  - **shellcheck** — shell-script diagnostics
-  - **actionlint** — GitHub Actions workflow diagnostics
-  - **typos** — spelling mistakes in source and text
-  - **diff-shape** — wide commits spanning too many directories (encourages focused changes)
-
-- **Shared regex + AST rule packs** — fast-tier and commit-tier both run these
-  - Convention: `no-stubs`, `ts-suppress`, `as-any`, `no-narration-comments`, `raw-hex` (design tokens), `sql-safety`
-  - Security: `live-secrets`, `eval-ban`, `pii-logs`, `weak-hash`
-  - Cloudflare boundary: `kv-ban` (plus the opt-in `stack = ["cloudflare"]` pack)
-  - Built-in AST rules: empty-catch, unsafe `innerHTML`/`dangerouslySetInnerHTML`, `target="_blank"` without `rel`, `window` access during render
-  
-- **Native git pre-commit hook** — no daemon, no CI coupling, just git
-  
-- **Claude Code integration** — hooks into PreToolUse (commit) and PostToolUse (edit) events
-  
-- **Suppressions** — per-file, per-line, with line-hash stability across edits
-  
-- **Self-test** — `slopgate --self-test` validates rule engines + baseline checker parsers against bundled fixtures
-
----
-
-## Install
-
-```bash
-npm install -g @alexcodeplace/slopgate@0.3.4
-```
-
-The matching prebuilt native engine for your platform is included in the package, and the pinned `ast-grep` runtime needed for structural rules is installed as a package dependency. No Rust toolchain or separate scanner install is required.
-
-Then onboard a project:
-
-```bash
-slopgate init [path-to-repo]
-```
-
-This:
-1. Detects TypeScript roots, file extensions, and package layout
-2. Scaffolds `.slopgate/config.toml` with detected checkers enabled
-3. Writes `.slopgate/suppressions.json` and `.slopgate/depcruise.cjs` (starter)
-4. Creates `.slopgate/convention-sources.json` (hints for authoring project rules from local skills/agents/docs)
-5. Creates `.slopgate/rules/ast/` and `.slopgate/fixtures/src/` directories
-6. Installs git pre-commit hook (or appends to existing)
-7. Merges Claude Code hook settings into `.claude/settings.json`
-8. Prints next steps (including: run `slopgate baseline --config .slopgate/config.toml`)
-
----
-
-## Quickstart
-
-### Run the gate on staged changes (pre-commit):
-```bash
-slopgate --staged --config .slopgate/config.toml
-```
-
-### Run on a single file (post-edit, fast tier):
-```bash
-slopgate --file src/app.ts --config .slopgate/config.toml
-```
-
-### Create/update the baseline:
-```bash
-# Create baseline (refuses if it exists)
-slopgate baseline --config .slopgate/config.toml
-
-# Update baseline (re-snapshot all current violations)
-slopgate baseline --update --config .slopgate/config.toml
-
-# Prune baseline (remove entries no longer occurring)
-slopgate baseline --prune --config .slopgate/config.toml
-```
-
-### Run self-test against the source fixtures:
-
-Install the published CLI first. Its fixture configuration uses repository-relative paths, so run it from a source checkout rather than pointing directly into the globally installed package:
-
-```bash
-git clone https://github.com/alexcodeplace/slopgate.git slopgate-selftest
-cd slopgate-selftest
-slopgate --self-test --config rules/baseline/selftest.config.toml
-```
-
-This uses the installed native CLI with the checkout's fixtures; it does not require rebuilding Rust. Directly using the packaged `rules/baseline/selftest.config.toml` outside a Git checkout currently resolves the fixture root incorrectly and exits nonzero. Do not report that error as a passed self-test. Normal project checks still use your project's `.slopgate/config.toml`.
-
-### Run immutable full-repository CI gate:
-```bash
-slopgate scan --scope repo --tier commit --format github --config .slopgate/config.toml
-```
-
-### Record reviewer defects and enforce rule harvesting:
-```bash
-slopgate defect record --class missing-button-type --file src/app.tsx --line 42 --source code-review --config .slopgate/config.toml
-slopgate harvest --check --config .slopgate/config.toml
-```
-
-Second distinct occurrence requires `.slopgate/rules/ast/<class>.yml` plus `.slopgate/fixtures/<class>.invalid.ts[x]` and `<class>.valid.ts[x]`. `--self-test` proves rule fires on configured fixtures.
-
-### Reusable GitHub gate:
-```yaml
-jobs:
-  slopgate:
-    uses: alexcodeplace/slopgate/.github/workflows/slopgate.yml@v1
-```
-
-The reusable workflow defaults to GitHub-hosted `ubuntu-latest`, so fork pull requests run in an isolated disposable runner. If you override `runner-json` to use a persistent self-hosted runner, do not execute untrusted fork code there.
-
-### Install or reinstall hooks:
-```bash
-slopgate install-hooks --config .slopgate/config.toml
-```
-
----
-
-## Command Reference
-
-### `slopgate init [dir]`
-Onboard a new repository. Detects roots, extensions, installed checkers, and scaffolds project structure.
-
-**Args:**
-- `dir` (optional) — target directory; defaults to `process.cwd()`
-- No `--config` required; generates config during init
-
-**Creates:**
-- `.slopgate/config.toml` — project config (roots, extensions, rule packs, checkers, baseline/suppressions paths)
-- `.slopgate/suppressions.json` — line-level violation suppressions (empty initially)
-- `.slopgate/depcruise.cjs` — starter dependency-cruiser rules (if depcruise detected)
-- `.slopgate/convention-sources.json` — hints for authoring project-specific rule packs
-- `.slopgate/rules/ast/` and `.slopgate/fixtures/src/` — directories for custom rules and fixtures
-- `.git/hooks/pre-commit` — native git pre-commit hook (creates new or appends to existing)
-- `.claude/settings.json` — Claude Code hook entries (idempotent merge)
-
-**Next step:** Run `slopgate baseline --config .slopgate/config.toml` to create the initial ratchet baseline
-
----
-
-### `slopgate --staged --config <path>`
-Run commit-tier gate on staged files. Used by git pre-commit hook and Claude Code PreToolUse hook.
-
-**Flags:**
-- `--config <path>` (required) — path to `.slopgate/config.toml`
-- `--tier fast|commit` (optional) — override default tier (default: commit for `--staged`)
-
-**Exit codes:**
-- `0` — no violations (or all baselined/suppressed)
-- `1` — violations block the commit
-- `2` — configuration, missing argument, or required AST infrastructure failure
-
-**Output:**
-- Violations grouped by source (regex, ast, checker:tsc, etc.)
-- Baselined count footer
-- Skipped checkers (if tool/config missing)
-
----
-
-### `slopgate --file <path> --config <path>`
-Run fast-tier gate on a single file (post-edit). Used by Claude Code PostToolUse hook.
-
-**Flags:**
-- `--file <path>` (required) — repo-relative path to check
-- `--config <path>` (required) — path to `.slopgate/config.toml`
-- `--tier fast|commit` (optional) — override default tier (default: fast for `--file`)
-
-**Exit codes:** same as `--staged`
-
-**Output:** violations in the touched file only; no baseline filtering
-
----
-
-### `slopgate baseline --config <path> [--update] [--prune]`
-Manage the ratchet baseline.
-
-**Flags:**
-- `--config <path>` (required)
-- `--update` — re-snapshot all current violations (overwrites baseline)
-- `--prune` — write a baseline retaining only fingerprints that still occur
-- Do not combine these for debt paydown: `--update` selects a full re-snapshot, including when `--prune` is also present
-
-**Behavior:**
-- No flags, file missing → create baseline with current violations
-- No flags, file exists → error (refuses overwrite; use `--update`)
-- `--update` → snapshot all violations in full commit tier scan
-- `--prune` → scan, then rewrite the baseline without resolved fingerprints; it does not add new violations
-
----
-
-### `slopgate install-hooks --config <path>`
-Install or upgrade the git pre-commit hook.
-
-**Flags:**
-- `--config <path>` (required)
-
-**Behavior:**
-- No hook exists → create new hook with slopgate check
-- Hook exists with slopgate marker → upgrade (idempotent)
-- Foreign hook exists → append slopgate block before final `exec` (preserves other hooks)
-
-**Hook location:** `<git-dir>/hooks/pre-commit` (or respects `git config core.hooksPath`)
-
----
-
-
-### `slopgate --self-test --config <path>`
-Internal: validate regex + AST engines and checker parsers against fixtures.
-
-**Flags:**
-- `--config <path>` (required) — typically `rules/baseline/selftest.config.toml`
-
-Runs in-process tests; exit 0 = all pass, exit 1 = failure. Used by `npm run self-test`.
-
----
-
-## How the Two Tiers Work
-
-### Fast Tier (Post-Edit)
-Runs on every Edit/Write to a `.ts`, `.tsx`, or `.astro` file.
-
-**Scope:** Single file
-**Engines:** Regex patterns + AST rules (baseline packs only)
-**Baseline:** Not consulted (all violations shown)
-**Latency:** < 1 second
-**Feedback:** Instant, in-editor
-
-**Rules applied:**
-- All regex patterns in enabled baseline packs (`no-stubs`, `ts-suppress`, `as-any`, etc.)
-- All AST rules from enabled baseline packs
-- Project-owned AST rules (from `astRules` config)
-
----
-
-### Commit Tier (Pre-Commit)
-Runs before `git commit` or when `--staged` is called manually.
-
-**Scope:** All staged files + full repo (for checkers like tsc, knip that need graph context)
-**Engines:** Regex patterns + AST rules + configured commit-tier checkers
-**Baseline:** Consulted; only NEW violations block commit
-**Latency:** 5–30 seconds (tsc + knip dominate)
-**Feedback:** Commit blocked or passes
-
-**Rules applied:**
-- All regex patterns (same as fast tier)
-- All AST rules (same as fast tier)
-- **tsc** — TypeScript type errors (full-project compile)
-- **knip** — unused exports/files/dependencies
-- **jscpd** — copy-paste clones (staged files only are reported)
-- **dependency-cruiser** — architecture violations
-- **type-coverage** — NEW uncovered expressions
-- **diff-shape** — staged files spanning > N top-level dirs
-
-**Filtering:**
-1. Run all sources (regex, ast, checkers)
-2. Fingerprint violations (sha256 of source, rule, file, normalized message, line text)
-3. Filter by ratchet baseline (drop fingerprints in baseline.json)
-4. Filter by suppressions (line-level, per file + lineHash)
-5. Filter by severity gate (only show `critical`/`high` by default, configurable)
-6. Print report; exit 1 if violations remain
-
----
-
-## Ratchet Baseline
-
-The ratchet prevents violations from blocking adoption of new rules or onboarding legacy repos.
-
-### How It Works
-
-1. **At init:** `slopgate baseline --config ...` creates `.slopgate/baseline.json` with a snapshot of ALL current violations.
-
-2. **On commit:** The gate compares the current full-repo commit-tier scan against the baseline. Violations whose fingerprint is in the baseline are ignored (baselined); NEW violations block the commit.
-
-3. **Paydown:** As issues are fixed, their fingerprint disappears from the current scan. `slopgate baseline --prune` removes old entries from the baseline, lowering the bar.
-
-4. **Re-snapshot:** `slopgate baseline --update` does a full re-scan and updates the baseline (use after intentionally widening rules or adding new checkers).
-
-### Fingerprint Stability
-
-Fingerprints include:
-- Rule ID
-- File path (repo-relative)
-- Normalized message (digit runs replaced with `#`, kills line/col churn)
-- First 60 chars of the source line (trimmed)
-
-Fingerprints do NOT include the line number, so they survive unrelated edits shifting lines.
-
-### Suppressions vs. Baseline
-
-- **Baseline** — temporary allowlist; debt should be paid down over time. Track in version control. Entire project-wide snapshot.
-- **Suppressions** — permanent per-file exemptions (e.g., "this pattern is correct in this context"). Sparse, line-level. Also tracked.
-
----
-
-## UX Module (optional)
-
-The UX module provides opinionated static analysis rules for common UX anti-patterns. It is **off by default** since UX preferences vary across teams and projects. Enable selectively via the `ux:{}` config namespace.
-
-**Why optional?** Many teams have different UX preferences, and enabling UX rules on existing projects would flag pre-existing markup. These are good-enough defaults for NEW projects where you want opinionated UX guidance but have no specific opinion yourself.
-
-### Configuration
-
-```toml
-# .slopgate/config.toml
-# ... other config
-
-# UX module (optional) — off by default, opt-in per sub-module
-[ux]
-a11y = "high"        # Accessibility violations (gate commits)
-cls = "high"         # Cumulative Layout Shift violations (gate commits)
-feedback = "high"    # Silent async / double-submit (gate commits)
-taste = "advisory"   # Design taste violations (report only, don't gate)
-advisory = "advisory" # Heuristic nudges (report only, higher false-positive)
-# taste = "medium"   # equivalent to 'advisory'
-# taste = true       # use sub-module default severity
-# omit key = that sub-module OFF
-# delete whole [ux] table = entire module OFF
-```
-
-### Sub-modules
-
-| Key | Catches | Default Severity | Framework § |
-|-----|---------|------------------|-------------|
-| `a11y` | onClick on `<div>`/`<span>` without role; `<a onClick>` without href; `<img>` without alt; `<button>` without type; positive `tabIndex` | `high` | §11 |
-| `cls` | `<img>`/`<video>`/`<iframe>` without width/height | `high` | §13 |
-| `feedback` | async `onClick` on a `<button>` with no `disabled` state (double-submit, silent wait) | `high` | §3/§12 |
-| `taste` | emoji in UI, "trusted by" clichés, Lorem ipsum, robotic microcopy, heavy drop shadows, linear/long (>300ms) motion | `medium` | §0/§6/§26 |
-| `advisory` | modal without `onClose`; array index as React `key`; view state (tab/page/filter) in `useState` instead of the URL | `medium` | §10/§14 |
-
-Magic hardcoded colors/spacing (`#hex`, `rgb()`/`hsl()`, multi-digit `px`) are caught by the baseline `raw-hex` pack (§15), independent of the UX module.
-
-### Severity Levels
-
-- **`'critical'`/`'high'`**: Gates commits (blocks by default, since default gate is `['critical','high']`)
-- **`'medium'`/`'advisory'`**: Reports but doesn't block commits (useful for gradual adoption)
-- **`true`**: Use the sub-module's default severity
-- **Omit key**: That sub-module is OFF
-- **Delete `ux:{}` block**: Entire UX module is OFF
-
-### Opt-out
-
-Symmetric and trivial:
-- Delete a key to disable one sub-module: `ux: { a11y: 'high' }` (cls and taste OFF)
-- Delete the whole `ux:{}` block to disable the entire module
-
-### Companion Skill
-
-Pair the static UX module with the `/slopgate-ux` skill for semantic UX directives that static analysis can't enforce (four-states, button hierarchy, focus-trap, optimistic UI, etc.).
-
----
-
-## Config Reference (`.slopgate/config.toml`)
-
-```toml
-# Repository layout
-roots = ["src"]                          # source roots to scan
-exts = [".ts", ".tsx", ".astro"]         # file extensions
-skipDirs = ["node_modules", "dist"]      # dirs to skip
-
-# Rule packs
-baseline = ["no-stubs", "ts-suppress", "as-any"]  # built-in baseline packs to enable (opt-in)
-rules = ["./rules/project.json"]          # optional project-owned regex packs
-astRules = "./rules/ast"                 # dir of .yml AST rules (optional)
-astDisable = []                          # rule ids to disable (escape hatch)
-
-# Custom file paths (relative to repo root)
-suppressions = "./suppressions.json"     # line-level exemptions
-fixtures = "./fixtures"                  # test fixture canaries
-# baselinePath is auto-computed: .slopgate/baseline.json
-
-# Commit-tier checkers (detected at init; absent = off)
-# Per-checker options as key = value under each [checkers.<name>] table.
-[checkers.tsc]
-# e.g. timeout = 60
-
-# UX module (optional) — off by default, opt-in per sub-module
-[ux]
-a11y = "high"        # accessibility violations
-cls = "high"         # cumulative layout shift
-taste = "advisory"   # design taste (reports, doesn't gate)
-
-# Severity filtering (which violations show in reports)
-[gate]
-file = ["critical", "high"]    # fast-tier report threshold
-staged = ["critical", "high"]  # commit-tier report threshold
-```
-
-**Auto-generated during `init`:**
-- `roots` — detected from workspace packages and src/ dirs
-- `exts` — detected from file walk
-- `skipDirs` — detected from common exclusions (node_modules, dist, tests, .worktrees)
-- `checkers` — detected from installed binaries and config files (all true initially)
-
----
-
-## Rule Packs
-
-### Baseline Regex Packs (Shipped)
-
-All are opt-in via the `baseline` array in config. Severity drives the gate threshold (`critical`/`high` block by default).
-
-| Pack | Severity | Category | Catches |
-|------|----------|----------|---------|
-| `no-stubs` | critical | convention | Stub / placeholder / "not implemented" / deferred-work markers |
-| `ts-suppress` | high | convention | `@ts-ignore` / `@ts-expect-error` — suppressing tsc instead of fixing the cause |
-| `as-any` | high | convention | `as any`, `: any`, `Array<any>`, `Promise<any>`, `Record<string, any>` escape hatches that disable type safety |
-| `no-narration-comments` | high | convention | Comments that narrate a diff/history/removal (`changed from`, `used to`, `no longer needed`, `track later`) instead of explaining a non-obvious constraint |
-| `raw-hex` | high | convention | Hardcoded hex / `rgb()` colors + raw multi-digit `px` — use design tokens |
-| `sql-safety` | critical | convention | `SELECT … FOR UPDATE` with an aggregate (Postgres rejects this at runtime) |
-| `kv-ban` | critical | boundary | Cloudflare KV in read-after-write paths (eventually-consistent) |
-| `live-secrets` | critical | security | Hardcoded Stripe / webhook / Google live credentials |
-| `eval-ban` | critical | security | `eval` / dynamic code execution (injection surface) |
-| `pii-logs` | high | security | PII fields written to logs / error trackers |
-| `weak-hash` | high | security | MD5 / SHA-1 for integrity checks or passwords (cryptographically broken) |
-
-### Baseline AST Rules (Shipped, Always Active)
-
-Loaded automatically alongside the regex packs (the resolver always adds `rules/baseline/ast`); disable any by id via `astDisable = [...]`.
-
-| Rule id | Catches |
-|---------|---------|
-| `empty-catch` (ts + tsx) | Empty `catch` block silently swallowing an error |
-| `inner-html` | Unsafe `innerHTML` / `dangerouslySetInnerHTML` assignment |
-| `focused-test` | Focused tests committed via `test.only` / `it.only` / `describe.only` / `fit` / `fdescribe` |
-| `target-blank-norel` | `target="_blank"` anchor missing `rel="noopener"` |
-| `window-in-render` | `window`/`document` access during render (SSR hazard) |
-
-### Stack Packs (Shipped)
-
-Opt-in via `stack = ["cloudflare"]`:
-
-| Pack | Rule ids |
-|------|----------|
-| `cloudflare` | `cf-env-spread-secrets`, `process-env-access`, `waituntil-bare-method-ref`, `cf-getCloudflareContext-banned`, `hono-env-direct-access` |
-
-**Planned (v2+):**
-- Depth rules — pass-through-fn, delegating-wrapper (Ousterhout symptoms)
-- Test-slop rules — test-no-assertion, test-skip
-
-### Project-Owned Rules
-
-Add custom rules as **AST rules** — `.yml` files in ast-grep syntax:
-
-```yaml
-id: my-ast-rule
-language: tsx
-severity: error          # ast-grep level (error|warning|info)
-message: Rule violation
-note: '{"severity":"high","category":"convention","resolution":"…"}'  # slopgate metadata
-rule:
-  pattern: 'someBadCall($$$ARGS)'   # code-snippet matcher; or structural kind/has/inside/all/any/not
-```
-
-Point `astRules` at the directory holding them:
-
-```toml
-astRules = "./rules/ast"  # auto-loads all .yml files in this dir
-```
-
-Project-owned regex rule packs are supported as JSON files listed in `rules = ["./rules/my-pack.json"]`. Use regex rules for precise line/token patterns and ast-grep YAML for structural code shapes.
-
----
-
-## How Rules Are Authored
-
-### Regex Rules
-
-Custom project regex packs use the same keyed JSON shape as the built-in packs and are loaded from paths listed in `rules = [...]` in `.slopgate/config.toml`.
-
-Patterns are regex strings with flags (i, m, s, etc.). A pattern matches any line containing the regex.
-
-**Example:**
-```
-{
-  id: 'no-stubs-placeholder',
-  pattern: 'placeholder\\s+(?:for now|impl)',
-  flags: 'i',
-  canary: '// placeholder for now',
-  negativeCanary: ['placeholder={t(\'x\')}'],  // should NOT match
-}
-```
-
-**Advanced:**
-- `minFiles: N` — pattern must match in ≥ N files to fire (catch widespread slop)
-- `excludeGlobs: ['*.test.ts']` — skip matching in these paths
-- `includeGlobs: ['src/**']` — only match in these paths
-- Suppressions: per-file, per-line (lineHash = sha256 of line text)
-
-### AST Rules
-
-Written in ast-grep YAML syntax; scoped to source roots + extensions from config.
-
-**Example** (modeled on the shipped `rules/baseline/ast/empty-catch-block-tsx.yml`):
-```yaml
-id: empty-catch
-language: tsx
-severity: error          # ast-grep level (error|warning|info)
-message: Empty catch block swallows error silently
-note: '{"severity":"high","category":"convention","resolution":"Handle or rethrow; log with context."}'
-rule:
-  pattern: 'try { $A } catch ($E) {}'   # code-snippet matcher; or structural kind/has/inside/all/any/not
-```
-
-The top-level `severity` is ast-grep's own level; slopgate's gating severity/category/resolution live in the
-JSON `note` field.
-
-**Fixtures:** add a source canary that *triggers* the rule to `.slopgate/fixtures/src/` (built-in rules use
-`rules/baseline/fixtures/src/`). A `.ts`/`.tsx` file containing the violating code is enough:
-
-```tsx
-// .slopgate/fixtures/src/empty-catch.tsx
-export function f() { try { risky(); } catch (e) {} }  // should fire empty-catch
-```
-
-`slopgate --self-test --config .slopgate/config.toml` scans the fixtures and asserts every rule fires at
-least once.
-
----
-
-## Hooks Integration
-
-### Claude Code Hooks
-
-Init wires slopgate into `.claude/settings.json`:
-
-```json
-{
-  "hooks": {
-    "PreToolUse": [{
-      "matcher": "Bash",
-      "hooks": [
-        {
-          "type": "command",
-          "command": "/path/to/slopgate/hooks/commit-hook.sh"
-        }
-      ]
-    }],
-    "PostToolUse": [{
-      "matcher": "Edit|Write",
-      "hooks": [
-        {
-          "type": "command",
-          "command": "/path/to/slopgate/hooks/edit-hook.sh"
-        }
-      ]
-    }]
-  }
-}
-```
-
-- **PreToolUse** (commit-hook.sh) — fires before Bash tool use; checks for `git commit` in the command and runs `slopgate --staged`
-- **PostToolUse** (edit-hook.sh) — fires after Edit/Write; runs `slopgate --file` on the touched file (fast tier, 5-second timeout)
-
-### Git Pre-Commit Hook
-
-`init` also installs `.git/hooks/pre-commit` (or appends to existing). This is the native git hook; it catches commits from any tool (terminal, IDE, other agents).
-
-```bash
-#!/usr/bin/env bash
-ROOT=$(git rev-parse --show-toplevel) || exit 0
-CONFIG="$ROOT/.slopgate/config.toml"
-[ -f "$CONFIG" ] || exit 0
-exec slopgate --staged --config "$CONFIG"
-```
-
-The hook can be bypassed with `git commit --no-verify`, which is intentional (user-initiated escape hatch).
-
----
-
-## Suppressions
-
-Edit `.slopgate/suppressions.json`:
-
-```json
-{
-  "version": 1,
-  "entries": [
-    {
-      "ruleId": "no-stubs-placeholder",
-      "file": "src/app.ts",
-      "lineHash": "abc123def..."
-    }
-  ]
-}
-```
-
-Line hash is auto-generated: `sha256(trimmedLine).slice(0, 16)`.
-
-To suppress a violation, grab the line hash from the report and add an entry. The line text must match exactly (trimmed); unrelated edits shift line numbers but keep line text stable.
-
----
-
-## Testing
-
-### Run Self-Test
-
-```bash
-npm run self-test
-```
-
-Validates:
-- Regex engine (patterns match canaries, skip negativeCanaries)
-- AST engine (ast-grep rules parse + match fixtures)
-- Checker parsers (tsc, knip, jscpd, depcruise, type-coverage outputs parse correctly)
-- Ratchet fingerprints (stability under line shifts)
-- Suppressions (line hashing, deduplication)
-
----
-
-## Examples
-
-### Example 1: Block Unsafe Type Casts
-
-Config:
-```toml
-baseline = ["as-any"]
-[gate]
-staged = ["critical", "high"]
-```
-
-Commit a file with `const x = y as any;`:
-```
-slopgate: 1 violation(s)
-
-regex › as-any-cast
-  src/utils.ts:42
-  Unsafe `as any` cast
-  severity: high
-  resolution: Use a precise type or a discriminated narrowing.
-
-exit code: 1 (commit blocked)
-```
-
-Validate and narrow `y`, or give it the correct supported type, then rerun the check. Replacing one assertion with another is not evidence that the value is safe.
-
-### Example 2: Allow Pre-Existing Copy-Paste, Block New Ones
-
-Config:
-```toml
-baseline = []
-[checkers.jscpd]
-minTokens = 50
-```
-
-Run `slopgate baseline --config .slopgate/config.toml` to baseline existing clones. Now:
-- Commits pass unless they introduce NEW duplications
-- Track paydown via `slopgate baseline --prune` (drops resolved entries)
-
-### Example 3: Custom Architecture Rules
-
-Create `.slopgate/depcruise.cjs`:
-```javascript
-module.exports = {
-  forbidden: [
-    {
-      name: 'no-ui-to-db',
-      severity: 'error',
-      from: { path: 'src/ui' },
-      to: { path: 'src/db' },
-    },
-  ],
-};
-```
-
-Now commits that import database code from UI layer are blocked.
-
-### Example 4: Silence a Built-in Rule in One Project
-
-Config:
-```toml
-baseline = ["no-stubs", "as-any"]
-astDisable = ["target-blank-norel"]  # this app links only to vetted internal routes
-```
-
-`astDisable` lists built-in AST rule ids to turn off for this repo; every other rule stays active.
-
----
+This tree implements the pre-1.0 **0.4.0 universal-gate contract**. Do not assume a globally installed older binary has these capabilities. Use `slopgate capabilities` to inspect the selected executable, source digest and adapter contract.
 
 ## Architecture
 
-### Data Flow (Commit Tier)
-
-```
-git commit
-  └─ .git/hooks/pre-commit
-       └─ slopgate --staged --config <repo>/.slopgate/config.toml
-            ├─ Enumerate staged files
-            ├─ Regex engine (patterns → violations)
-            ├─ AST engine (ast-grep rules → violations)
-            ├─ Checker adapters
-            │  ├─ tsc (type errors)
-            │  ├─ knip (dead code)
-            │  ├─ jscpd (duplication)
-            │  ├─ dependency-cruiser (architecture)
-            │  ├─ type-coverage (any propagation)
-            │  └─ diff-shape (mixed concerns)
-            ├─ Ratchet baseline filter (drop pre-existing)
-            ├─ Suppressions filter (per-file, per-line)
-            ├─ Severity gate (critical/high)
-            └─ Report + exit code (0 = pass, 1 = blocked)
+```text
+slopgate-rs: CLI and composition root
+    ├── slopgate-core: configuration, discovery, scheduling, shared scanners,
+    │                  bounded processes, baselines, suppressions and reporting
+    └── slopgate-adapters: concrete tools and language-aware integration
+              └── depends on slopgate-core, never the reverse
 ```
 
-### Checker Timeout and Errors
+External executable adapters use a versioned JSON protocol and can be implemented in any language. Adding a language does not require inventing a new architecture or putting its compiler into the core. File discovery is not proof of parser or semantic coverage.
 
-Each checker has a per-tool timeout (configurable):
-- tsc: 120s
-- knip: 90s
-- jscpd: 60s
-- depcruise: 60s
-- type-coverage: 120s
+The authoritative contract is [universal-gate-v1](docs/specs/universal-gate-v1.md). Dependency and source boundaries are checked by the syntax-aware architecture guard. Policy changes require an ADR and independent human review. [Hosting activation](docs/architecture/activation.md) explains the external controls needed to make those checks mandatory.
 
-Required AST infrastructure is fail-closed in 0.3.4: an unavailable ast-grep engine or structural-scan error produces exit `2`; fix the runtime instead of treating it as a clean scan. Optional commit-tier checker adapters can still report unavailable tools or execution failures as skipped/notices. Review those messages: a green result is not proof that an unavailable optional checker ran.
+## Build and verify
 
----
+```bash
+cargo build --release --locked --workspace
+./target/release/slopgate-rs capabilities
+cargo test --workspace --locked
+cargo run --locked -p slopgate-architecture -- --root .
+```
 
-## Limitations & Future Work
+CI uses Rust 1.95.0, provisioned TypeScript 5.9.3 and ast-grep 0.45.3 for its fixture tests. Native platform tests and real compiler acceptance are separate from mocked-output parser tests. Tool installation is an explicit setup action; a scan never downloads a missing checker.
 
-- **Git-only** — no other VCS support
-- **No auto-fix** — violations are reported, not automatically corrected
-- **`slopgate audit` is advisory** — it reports architecture/ratchet health but does not gate commits
-- **Embeddings-based semantic duplicate detection** — planned, not in v1
-- **API-surface diff gate** — track breaking changes to public exports (future)
-- **LLM-judge skill** — on-demand deep review of architectural debt (separate sub-project)
+The npm distribution uses `bin/slopgate` to select a prebuilt executable under `vendor/<platform>-<arch>`. The native executable can also run directly without Node. Node is required only for the npm launcher and adapters that use Node tools. An explicit `SLOPGATE_BIN` is authoritative: a missing or recursive override is an error, not permission to use a stale fallback binary.
 
----
+## Configure a project
 
-## Contributing
+```toml
+roots = ["src"]
+exts = []
+skipDirs = [".git", "node_modules", "dist", "target"]
+astEnabled = false
+rules = ["./rules/project.json"]
+fixtures = "./fixtures"
+checkerConcurrency = 3
 
-See [CONTRIBUTING.md](./CONTRIBUTING.md).
+[gate]
+file = ["critical", "high"]
+staged = ["critical", "high"]
+```
 
----
+Place this at `.slopgate/config.toml`. Scan roots are repository-relative. Rule, fixture and suppression paths are configuration-directory-relative. Empty `exts` selects all files under the roots; narrow roots/extensions or exclusions when a tree contains generated/binary assets. Tests are not globally excluded. Rule-owned `scanTestFiles`, include globs and exclude globs determine each text rule's scope.
 
-## License
+A project-owned JSON regex pack is supported:
 
-MIT — See [LICENSE](./LICENSE) for details.
+```json
+{
+  "project": [{
+    "id": "project/no-placeholder",
+    "severity": "high",
+    "pattern": "FORBIDDEN_PLACEHOLDER",
+    "resolution": "Implement the required behavior.",
+    "canary": "FORBIDDEN_PLACEHOLDER",
+    "negativeCanary": ["implemented behavior"],
+    "scanTestFiles": true
+  }]
+}
+```
+
+Regex rules are line-scoped text policies, not type checking. Compatible expressions use a linear engine; advanced expressions use a bounded compatibility engine. Evaluation/resource errors make the scan incomplete. Pattern semantics, path globs and positive/negative cases must be tested. Intentional ID collisions require a reviewed `ruleOverrides = ["rule-id"]` declaration; accidental overrides fail configuration.
+
+For structural rules, provision ast-grep and set `astEnabled = true` plus `astRules = "./rules/ast"`. The same selected files reach the structural engine regardless of language extension. Its inspection details show what was actually scanned; discovered files are not automatically analyzed by every rule. A configured missing rule directory is an error.
+
+## Specialized checks
+
+Built-ins include `tsc`, `cargo-check`, Knip, dependency-cruiser, jscpd, type-coverage, leakscan, ShellCheck, actionlint, typos and diff-shape. The exact configured IDs/scopes are listed by `capabilities` and `doctor`.
+
+```toml
+[checkers.tsc]
+tsconfig = ["packages/api/tsconfig.json", "packages/ui/tsconfig.json"]
+incremental = true
+required = true
+timeout = 120
+
+[checkers.cargo-check]
+required = true
+timeout = 120
+```
+
+TypeScript resolves project scope through the selected compiler and checks its configured projects, not just changed files. Empty or unresolved scope cannot silently pass. Reference-containing projects require explicit `build = true`, selecting TypeScript reference/build semantics; build output and build-info topology remain TypeScript-owned in that mode. Cargo checks the configured workspace offline and locked; provision dependencies first. Required checks default to required. An explicit optional check (`required = false`) may fail without blocking, but that outcome remains visible.
+
+The [adapter protocol](docs/adapter-protocol.md) documents executable integrations, scopes, tiers, validation, resource limits and exact fixture contracts.
+
+## Run the gate
+
+```bash
+# Native fast tier on one edited file.
+slopgate --file src/example.py --config .slopgate/config.toml
+
+# Commit tier, including applicable full-project checks.
+slopgate --staged --config .slopgate/config.toml
+
+# Immutable CI snapshot, human / JSON / GitHub annotation output.
+slopgate scan --scope repo --tier commit --format json --config .slopgate/config.toml
+
+# Inspect configuration, executable provenance and available checks.
+slopgate doctor --config .slopgate/config.toml
+
+# Verify rule canaries, exact project fixtures and checker parser contracts.
+slopgate --self-test --config .slopgate/config.toml
+```
+
+Exit **0** means complete with no blocking findings. Exit **1** means complete with blocking policy findings. Exit **2** means configuration or required analysis was incomplete. Infrastructure failures cannot be suppressed or absorbed into a baseline. Structured output includes findings, errors and per-check coverage; an optional failure is not disguised as a completed check.
+
+The staged gate conservatively refuses partial staging, relevant missing working-tree files and untracked inputs. It does not stash or reset user work. Config-only, lockfile-only and deletion-only changes still run applicable project checks. This v1 policy is intentionally stricter than pretending a working-tree scan validates a different Git index.
+
+## Baselines and rule proof
+
+```bash
+slopgate baseline --config .slopgate/config.toml
+slopgate baseline --prune --config .slopgate/config.toml
+slopgate baseline --update --config .slopgate/config.toml
+```
+
+Creation refuses an existing baseline. Pruning removes resolved allowances without absorbing new findings. Updating explicitly resnapshots current debt and requires review. Baseline occurrence counts prevent additional identical findings from inheriting an unlimited waiver. No baseline mutation may proceed from an incomplete scan. CI does not update baselines automatically.
+
+Project rules require positive/negative canaries and an exact `expectations.json` fixture contract. Each case declares its input and complete expected finding multiset, including rule ID, engine and one-based location. Required rules have separate positive and negative witnesses. Fixture execution uses the normal file pipeline and respects the rule's own file globs. `defect record` and `harvest --check` retain the repeated-defect workflow; harvesting no longer restricts fixtures to TypeScript extensions.
+
+## Correctness before apparent speed
+
+The coordinator batches work, bounds concurrency, amortizes pattern/glob compilation and keeps native fast scans separate from heavy semantic checks. It needs no daemon. V1 intentionally has no external-result cache: tool-owned incremental state is safer than an unsound cache keyed only by a changed file.
+
+```bash
+python3 scripts/benchmark.py --binary target/release/slopgate-rs \
+  --semantic --output artifacts/performance.json
+```
+
+The benchmark records binary provenance, hardware, sample counts, medians and p95s. Native file/repository work and actual TypeScript checking are measured separately. Reviewed CI budgets fail on regressions rather than disabling checks. See [delivery evidence](docs/reviews/universal-v1-delivery.md) for executed results and remaining activation prerequisites; do not treat a target latency as a measured guarantee.
+
+## Trust boundary
+
+Slopgate is not an adapter sandbox or proof of arbitrary behavioral correctness. Run untrusted project tools on disposable CI workers without deployment secrets. Code-owner rules and required checks need server-side enforcement, independent human review and non-admin agent credentials. An agent using the administrator's identity can change the protections themselves; repository code cannot remove that authority.

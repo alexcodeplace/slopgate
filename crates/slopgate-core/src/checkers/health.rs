@@ -1,8 +1,7 @@
-//! Consecutive infra-failure tracking per checker across commit-tier runs.
-//! Mirrors `src/checkers/health.mjs`: the gate fails open on checker crash/timeout/
-//! missing-binary — correct per-commit, but a checker that infra-fails every run is
-//! silently off forever. This counter escalates that into a loud warning without
-//! ever flipping the exit code. State lives in the self-gitignored cache dir.
+//! Best-effort historical checker-health telemetry for commit-tier runs.
+//! Gate completion is decided from typed execution outcomes, not from this
+//! cache or a diagnostic-string heuristic. Required failures remain blocking;
+//! optional failures are visible. Cache corruption never grants a clean result.
 
 use std::collections::HashMap;
 use std::fs;
@@ -12,7 +11,8 @@ use serde::{Deserialize, Serialize};
 
 pub const FAILURE_THRESHOLD: u32 = 2;
 
-/// An error string that means "the tool did not actually run/produce results".
+/// Legacy diagnostic classifier retained for historical consumers.
+/// The coordinator never uses strings to decide completion or gate status.
 pub fn is_infra_error(msg: &str) -> bool {
     msg.contains("failed:")
         || msg.contains("crashed")
@@ -66,7 +66,7 @@ pub fn update_checker_health(path: &Path, outcomes: &[CheckerOutcome], now: &str
     for outcome in outcomes {
         let entry = state.entry(outcome.id.clone()).or_default();
         if outcome.infra_failed {
-            entry.consecutive_failures += 1;
+            entry.consecutive_failures = entry.consecutive_failures.saturating_add(1);
             entry.last_failure = Some(now.to_string());
             entry.last_error = outcome.detail.clone();
         } else {
@@ -79,7 +79,7 @@ pub fn update_checker_health(path: &Path, outcomes: &[CheckerOutcome], now: &str
         if entry.consecutive_failures >= FAILURE_THRESHOLD {
             let err = entry.last_error.as_deref().unwrap_or("unknown");
             warnings.push(format!(
-                "CHECKER OFF: {} infra-failed {} consecutive commit runs — its checks are NOT gating (fail-open). Last error: {}",
+                "CHECKER UNHEALTHY: {} could not complete {} consecutive commit runs; required checks block and optional failures remain visible. Last error: {}",
                 outcome.id, entry.consecutive_failures, err
             ));
         }
@@ -93,10 +93,23 @@ fn load_health_state(path: &Path) -> HashMap<String, CheckerHealthEntry> {
     if !path.exists() {
         return HashMap::new();
     }
-    let Ok(contents) = fs::read_to_string(path) else {
+    // Telemetry is not authoritative. Bound cache reads before deserializing
+    // even when the cache was replaced with an unexpectedly large local file.
+    use std::io::Read;
+    let contents = (|| -> std::io::Result<Vec<u8>> {
+        let mut bytes = Vec::new();
+        fs::File::open(path)?
+            .take(1024 * 1024 + 1)
+            .read_to_end(&mut bytes)?;
+        Ok(bytes)
+    })();
+    let Ok(contents) = contents else {
         return HashMap::new();
     };
-    match serde_json::from_str::<HealthFile>(&contents) {
+    if contents.len() > 1024 * 1024 {
+        return HashMap::new();
+    }
+    match serde_json::from_slice::<HealthFile>(&contents) {
         Ok(file) => file.checkers,
         Err(_) => HashMap::new(),
     }
@@ -108,7 +121,14 @@ fn write_health_state(path: &Path, checkers: &HashMap<String, CheckerHealthEntry
         checkers: checkers.clone(),
     };
     if let Ok(json) = serde_json::to_string_pretty(&file) {
-        let _ = fs::write(path, format!("{json}\n"));
+        use std::io::Write;
+        if let Ok(mut temporary) =
+            tempfile::NamedTempFile::new_in(path.parent().unwrap_or(Path::new(".")))
+        {
+            if temporary.write_all(format!("{json}\n").as_bytes()).is_ok() {
+                let _ = temporary.persist(path);
+            }
+        }
     }
 }
 
@@ -187,7 +207,7 @@ mod tests {
             now2,
         );
         assert_eq!(warnings.len(), 1);
-        assert!(warnings[0].contains("CHECKER OFF: depcruise"));
+        assert!(warnings[0].contains("CHECKER UNHEALTHY: depcruise"));
         assert!(warnings[0].contains("2 consecutive"));
         assert!(warnings[0].contains("depcruise failed: timeout"));
     }
