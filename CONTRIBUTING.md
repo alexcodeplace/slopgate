@@ -18,6 +18,7 @@ cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo test --workspace --locked
 cargo run --locked -p slopgate-architecture -- --root .
 python3 scripts/test_spec_drift.py
+python3 scripts/test_verify_hosting.py
 ```
 
 CI provisions its fixture tools explicitly with `node scripts/provision-test-tools.mjs`. For local real-compiler acceptance, set `SLOPGATE_TEST_TOOLS` to that provisioned directory and add its native ast-grep and `node_modules/.bin` directories to PATH. Set `SLOPGATE_REQUIRE_COMPILERS=1` so absent tools fail acceptance rather than skip it.
@@ -26,7 +27,7 @@ CI provisions its fixture tools explicitly with `node scripts/provision-test-too
 python3 tests/acceptance/test_universal.py --binary target/debug/slopgate-rs
 cargo build --release --locked -p slopgate-rs
 python3 scripts/benchmark.py --binary target/release/slopgate-rs \
-  --semantic --output artifacts/performance.json
+  --semantic --structural --output artifacts/performance.json
 ```
 
 The packaged acceptance test requires a matching binary staged into `vendor/<host>` using `scripts/build-npm-packages.mjs --stage <host>`. It packs the actual npm tarball, extracts it safely, exercises the real launcher, verifies source identity, runs bundled self-tests and checks a non-TypeScript consumer's project rule.
@@ -45,7 +46,7 @@ Project JSON regex packs are supported. Keep textual, structural and semantic po
 
 Text rules need canaries. Project policy also needs an exact fixture contract: expected rule IDs, engines and locations are compared as a complete multiset through the production file pipeline. Rules must have separate positive and negative witnesses. Preserve the configured rule scope when creating fixtures; a rule that works only through a relaxed self-test path is not proven to work in the gate.
 
-Baseline or suppression growth is a policy change requiring human review, not a way to make CI green. Incomplete checks must never write, update or prune baselines. Performance failures are fixed by reducing valid work or improving execution, not by disabling rules or broadening exclusions.
+Baseline or suppression growth is a policy change requiring owner-authorized substantive review, not a way to make CI green. Incomplete checks must never write, update or prune baselines. Performance failures are fixed by reducing valid work or improving execution, not by disabling rules or broadening exclusions.
 
 ## Architecture and specification changes
 
@@ -53,4 +54,4 @@ The architecture guard checks dependency manifests and Rust syntax, including co
 
 The trusted-base drift workflow reads candidate Git blobs as data. Never change it to execute candidate code under `pull_request_target`, consume candidate caches, or accept a self-authored checksum as approval. Repository protection is part of deployment, not something `CODEOWNERS` alone establishes. Shared administrator credentials are a disclosed authority limit, not a requirement for the owner to arrange another reviewer.
 
-Record exact commands, results, binary provenance and measured performance in the delivery evidence. Do not label unrun checks as passing. See `docs/architecture/activation.md` for the human-controlled bootstrap and verification process.
+Record exact commands, results, binary provenance and measured performance in the delivery evidence. Do not label unrun checks as passing. See `docs/architecture/activation.md` for the hosted bootstrap and verification process.
