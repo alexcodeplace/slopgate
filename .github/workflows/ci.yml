@@ -50,6 +50,7 @@ jobs:
       - run: cargo test --locked -p slopgate-architecture
       - run: cargo run --locked -p slopgate-architecture -- --root .
       - run: python3 scripts/test_spec_drift.py
+      - run: python3 scripts/test_verify_hosting.py
       - name: Proposed metadata drift review
         if: github.event_name == 'pull_request'
         env:
@@ -131,7 +132,7 @@ jobs:
       - run: node scripts/provision-test-tools.mjs
       - run: cargo build --release --locked -p slopgate-rs
       - name: Enforce release performance budgets
-        run: python3 scripts/benchmark.py --binary target/release/slopgate-rs --semantic --output artifacts/performance.json
+        run: python3 scripts/benchmark.py --binary target/release/slopgate-rs --semantic --structural --output artifacts/performance.json
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: always()
         with:

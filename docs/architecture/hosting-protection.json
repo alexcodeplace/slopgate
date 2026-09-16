@@ -10,6 +10,40 @@
       "Slopgate performance",
       "Slopgate workflow lint",
       "slopgate/trusted-spec-drift"
+    ],
+    "checks": [
+      {
+        "context": "Slopgate quality",
+        "app_id": 15368
+      },
+      {
+        "context": "Slopgate architecture",
+        "app_id": 15368
+      },
+      {
+        "context": "Slopgate Linux",
+        "app_id": 15368
+      },
+      {
+        "context": "Slopgate macOS",
+        "app_id": 15368
+      },
+      {
+        "context": "Slopgate Windows",
+        "app_id": 15368
+      },
+      {
+        "context": "Slopgate performance",
+        "app_id": 15368
+      },
+      {
+        "context": "Slopgate workflow lint",
+        "app_id": 15368
+      },
+      {
+        "context": "slopgate/trusted-spec-drift",
+        "app_id": 15368
+      }
     ]
   },
   "enforce_admins": true,

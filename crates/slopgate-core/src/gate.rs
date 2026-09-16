@@ -1,7 +1,8 @@
 //! Language-neutral policy-gate coordinator (SG-ARCH-001, SG-GATE-001).
 use crate::ast_engine::{run_ast_grep_scan, AstGrepScanOpts};
+use crate::checkers::health::{update_checker_health, CheckerOutcome};
 use crate::checkers::index::{Checker, CheckerRunOpts, CheckerRunResult, CheckerScope};
-use crate::checkers::shared::{emit_stage_progress, map_limit};
+use crate::checkers::shared::{emit_stage_progress, ensure_cache_dir, map_limit};
 use crate::config::ResolvedConfig;
 use crate::enumerate::{
     list_source_files, require_consistent_staged_tree, staged_identity, EnumerateCtx, EnumerateMode,
@@ -119,7 +120,14 @@ fn push_ast_violations(
 pub fn validate_registry(config: &ResolvedConfig, checkers: &[Checker]) -> Result<(), Vec<String>> {
     let mut errors = Vec::new();
     let mut known = HashSet::new();
+    const SHARED_IDS: [&str; 2] = ["regex", "ast"];
     for checker in checkers {
+        if SHARED_IDS.contains(&checker.id) {
+            errors.push(format!(
+                "checker ID {:?} is reserved for a shared engine",
+                checker.id
+            ));
+        }
         if !known.insert(checker.id) {
             errors.push(format!("duplicate built-in adapter ID {}", checker.id));
         }
@@ -146,7 +154,10 @@ pub fn validate_registry(config: &ResolvedConfig, checkers: &[Checker]) -> Resul
         }
     }
     for (id, adapter) in &config.external_adapters {
-        if known.contains(id.as_str()) || config.checkers.contains_key(id) {
+        if SHARED_IDS.contains(&id.as_str())
+            || known.contains(id.as_str())
+            || config.checkers.contains_key(id)
+        {
             errors.push(format!("external adapter shadows built-in ID {id:?}"));
         }
         if let Err(error) = adapter.validate(id) {
@@ -489,6 +500,43 @@ pub fn collect_violations(
                 "proposed commit tree changed during checking; rerun on stable inputs".into(),
             ),
             Err(error) => result.errors.push(error),
+        }
+    }
+    if mode == Mode::Staged && tier == Tier::Commit {
+        // Preserve existing audit telemetry without allowing a best-effort cache
+        // or its historical string classifier to decide the gate's outcome.
+        let outcomes: Vec<_> = result
+            .coverage
+            .iter()
+            .filter(|coverage| {
+                work.iter().any(|item| item.id() == coverage.id)
+                    && matches!(
+                        coverage.status.as_str(),
+                        "complete" | "error" | "optional-error"
+                    )
+            })
+            .map(|coverage| CheckerOutcome {
+                id: coverage.id.clone(),
+                infra_failed: coverage.status != "complete",
+                detail: if coverage.status == "complete" {
+                    None
+                } else {
+                    coverage.details.first().cloned()
+                },
+                seconds: Some(coverage.elapsed_ms as f64 / 1000.0),
+            })
+            .collect();
+        if !outcomes.is_empty() {
+            match ensure_cache_dir(Path::new(&config.config_dir)) {
+                Ok(cache) => result.notices.extend(update_checker_health(
+                    &cache.join("checker-health.json"),
+                    &outcomes,
+                    &crate::clock::utc_now(),
+                )),
+                Err(error) => result
+                    .notices
+                    .push(format!("checker health telemetry unavailable: {error}")),
+            }
         }
     }
     result.violations.sort_by(|a, b| {

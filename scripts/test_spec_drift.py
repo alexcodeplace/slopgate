@@ -58,6 +58,15 @@ class DriftContract(unittest.TestCase):
         with self.assertRaises(ValueError):
             review(self.root, "--help", self.base)
 
+    def test_embedded_rules_hooks_packaging_and_script_changes_need_review(self):
+        protected = ["crates/slopgate-core/src/rules/baseline.json", "hooks/edit-hook.sh", "bin/slopgate", "package.json", "scripts/provision-test-tools.mjs", ".gitignore"]
+        for path in protected:
+            with self.subTest(path=path):
+                self.write(path, "candidate policy change\n")
+                result = review(self.root, self.base, self.commit("protected change"))
+                self.assertEqual(result["status"], "blocked")
+                self.assertIn(path, result["protectedChanges"])
+
     def test_ordinary_implementation_change_does_not_require_architecture_adr(self):
         self.write("src/feature.rs", "fn feature() {}\n")
         self.assertEqual(review(self.root, self.base, self.commit("feature"))["status"], "passed")

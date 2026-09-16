@@ -215,21 +215,43 @@ fn applicable(ctx: &EnumerateCtx, rel: &str) -> bool {
 
 fn resolve_rel(ctx: &EnumerateCtx, file: &str) -> Result<String, String> {
     let file = Path::new(file);
-    let rel = if file.is_absolute() {
-        file.strip_prefix(&ctx.repo_root)
-            .map_err(|_| "source is outside repository".to_string())?
-    } else {
-        file
-    };
-    if rel.components().any(|part| {
-        matches!(
-            part,
-            Component::ParentDir | Component::RootDir | Component::Prefix(_)
-        )
-    }) {
+    // Reject traversal before canonicalization rather than normalizing it away.
+    if file
+        .components()
+        .any(|part| matches!(part, Component::ParentDir))
+    {
         return Err("source path contains traversal".into());
     }
-    let normalized: PathBuf = rel
+    let relative = if file.is_absolute() {
+        if let Ok(relative) = file.strip_prefix(&ctx.repo_root) {
+            relative.to_path_buf()
+        } else {
+            // Editors usually send ordinary absolute paths. The configured root
+            // may be canonical (a Windows verbatim prefix or a resolved symlink).
+            // Compare filesystem identities without interpreting a different
+            // platform's path syntax or permitting an outside-root target.
+            let source = file
+                .canonicalize()
+                .map_err(|error| format!("source path cannot be resolved: {error}"))?;
+            let root = ctx
+                .repo_root
+                .canonicalize()
+                .map_err(|error| format!("repository root cannot be resolved: {error}"))?;
+            source
+                .strip_prefix(root)
+                .map_err(|_| "source is outside repository".to_string())?
+                .to_path_buf()
+        }
+    } else {
+        if file
+            .components()
+            .any(|part| matches!(part, Component::RootDir | Component::Prefix(_)))
+        {
+            return Err("source path is not repository-relative".into());
+        }
+        file.to_path_buf()
+    };
+    let normalized: PathBuf = relative
         .components()
         .filter(|part| !matches!(part, Component::CurDir))
         .collect();

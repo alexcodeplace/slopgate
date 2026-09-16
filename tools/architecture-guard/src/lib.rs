@@ -97,8 +97,9 @@ pub fn inspect(root: &Path) -> Result<Vec<String>, String> {
         let mut dependencies = Vec::new();
         collect_dependencies(&manifest, &mut dependencies);
         for (alias, local_value) in dependencies {
-            let value = if local_value.get("workspace").and_then(toml::Value::as_bool) == Some(true)
-            {
+            let inherited =
+                local_value.get("workspace").and_then(toml::Value::as_bool) == Some(true);
+            let value = if inherited {
                 workspace
                     .get("workspace")
                     .and_then(|workspace| workspace.get("dependencies"))
@@ -116,9 +117,15 @@ pub fn inspect(root: &Path) -> Result<Vec<String>, String> {
                 .unwrap_or(&alias);
             let approved_local = policy.crates.get(package);
             if let Some(relative) = value.get("path").and_then(toml::Value::as_str) {
-                let actual = crate_dir.join(relative).canonicalize().map_err(|error| {
-                    format!("{manifest_path}: invalid dependency path {relative}: {error}")
-                })?;
+                // Cargo resolves inherited workspace paths from the workspace
+                // root, not from the member manifest that opts into them.
+                let dependency_root = if inherited { &root } else { &crate_dir };
+                let actual = dependency_root
+                    .join(relative)
+                    .canonicalize()
+                    .map_err(|error| {
+                        format!("{manifest_path}: invalid dependency path {relative}: {error}")
+                    })?;
                 let permitted = approved_local
                     .map(|p| root.join(&p.path))
                     .and_then(|p| p.canonicalize().ok());
@@ -249,6 +256,14 @@ impl SourceGuard<'_> {
         self.errors.push(format!("{}: {message}", self.relative));
     }
     fn inspect_tokens(&mut self, tokens: &str) {
+        if self.relative != self.policy.process_owner
+            && matches!(
+                tokens,
+                "std" | "std :: self" | "std :: *" | "std :: include" | "core :: include"
+            )
+        {
+            self.error("SG-PROC-001: whole-standard-library imports and source-inclusion aliases can bypass resource ownership; import explicit permitted modules instead");
+        }
         if self.name == "slopgate-core"
             && (tokens.contains("slopgate_adapters") || tokens.contains("slopgate_rs"))
         {
@@ -304,7 +319,7 @@ impl<'ast> Visit<'ast> for SourceGuard<'_> {
         visit::visit_path(self, path);
     }
     fn visit_attribute(&mut self, attribute: &'ast syn::Attribute) {
-        if attribute.path().is_ident("path") {
+        if attribute.path().is_ident("path") || conditional_path_override(attribute) {
             self.error(
                 "SG-ARCH-001: #[path] module redirection is not an approved dependency boundary",
             );
@@ -315,7 +330,12 @@ impl<'ast> Visit<'ast> for SourceGuard<'_> {
         }
     }
     fn visit_macro(&mut self, invocation: &'ast syn::Macro) {
-        if invocation.path.is_ident("include") {
+        if invocation
+            .path
+            .segments
+            .last()
+            .is_some_and(|segment| segment.ident == "include")
+        {
             self.error("SG-ARCH-001: source include! bypasses the approved module graph");
         }
         self.inspect_tokens(&invocation.tokens.to_string());
@@ -372,6 +392,33 @@ impl<'ast> Visit<'ast> for SourceGuard<'_> {
             );
         }
         visit::visit_expr_unsafe(self, expression);
+    }
+}
+
+fn conditional_path_override(attribute: &syn::Attribute) -> bool {
+    if !attribute.path().is_ident("cfg_attr") {
+        return false;
+    }
+    fn contains_path(meta: &syn::Meta) -> bool {
+        if meta.path().is_ident("path") {
+            return true;
+        }
+        match meta {
+            syn::Meta::List(list) if list.path.is_ident("cfg_attr") => list
+                .parse_args_with(
+                    syn::punctuated::Punctuated::<syn::Meta, syn::Token![,]>::parse_terminated,
+                )
+                .map_or(true, |items| items.iter().any(contains_path)),
+            _ => false,
+        }
+    }
+    match &attribute.meta {
+        syn::Meta::List(list) => list
+            .parse_args_with(
+                syn::punctuated::Punctuated::<syn::Meta, syn::Token![,]>::parse_terminated,
+            )
+            .map_or(true, |items| items.iter().any(contains_path)),
+        _ => true,
     }
 }
 
@@ -489,6 +536,9 @@ mod tests {
             "use process_wrap::std::CommandWrap;",
             "use std::{process::Command as C};",
             "use std::{process as p};",
+            "use std as runtime; fn bad(){runtime::process::Command::new(\"tool\");}",
+            "use std::{self as runtime}; fn bad(){runtime::process::Command::new(\"tool\");}",
+            "use std::*; fn bad(){process::Command::new(\"tool\");}",
         ] {
             assert!(
                 !syntax_errors(source, "crates/slopgate-core/src/gate.rs").is_empty(),
@@ -501,6 +551,9 @@ mod tests {
         for source in [
             "#[path=\"../../adapters/x.rs\"] mod bad;",
             "include!(\"foreign.rs\");",
+            "std::include!(\"foreign.rs\");",
+            "use std::include as import_source; import_source!(\"foreign.rs\");",
+            "#[cfg_attr(feature=\"foreign\", path=\"../../adapters/x.rs\")] mod bad;",
             "fn bad(p:&str) { if p.ends_with(\".ts\") {} }",
             "fn bad(p:&str) { matches!(p, \"tsc\"); }",
             "fn bad() { unsafe { any(); } }",

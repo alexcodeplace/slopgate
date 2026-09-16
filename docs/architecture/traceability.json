@@ -1,23 +1,187 @@
 {
   "version": 1,
   "requirements": {
-    "SG-ARCH-001": {"implementation": ["crates/slopgate-core/src/lib.rs", "crates/slopgate-adapters/src/lib.rs", "crates/slopgate-rs/src/main.rs"], "tests": ["tools/architecture-guard/src/lib.rs#mutation_core_cannot_import_adapters_or_spawn_processes"]},
-    "SG-ARCH-002": {"implementation": ["crates/slopgate-core/src/enumerate.rs", "crates/slopgate-core/src/ast_engine.rs", "hooks/edit-hook.sh"], "tests": ["tests/acceptance/test_universal.py#test_regex_all_languages_and_test_files_have_same_gate_contract"]},
-    "SG-ARCH-003": {"implementation": ["crates/slopgate-core/src/checkers/index.rs", "crates/slopgate-adapters/src/checkers/index.rs"], "tests": ["tests/acceptance/test_universal.py#test_real_typescript_compiler_checks_entire_configured_project", "tests/acceptance/test_universal.py#test_real_rust_cargo_adapter_distinguishes_compiler_error_from_infrastructure"]},
-    "SG-PROTO-001": {"implementation": ["crates/slopgate-core/src/protocol.rs", "docs/adapter-protocol.md"], "tests": ["tests/acceptance/test_universal.py#test_required_protocol_failure_never_becomes_clean"]},
-    "SG-PROTO-002": {"implementation": ["crates/slopgate-core/src/config.rs", "crates/slopgate-core/src/gate.rs"], "tests": ["tests/acceptance/test_universal.py#test_unknown_checker_unknown_config_and_missing_rule_directory_fail", "tests/acceptance/test_universal.py#test_optional_error_is_visible_and_explicit"]},
-    "SG-GATE-001": {"implementation": ["crates/slopgate-core/src/gate.rs", "crates/slopgate-core/src/ratchet.rs"], "tests": ["tests/acceptance/test_universal.py#test_incomplete_scan_cannot_create_update_or_prune_baseline", "crates/slopgate-core/src/ratchet.rs#baseline_quota_does_not_hide_new_identical_violations"]},
-    "SG-GATE-002": {"implementation": ["crates/slopgate-core/src/enumerate.rs", "crates/slopgate-core/src/regex_engine.rs"], "tests": ["tests/acceptance/test_universal.py#test_missing_source_and_invalid_regex_are_not_clean"]},
-    "SG-PROC-001": {"implementation": ["crates/slopgate-core/src/process.rs"], "tests": ["crates/slopgate-core/src/process.rs#timeout_and_combined_output_are_bounded", "crates/slopgate-core/src/process.rs#windows_job_captures_and_times_out", "tests/acceptance/test_universal.py#test_timeout_output_flood_and_exited_parent_are_bounded"]},
-    "SG-SCOPE-001": {"implementation": ["crates/slopgate-core/src/enumerate.rs", "crates/slopgate-core/src/gate.rs"], "tests": ["tests/acceptance/test_universal.py#test_partial_staging_untracked_and_removed_worktree_paths_are_rejected", "tests/acceptance/test_universal.py#test_config_only_and_deletion_only_commits_still_run_project_checks", "tests/acceptance/test_universal.py#test_linked_worktree_uses_its_own_root"]},
-    "SG-RULE-001": {"implementation": ["crates/slopgate-core/src/regex_engine.rs", "crates/slopgate-core/src/rules/packs.rs"], "tests": ["crates/slopgate-core/src/regex_engine.rs#regex_compat_matches_js_oracle"]},
-    "SG-TEST-001": {"implementation": ["crates/slopgate-core/src/fixture_contract.rs", "crates/slopgate-adapters/src/selftest.rs"], "tests": ["crates/slopgate-core/src/fixture_contract.rs#exact_contract_detects_wrong_line_count_and_false_positive", "tests/acceptance/test_package.py#main"]},
-    "SG-PERF-001": {"implementation": ["crates/slopgate-core/src/gate.rs", "crates/slopgate-core/src/checkers/shared.rs"], "tests": ["tests/acceptance/test_universal.py#test_parallelism_is_bounded_and_reporting_deterministic", "tests/acceptance/test_universal.py#test_fast_tier_never_runs_commit_adapter"]},
-    "SG-PERF-002": {"implementation": ["crates/slopgate-adapters/src/checkers/tsc.rs", "crates/slopgate-rs/src/doctor.rs"], "tests": ["tests/acceptance/test_universal.py#test_real_typescript_compiler_checks_entire_configured_project"]},
-    "SG-PERF-003": {"implementation": ["scripts/benchmark.py", "docs/architecture/performance-budgets.json"], "tests": ["scripts/benchmark.py#main"]},
-    "SG-GOV-001": {"implementation": ["tools/architecture-guard/src/lib.rs", ".github/workflows/ci.yml", "docs/architecture/policy.json"], "tests": ["tools/architecture-guard/src/lib.rs#mutation_source_redirection_unsafe_and_language_branches_are_rejected", "scripts/test_spec_drift.py"]},
-    "SG-GOV-002": {"implementation": [".github/CODEOWNERS", ".github/workflows/spec-drift.yml", "docs/architecture/hosting-protection.json"], "tests": ["scripts/test_spec_drift.py", "scripts/verify-hosting.py"]},
-    "SG-GOV-003": {"implementation": ["docs/adr/0001-universal-gate.md", "scripts/spec_drift.py", "docs/architecture/activation.md"], "tests": ["scripts/test_spec_drift.py"]},
-    "SG-EVIDENCE-001": {"implementation": ["docs/reviews/universal-v1-delivery.md", "docs/architecture/traceability.json"], "tests": ["tools/architecture-guard/src/lib.rs#validate_traceability"]}
+    "SG-ARCH-001": {
+      "implementation": [
+        "crates/slopgate-core/src/lib.rs",
+        "crates/slopgate-adapters/src/lib.rs",
+        "crates/slopgate-rs/src/main.rs"
+      ],
+      "tests": [
+        "tools/architecture-guard/src/lib.rs#mutation_core_cannot_import_adapters_or_spawn_processes"
+      ]
+    },
+    "SG-ARCH-002": {
+      "implementation": [
+        "crates/slopgate-core/src/enumerate.rs",
+        "crates/slopgate-core/src/ast_engine.rs",
+        "hooks/edit-hook.sh"
+      ],
+      "tests": [
+        "tests/acceptance/test_universal.py#test_regex_all_languages_and_test_files_have_same_gate_contract"
+      ]
+    },
+    "SG-ARCH-003": {
+      "implementation": [
+        "crates/slopgate-core/src/checkers/index.rs",
+        "crates/slopgate-adapters/src/checkers/index.rs"
+      ],
+      "tests": [
+        "tests/acceptance/test_universal.py#test_real_typescript_compiler_checks_entire_configured_project",
+        "tests/acceptance/test_universal.py#test_real_rust_cargo_adapter_distinguishes_compiler_error_from_infrastructure"
+      ]
+    },
+    "SG-PROTO-001": {
+      "implementation": [
+        "crates/slopgate-core/src/protocol.rs",
+        "docs/adapter-protocol.md"
+      ],
+      "tests": [
+        "tests/acceptance/test_universal.py#test_required_protocol_failure_never_becomes_clean"
+      ]
+    },
+    "SG-PROTO-002": {
+      "implementation": [
+        "crates/slopgate-core/src/config.rs",
+        "crates/slopgate-core/src/gate.rs"
+      ],
+      "tests": [
+        "tests/acceptance/test_universal.py#test_unknown_checker_unknown_config_and_missing_rule_directory_fail",
+        "tests/acceptance/test_universal.py#test_optional_error_is_visible_and_explicit",
+        "tests/acceptance/test_universal.py#test_shared_engine_id_cannot_be_shadowed_by_external_adapter"
+      ]
+    },
+    "SG-GATE-001": {
+      "implementation": [
+        "crates/slopgate-core/src/gate.rs",
+        "crates/slopgate-core/src/ratchet.rs"
+      ],
+      "tests": [
+        "tests/acceptance/test_universal.py#test_incomplete_scan_cannot_create_update_or_prune_baseline",
+        "crates/slopgate-core/src/ratchet.rs#baseline_quota_does_not_hide_new_identical_violations"
+      ]
+    },
+    "SG-GATE-002": {
+      "implementation": [
+        "crates/slopgate-core/src/enumerate.rs",
+        "crates/slopgate-core/src/regex_engine.rs"
+      ],
+      "tests": [
+        "tests/acceptance/test_universal.py#test_missing_source_and_invalid_regex_are_not_clean",
+        "tests/acceptance/test_universal.py#test_partial_gate_configuration_preserves_unspecified_default_tier",
+        "tests/acceptance/test_universal.py#test_invalid_ux_configuration_does_not_silently_disable_rules"
+      ]
+    },
+    "SG-PROC-001": {
+      "implementation": [
+        "crates/slopgate-core/src/process.rs"
+      ],
+      "tests": [
+        "crates/slopgate-core/src/process.rs#timeout_and_combined_output_are_bounded",
+        "crates/slopgate-core/src/process.rs#windows_job_captures_and_times_out",
+        "tests/acceptance/test_universal.py#test_timeout_output_flood_and_exited_parent_are_bounded"
+      ]
+    },
+    "SG-SCOPE-001": {
+      "implementation": [
+        "crates/slopgate-core/src/enumerate.rs",
+        "crates/slopgate-core/src/gate.rs"
+      ],
+      "tests": [
+        "tests/acceptance/test_universal.py#test_partial_staging_untracked_and_removed_worktree_paths_are_rejected",
+        "tests/acceptance/test_universal.py#test_config_only_and_deletion_only_commits_still_run_project_checks",
+        "tests/acceptance/test_universal.py#test_linked_worktree_uses_its_own_root",
+        "tests/acceptance/test_universal.py#test_absolute_editor_path_and_ordinary_relative_path_enforce_same_rule"
+      ]
+    },
+    "SG-RULE-001": {
+      "implementation": [
+        "crates/slopgate-core/src/regex_engine.rs",
+        "crates/slopgate-core/src/rules/packs.rs"
+      ],
+      "tests": [
+        "crates/slopgate-core/src/regex_engine.rs#regex_compat_matches_js_oracle"
+      ]
+    },
+    "SG-TEST-001": {
+      "implementation": [
+        "crates/slopgate-core/src/fixture_contract.rs",
+        "crates/slopgate-adapters/src/selftest.rs"
+      ],
+      "tests": [
+        "crates/slopgate-core/src/fixture_contract.rs#exact_contract_detects_wrong_line_count_and_false_positive",
+        "tests/acceptance/test_package.py#main"
+      ]
+    },
+    "SG-PERF-001": {
+      "implementation": [
+        "crates/slopgate-core/src/gate.rs",
+        "crates/slopgate-core/src/checkers/shared.rs"
+      ],
+      "tests": [
+        "tests/acceptance/test_universal.py#test_parallelism_is_bounded_and_reporting_deterministic",
+        "tests/acceptance/test_universal.py#test_fast_tier_never_runs_commit_adapter"
+      ]
+    },
+    "SG-PERF-002": {
+      "implementation": [
+        "crates/slopgate-adapters/src/checkers/tsc.rs",
+        "crates/slopgate-rs/src/doctor.rs"
+      ],
+      "tests": [
+        "tests/acceptance/test_universal.py#test_real_typescript_compiler_checks_entire_configured_project"
+      ]
+    },
+    "SG-PERF-003": {
+      "implementation": [
+        "scripts/benchmark.py",
+        "docs/architecture/performance-budgets.json"
+      ],
+      "tests": [
+        "scripts/benchmark.py#main"
+      ]
+    },
+    "SG-GOV-001": {
+      "implementation": [
+        "tools/architecture-guard/src/lib.rs",
+        ".github/workflows/ci.yml",
+        "docs/architecture/policy.json"
+      ],
+      "tests": [
+        "tools/architecture-guard/src/lib.rs#mutation_source_redirection_unsafe_and_language_branches_are_rejected",
+        "scripts/test_spec_drift.py"
+      ]
+    },
+    "SG-GOV-002": {
+      "implementation": [
+        ".github/CODEOWNERS",
+        ".github/workflows/spec-drift.yml",
+        "docs/architecture/hosting-protection.json"
+      ],
+      "tests": [
+        "scripts/test_spec_drift.py",
+        "scripts/verify-hosting.py",
+        "scripts/test_verify_hosting.py"
+      ]
+    },
+    "SG-GOV-003": {
+      "implementation": [
+        "docs/adr/0001-universal-gate.md",
+        "scripts/spec_drift.py",
+        "docs/architecture/activation.md"
+      ],
+      "tests": [
+        "scripts/test_spec_drift.py"
+      ]
+    },
+    "SG-EVIDENCE-001": {
+      "implementation": [
+        "docs/reviews/universal-v1-delivery.md",
+        "docs/architecture/traceability.json"
+      ],
+      "tests": [
+        "tools/architecture-guard/src/lib.rs#validate_traceability"
+      ]
+    }
   }
 }

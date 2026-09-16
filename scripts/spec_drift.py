@@ -12,7 +12,7 @@ import re
 import subprocess
 from pathlib import Path
 
-PROTECTED = re.compile(r"^(?:\.github/|AGENTS\.md$|(?:.*/)?Cargo\.(?:toml|lock)$|docs/(?:specs|architecture)/|tools/architecture-guard/|rules/|\.slopgate/|scripts/(?:spec_drift|test_spec_drift|verify-hosting|benchmark)\.py$|tests/acceptance/)")
+PROTECTED = re.compile(r"^(?:\.github/|AGENTS\.md$|\.gitignore$|\.gitattributes$|package(?:-lock)?\.json$|(?:.*/)?Cargo\.(?:toml|lock)$|docs/(?:specs|architecture)/|tools/architecture-guard/|crates/slopgate-core/src/rules/|rules/|\.slopgate/|hooks/|bin/|scripts/|tests/acceptance/)")
 ADR = re.compile(r"^docs/adr/\d{4}-[a-z0-9-]+\.md$")
 HEADINGS = ("Decision", "Compatibility", "Performance", "Verification", "Human approval")
 

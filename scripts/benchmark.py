@@ -35,6 +35,8 @@ def main() -> None:
     parser.add_argument("--binary", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--semantic", action="store_true")
+    parser.add_argument("--structural", action="store_true")
+    parser.add_argument("--baseline", type=Path, help="Prior report for explicit measured ratios; machine comparability is reported")
     args = parser.parse_args()
     binary = args.binary.resolve(strict=True)
     budgets = json.loads((REPO / "docs/architecture/performance-budgets.json").read_text())
@@ -54,6 +56,19 @@ def main() -> None:
         report["firstObservedNativeLaunchMs"] = round(initial, 3)
         report["provenance"] = json.loads(run([str(binary), "capabilities"], root)[1].stdout)["engine"]
         report["workloads"]["native-file"] = summary([run(command, root)[0] for _ in range(31)])
+        if args.structural:
+            previous = config.read_text(encoding="utf-8")
+            config.write_text(previous.replace("astEnabled=false", "astEnabled=true"), encoding="utf-8")
+            structural = [str(binary), "scan", "--scope", "repo", "--tier", "fast", "--format", "json", "--config", str(config)]
+            elapsed, result = run(structural, root)
+            coverage = next(item for item in json.loads(result.stdout)["coverage"] if item["id"] == "ast")
+            if coverage["status"] != "complete" or coverage["selectedFiles"] != 1:
+                raise RuntimeError("Structural benchmark did not execute the required AST stage")
+            report["structuralFirstObservedMs"] = round(elapsed, 3)
+            report["astGrepVersion"] = run(["ast-grep", "--version"], root)[1].stdout.strip()
+            report["workloads"]["native-file-with-ast"] = summary([run(structural, root)[0] for _ in range(21)])
+            config.write_text(previous, encoding="utf-8")
+
         source.write_text("const padding = '" + "x" * 150_000 + "';\n", encoding="utf-8")
         report["workloads"]["long-line-negative"] = summary([run(command, root)[0] for _ in range(15)])
         source.write_text("const padding = '" + "x" * 4096 + "'; const value: Record<string, any> = {};\n", encoding="utf-8")
@@ -103,6 +118,17 @@ def main() -> None:
         for key in ("medianMs", "p95Ms"):
             if measured[key] > limit[key]:
                 failures.append(f"{name} {key}: {measured[key]} exceeds {limit[key]}")
+    if args.baseline:
+        previous = json.loads(args.baseline.read_text(encoding="utf-8"))
+        comparable = all(previous.get("machine", {}).get(key) == report["machine"].get(key) for key in ("system", "architecture", "logicalCpus", "python"))
+        ratios = {}
+        for name, measured in report["workloads"].items():
+            old = previous.get("workloads", {}).get(name)
+            if old and all(isinstance(old.get(key), (int, float)) and old[key] > 0 for key in ("medianMs", "p95Ms")):
+                ratios[name] = {key: round(measured[key] / old[key], 3) for key in ("medianMs", "p95Ms")}
+        report["comparison"] = {"baselineBinarySha256": previous.get("binarySha256"), "matchingMachineMetadata": comparable, "ratios": ratios, "note": "Ratios are measured observations, not proof of identical CPU load or physical cold-cache state. Absolute checked budgets remain authoritative."}
+    compiler = shutil.which("rustc")
+    report["rustcVersion"] = run([compiler, "--version"], REPO)[1].stdout.strip() if compiler else "not available on benchmark host"
     report["failures"] = failures
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")

@@ -141,6 +141,22 @@ class GateAcceptance(unittest.TestCase):
         self.assertTrue(record.exists())
         self.assertIsNone(json.loads(record.read_text())["files"])
 
+    def test_staged_health_telemetry_does_not_replace_required_failure_policy(self) -> None:
+        self.adapter("error")
+        self.git("add", ".")
+        self.git("commit", "--quiet", "-m", "fixture")
+        health = self.root / ".slopgate/cache/checker-health.json"
+        for count in (1, 2):
+            self.gate("--staged", expected=2)
+            state = json.loads(health.read_text())
+            self.assertEqual(state["checkers"]["example"]["consecutiveFailures"], count)
+        self.adapter("pass")
+        self.git("add", ".")
+        self.gate("--staged", expected=0)
+        state = json.loads(health.read_text())
+        self.assertEqual(state["checkers"]["example"]["consecutiveFailures"], 0)
+        self.assertIn("lastOk", state["checkers"]["example"])
+
     def test_partial_staging_untracked_and_removed_worktree_paths_are_rejected(self) -> None:
         self.add_regex()
         self.git("add", ".")
@@ -204,6 +220,37 @@ class GateAcceptance(unittest.TestCase):
         self.scan(0, timeout=5)
         time.sleep(1.2)
         self.assertFalse(marker.exists(), "adapter returned, but a descendant continued running")
+
+    def test_absolute_editor_path_and_ordinary_relative_path_enforce_same_rule(self) -> None:
+        self.add_regex()
+        source = self.write("src/editor input.data", "FORBIDDEN_TOKEN\n")
+        self.gate("--file", str(source.absolute()), expected=1)
+        self.gate("--file", "src/editor input.data", expected=1)
+        outside = self.base / "outside.data"
+        outside.write_text("FORBIDDEN_TOKEN\n", encoding="utf-8")
+        self.gate("--file", str(outside), expected=2)
+
+    def test_partial_gate_configuration_preserves_unspecified_default_tier(self) -> None:
+        self.add_regex()
+        self.write("src/source.data", "FORBIDDEN_TOKEN\n")
+        configuration = (self.root / ".slopgate/config.toml").read_text()
+        self.write(".slopgate/config.toml", configuration + '\n[gate]\nstaged=["high"]\n')
+        self.gate("--file", "src/source.data", expected=1)
+        self.write(".slopgate/config.toml", configuration + '\n[gate]\nfile=["high"]\n')
+        self.scan(1)
+        self.write(".slopgate/config.toml", configuration + '\n[gate]\nfile=[]\n')
+        self.gate("--file", "src/source.data", expected=0)
+        self.scan(1)
+
+    def test_shared_engine_id_cannot_be_shadowed_by_external_adapter(self) -> None:
+        for identifier in ("regex", "ast"):
+            self.config(f'[adapters.{identifier}]\nexecutable={json.dumps(sys.executable)}\n')
+            self.gate("scan", "--scope", "repo", expected=2)
+
+    def test_invalid_ux_configuration_does_not_silently_disable_rules(self) -> None:
+        for value in ('1', '[]', '"hgh"'):
+            self.config(f'[ux]\na11y={value}\n')
+            self.gate("scan", "--scope", "repo", expected=2)
 
     def test_unknown_checker_unknown_config_and_missing_rule_directory_fail(self) -> None:
         for config in ('[checkers.typo-in-checker-name]\n', 'checkerConcurency = 5\n', 'astRules = "./missing"\n', 'checkerConcurrency = 0\n', '[adapters.bad]\nexecutable="x"\ntimeoutMs=0\n'):

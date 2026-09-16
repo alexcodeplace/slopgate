@@ -2,10 +2,29 @@
   "version": 1,
   "referenceGoal": "Native small-file median below 100 ms. Limits include CI hardware-noise headroom. External compiler work is measured separately and is not promised to be instantaneous.",
   "workloads": {
-    "native-file": {"medianMs": 100, "p95Ms": 300},
-    "long-line-negative": {"medianMs": 100, "p95Ms": 300},
-    "long-line-positive": {"medianMs": 100, "p95Ms": 300},
-    "native-repository": {"medianMs": 2000, "p95Ms": 6000},
-    "typescript-incremental": {"medianMs": 10000, "p95Ms": 20000}
+    "native-file": {
+      "medianMs": 100,
+      "p95Ms": 300
+    },
+    "long-line-negative": {
+      "medianMs": 100,
+      "p95Ms": 300
+    },
+    "long-line-positive": {
+      "medianMs": 100,
+      "p95Ms": 300
+    },
+    "native-repository": {
+      "medianMs": 2000,
+      "p95Ms": 6000
+    },
+    "typescript-incremental": {
+      "medianMs": 10000,
+      "p95Ms": 20000
+    },
+    "native-file-with-ast": {
+      "medianMs": 100,
+      "p95Ms": 300
+    }
   }
 }

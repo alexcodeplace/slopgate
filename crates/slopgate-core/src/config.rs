@@ -73,10 +73,8 @@ struct RawConfig {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawGate {
-    #[serde(default)]
-    file: Vec<String>,
-    #[serde(default)]
-    staged: Vec<String>,
+    file: Option<Vec<String>>,
+    staged: Option<Vec<String>>,
 }
 
 fn repository_root(config_dir: &Path) -> Result<PathBuf, String> {
@@ -293,9 +291,22 @@ fn resolve_inner(
                     .join(", ")
             ));
         };
+        if !matches!(value, toml::Value::Boolean(_) | toml::Value::String(_)) {
+            return Err(format!(
+                "slopgate: ux module {key} must be a boolean or severity string"
+            ));
+        }
         let Some(sev) = resolve_ux_severity(value, pack) else {
             continue;
         };
+        if !matches!(
+            sev.as_str(),
+            "critical" | "high" | "medium" | "low" | "info"
+        ) {
+            return Err(format!(
+                "slopgate: invalid severity {sev:?} for ux module {key}"
+            ));
+        }
         for p in &pack.regex {
             let mut overridden = p.clone();
             overridden.severity = sev.clone();
@@ -385,13 +396,15 @@ fn resolve_inner(
     let gate_file: HashSet<String> = raw
         .gate
         .as_ref()
-        .map(|g| g.file.iter().cloned().collect())
+        .and_then(|gate| gate.file.as_ref())
+        .map(|values| values.iter().cloned().collect())
         .unwrap_or_else(|| ["critical", "high"].iter().map(|s| s.to_string()).collect());
 
     let gate_staged: HashSet<String> = raw
         .gate
         .as_ref()
-        .map(|g| g.staged.iter().cloned().collect())
+        .and_then(|gate| gate.staged.as_ref())
+        .map(|values| values.iter().cloned().collect())
         .unwrap_or_else(|| ["critical", "high"].iter().map(|s| s.to_string()).collect());
 
     for value in gate_file.iter().chain(gate_staged.iter()) {
