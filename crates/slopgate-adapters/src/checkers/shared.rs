@@ -58,6 +58,32 @@ pub fn resolve_tool_bin(
         .find(|bin| command_available(bin, probe_args, Some(repo_root)))
 }
 
+/// Rust canonicalization returns namespace-prefixed Windows paths. Node's
+/// CommonJS entrypoint loader cannot consume some of these forms (nodejs/node
+/// #60435). Simplify only representations that `dunce` proves equivalent;
+/// reserved device names, trailing dots/spaces and unsupported namespace forms
+/// must not be redirected to a different filesystem object merely to run Node.
+#[cfg(windows)]
+fn node_path_argument(value: &str) -> Result<String, String> {
+    use std::path::{Component, Prefix};
+    let path = Path::new(value);
+    let is_verbatim = |path: &Path| {
+        matches!(path.components().next(), Some(Component::Prefix(prefix))
+            if matches!(prefix.kind(), Prefix::Verbatim(_) | Prefix::VerbatimDisk(_) | Prefix::VerbatimUNC(_, _)))
+    };
+    if !is_verbatim(path) {
+        return Ok(value.to_string());
+    }
+    let simplified = dunce::simplified(path);
+    if is_verbatim(simplified) {
+        return Err("Node adapter path requires a Windows namespace that cannot be safely simplified; use a compatible project location or a native adapter".into());
+    }
+    simplified
+        .to_str()
+        .map(str::to_string)
+        .ok_or_else(|| "Node adapter path is not representable as UTF-8".into())
+}
+
 /// Keep Windows npm command shims out of the process boundary. Their reviewed
 /// package metadata identifies a JavaScript entrypoint, executed with Node and
 /// an argument array, never by interpreting `.cmd` text or concatenating a shell.
@@ -107,7 +133,17 @@ fn node_invocation(bin: &Path, args: &[&str]) -> Result<(PathBuf, Vec<String>), 
     if !target.is_file() || !target.starts_with(&directory) {
         return Err("npm executable escapes its declared package".into());
     }
-    arguments.insert(0, target.to_string_lossy().into_owned());
+    // Canonical containment is checked above before changing representation.
+    // This adapter owns these arguments: they are compiler options and paths,
+    // not user-provided shell fragments or arbitrary command text.
+    arguments = arguments
+        .iter()
+        .map(|argument| node_path_argument(argument))
+        .collect::<Result<Vec<_>, _>>()?;
+    let target = target
+        .to_str()
+        .ok_or("npm entrypoint is not representable as UTF-8")?;
+    arguments.insert(0, node_path_argument(target)?);
     Ok((PathBuf::from("node"), arguments))
 }
 
@@ -197,5 +233,34 @@ mod local_resolution_tests {
         assert_eq!(executable, PathBuf::from("node"));
         assert_eq!(&args[1..], &["--project", "a & b.json"]);
         assert!(args[0].ends_with("tsc"));
+        assert!(!args[0].starts_with(r"\\?\"));
+        assert_eq!(
+            Path::new(&args[0]).canonicalize().unwrap(),
+            package.join("bin/tsc").canonicalize().unwrap()
+        );
+    }
+    #[cfg(windows)]
+    #[test]
+    fn node_paths_preserve_argument_boundaries_and_refuse_ambiguous_rewrites() {
+        assert_eq!(
+            node_path_argument(r"\\?\C:\project\file.ts").unwrap(),
+            r"C:\project\file.ts"
+        );
+        assert_eq!(
+            node_path_argument(r"\\?\C:\project\שלום & space.ts").unwrap(),
+            r"C:\project\שלום & space.ts"
+        );
+        assert_eq!(node_path_argument("--showConfig").unwrap(), "--showConfig");
+        assert_eq!(node_path_argument("a & b.json").unwrap(), "a & b.json");
+        for path in [
+            r"\\?\C:\project\NUL",
+            r"\\?\C:\project\trailing. ",
+            r"\\?\GLOBALROOT\Device\HarddiskVolume1",
+        ] {
+            assert!(
+                node_path_argument(path).is_err(),
+                "unsafe namespace rewrite: {path}"
+            );
+        }
     }
 }

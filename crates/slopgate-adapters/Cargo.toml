@@ -16,3 +16,6 @@ sha1 = { workspace = true }
 sha2 = { workspace = true }
 toml = "1.1.2"
 indexmap = "2"
+
+[target.'cfg(windows)'.dependencies]
+dunce = "=1.0.5"
