@@ -48,3 +48,7 @@ All configured budgets passed. Source-input digest: `5573e4bf25a0b497b3f9a685888
 This is an enforced automated engineering workflow, not an adapter sandbox, a mathematical proof of arbitrary program correctness, or isolation from an administrator authorized to change protections. GitHub Actions App binding authenticates the App rather than an independent workflow principal. These limits are disclosed; no unrelated credential setup or human recruitment is required to use the completed delivery.
 
 The original checkout's five unrelated modified files were preserved. No npm release was published and no existing user worktree was reset or stashed. The implementation is merged; release publication is a separate action.
+
+## Post-merge CI follow-up
+
+The first evidence-only PR run 35099686901 exposed an intermittent Windows fixture exit before JSON was emitted. Required CI correctly blocked that PR. The previous error did not retain stderr, so its exact originating exception is not claimed to be known. The follow-up adds bounded stderr/exit diagnostics, replaces the fixture's directory lock with transactional SQLite observation, runs twelve independent concurrency batches and asserts both a peak of exactly two and zero remaining active rows. No production scheduling limit or required check was weakened. ADR 0005 records the investigation; the follow-up is merged only after all protected platform, package, architecture and performance jobs pass.

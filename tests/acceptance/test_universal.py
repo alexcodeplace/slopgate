@@ -6,10 +6,12 @@ Compiler tests require explicitly provisioned test tools; no scan installs them.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
 import json
 import os
 import shutil
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -308,7 +310,9 @@ class GateAcceptance(unittest.TestCase):
         for iteration in range(12):
             with self.subTest(iteration=iteration):
                 data = self.scan(0)
-                self.assertEqual(int((state / "maximum").read_text()), 2)
+                with contextlib.closing(sqlite3.connect(state / "concurrency.sqlite", timeout=5)) as database:
+                    self.assertEqual(database.execute("SELECT maximum FROM counters WHERE id = 1").fetchone()[0], 2)
+                    self.assertEqual(database.execute("SELECT COUNT(*) FROM active").fetchone()[0], 0)
                 ids = [coverage["id"] for coverage in data["coverage"]]
                 self.assertEqual(ids, sorted(ids))
 

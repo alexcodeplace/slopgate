@@ -19,3 +19,9 @@ A malformed-response fixture proves its bounded stderr is included in the gate e
 ## Review authorization
 
 The owner explicitly delegated review, repair and merge to the assistant. This is a continuation of that authorization and uses normal protected PRs. The initial failing evidence PR remains unmerged while the intermittent failure is investigated. No independent human or administrator bypass is required or represented.
+
+## Follow-up verification and fixture repair
+
+Run 35100451203 passed all platform checks after bounded stderr/exit diagnostics and twelve concurrency batches were added. The original originating Windows exception was not retained by the old diagnostic path, so that run cannot prove its precise cause retrospectively. Do not label it a proven product race or silently erase the failed run.
+
+The reviewed fixture used directory removal/recreation as a cross-process lock. Replace that platform-sensitive observation helper with bounded SQLite transactions from Python's standard library. The production scheduler and process runner are unchanged. Preserve the exact maximum-two-active assertion across twelve batches, and additionally assert zero active rows after every batch. The transaction timeout remains bounded and any lock/fixture exception still fails the gate; no scan retries or ignored failures are introduced. Native CI must pass this stronger fixture before merge.
