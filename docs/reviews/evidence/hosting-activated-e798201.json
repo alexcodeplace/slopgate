@@ -1,0 +1,12 @@
+{
+  "verified": true,
+  "repository": "alexcodeplace/slopgate",
+  "agentIdentity": "alexcodeplace",
+  "approvalModel": "owner-authorized-autonomous",
+  "independentHumanApprovalRequired": false,
+  "errors": [],
+  "trustLimitations": [
+    "GitHub Actions App binding authenticates the App, not an adversarially isolated workflow identity.",
+    "The execution identity has administrative or maintenance authority and can change protections. This verifies current controls, not isolation from that administrator."
+  ]
+}

@@ -1,0 +1,57 @@
+{
+  "repository": "alexcodeplace/slopgate",
+  "implementationPullRequest": 22,
+  "reviewedHead": "bfdda1680fd8dadcb0717a1b19ffdbf2bbb8e5be",
+  "implementationMerge": "e798201fabc0ed4c5659150de64045dc11ec9528",
+  "selfReviewComment": 5222880095,
+  "approvalModel": "owner-authorized-autonomous",
+  "normalMergeWithoutBypass": true,
+  "reviewedHeadCI": {
+    "run": 35098032005,
+    "conclusion": "success"
+  },
+  "mergedMainCI": {
+    "run": 35098588162,
+    "conclusion": "success"
+  },
+  "probe": {
+    "repository": "alexcodeplace/slopgate",
+    "branch": "test/universal-gate-activation-20260916",
+    "base": "e798201fabc0ed4c5659150de64045dc11ec9528",
+    "baseTree": "484ff9f2f19c0fbd97da1bf510c6466433bfd66d",
+    "negativeSha": "0caae1cae0db941f4982c68ceda887e57dfa1462",
+    "pullRequest": 23,
+    "url": "https://github.com/alexcodeplace/slopgate/pull/23",
+    "mustNeverMerge": true,
+    "positiveSha": "5bd70e725535205b37e1e07d564942f241d8319c",
+    "negativeTrustedRun": 35098741728,
+    "negativeMergeState": "blocked",
+    "negativeTrustedConclusion": "failure",
+    "positiveTrustedRun": 35098940257,
+    "positiveTrustedConclusion": "success",
+    "positiveNormalCIRun": 35098943039,
+    "positiveNormalCIConclusion": "success",
+    "positiveMergeState": "clean",
+    "closed": {
+      "closed_at": "2026-09-16T13:03:25Z",
+      "head": "5bd70e725535205b37e1e07d564942f241d8319c",
+      "merged": false,
+      "number": 23,
+      "state": "closed"
+    },
+    "branchDeleted": true
+  },
+  "hostingVerification": {
+    "verified": true,
+    "repository": "alexcodeplace/slopgate",
+    "agentIdentity": "alexcodeplace",
+    "approvalModel": "owner-authorized-autonomous",
+    "independentHumanApprovalRequired": false,
+    "errors": [],
+    "trustLimitations": [
+      "GitHub Actions App binding authenticates the App, not an adversarially isolated workflow identity.",
+      "The execution identity has administrative or maintenance authority and can change protections. This verifies current controls, not isolation from that administrator."
+    ]
+  },
+  "sourceInputDigest": "5573e4bf25a0b497b3f9a685888ef0116a53d876bac18ee5648fc05b7f417cd2"
+}

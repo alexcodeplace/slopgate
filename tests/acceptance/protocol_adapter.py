@@ -2,6 +2,7 @@
 import json
 import os
 import subprocess
+import sqlite3
 import sys
 import time
 from pathlib import Path
@@ -18,6 +19,7 @@ if behavior == "fail":
 elif behavior == "error":
     response.update(status="error", errors=["checker could not analyze source"])
 elif behavior == "malformed":
+    sys.stderr.write("fixture diagnostic: malformed response\n")
     sys.stdout.write("{not json")
     sys.exit(0)
 elif behavior == "empty":
@@ -52,25 +54,26 @@ elif behavior == "mutate-index":
 elif behavior == "concurrency":
     state = Path(settings["state"])
     state.mkdir(exist_ok=True)
-    lock = state / "lock"
-    deadline = time.monotonic() + 10
-    while True:
-        try:
-            lock.mkdir()
-            break
-        except FileExistsError:
-            if time.monotonic() > deadline:
-                raise RuntimeError("fixture lock timed out")
-            time.sleep(0.002)
-    marker = state / ("active-" + str(os.getpid()))
-    marker.write_text("active", encoding="utf-8")
-    current = len(list(state.glob("active-*")))
-    maximum = state / "maximum"
-    previous = int(maximum.read_text()) if maximum.exists() else 0
-    maximum.write_text(str(max(current, previous)), encoding="utf-8")
-    lock.rmdir()
-    time.sleep(0.10)
-    marker.unlink()
+    # A transaction protects the observation itself across independent processes.
+    # Directory-delete/recreate locks have platform-specific pending-delete
+    # behavior; the fixture must not confuse that with checker correctness.
+    database = sqlite3.connect(state / "concurrency.sqlite", timeout=5, isolation_level=None)
+    try:
+        database.execute("BEGIN IMMEDIATE")
+        database.execute("CREATE TABLE IF NOT EXISTS active (pid INTEGER PRIMARY KEY)")
+        database.execute("CREATE TABLE IF NOT EXISTS counters (id INTEGER PRIMARY KEY, maximum INTEGER NOT NULL)")
+        database.execute("INSERT OR IGNORE INTO counters VALUES (1, 0)")
+        database.execute("INSERT INTO active VALUES (?)", (os.getpid(),))
+        current = database.execute("SELECT COUNT(*) FROM active").fetchone()[0]
+        database.execute("UPDATE counters SET maximum = MAX(maximum, ?) WHERE id = 1", (current,))
+        database.execute("COMMIT")
+        time.sleep(0.10)
+        database.execute("BEGIN IMMEDIATE")
+        database.execute("DELETE FROM active WHERE pid = ?", (os.getpid(),))
+        database.execute("COMMIT")
+    finally:
+        database.close()
+
 json.dump(response, sys.stdout)
 sys.stdout.flush()
 if behavior == "nonzero":
