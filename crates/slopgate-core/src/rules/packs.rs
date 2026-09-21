@@ -113,6 +113,32 @@ mod tests {
     }
 
     #[test]
+    fn astryx_single_system_pack_is_shipped() {
+        let p = stack_packs();
+        let rules = p
+            .get("astryx-single-system")
+            .expect("astryx-single-system stack pack");
+        assert_eq!(rules.len(), 2);
+        assert!(rules
+            .iter()
+            .any(|rule| rule.id == "astryx-no-competing-ui-system"));
+        assert!(rules
+            .iter()
+            .any(|rule| rule.id == "astryx-no-competing-style-engine"));
+        for rule in rules {
+            assert_eq!(rule.severity, "critical");
+            assert!(rule
+                .canary
+                .as_deref()
+                .is_some_and(|value| !value.is_empty()));
+            assert!(rule
+                .negative_canary
+                .as_ref()
+                .is_some_and(|values| !values.is_empty()));
+        }
+    }
+
+    #[test]
     fn ux_packs_load() {
         let p = ux_packs();
         assert!(!p.is_empty());

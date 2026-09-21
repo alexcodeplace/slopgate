@@ -49,6 +49,14 @@ staged = ["critical", "high"]
 
 Place this at `.slopgate/config.toml`. Scan roots are repository-relative. Rule, fixture and suppression paths are configuration-directory-relative. Empty `exts` selects all files under the roots; narrow roots/extensions or exclusions when a tree contains generated/binary assets. Tests are not globally excluded. Rule-owned `scanTestFiles`, include globs and exclude globs determine each text rule's scope.
 
+Built-in stack policies are opt-in. Astryx projects that want Slopgate to reject imports from competing UI/design systems and styling engines can enable:
+
+```toml
+stack = ["astryx-single-system"]
+```
+
+The pack enforces the design-system boundary only. Projects with a stricter component entrypoint (for example a platform adapter around Astryx) should add a project-owned rule for that local boundary.
+
 A project-owned JSON regex pack is supported:
 
 ```json
