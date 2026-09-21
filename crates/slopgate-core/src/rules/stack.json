@@ -99,5 +99,53 @@
         "console.error('user-facing failure')"
       ]
     }
+  ],
+  "astryx-single-system": [
+    {
+      "id": "astryx-no-competing-ui-system",
+      "title": "Competing UI/design system import",
+      "category": "architecture",
+      "severity": "critical",
+      "pattern": "(?:from\\s*['\"]|import\\s*\\(\\s*['\"]|require\\s*\\(\\s*['\"])(?:@mui/|@radix-ui/|@chakra-ui/|@mantine/|@headlessui/|@fluentui/|@primer/react|@blueprintjs/|@carbon/react|@nextui-org/|@heroui/|antd(?:/|['\"])|react-bootstrap(?:/|['\"])|semantic-ui-react(?:/|['\"])|flowbite-react(?:/|['\"]))",
+      "description": "This project selected Astryx as its design system. Importing another UI/component system creates duplicate primitive ownership and styling drift.",
+      "resolution": "Use the project's Astryx component boundary. If Astryx lacks a required primitive, extend the shared Astryx capability instead of adding another design system.",
+      "canary": "import { Button } from '@mui/material';",
+      "negativeCanary": [
+        "import { Button } from '@platform-modules/ui-primitives/astryx';",
+        "import { Button } from '@astryxdesign/core/Button';"
+      ],
+      "includeGlobs": [
+        "**/*.js",
+        "**/*.jsx",
+        "**/*.mjs",
+        "**/*.cjs",
+        "**/*.ts",
+        "**/*.tsx",
+        "**/*.astro"
+      ]
+    },
+    {
+      "id": "astryx-no-competing-style-engine",
+      "title": "Competing styling engine import",
+      "category": "architecture",
+      "severity": "critical",
+      "pattern": "(?:from\\s*['\"]|import\\s*\\(\\s*['\"]|require\\s*\\(\\s*['\"])(?:styled-components(?:/|['\"])|@emotion/|@vanilla-extract/|@stitches/|styled-jsx(?:/|['\"])|@linaria/|goober(?:/|['\"])|twind(?:/|['\"])|tailwindcss(?:/|['\"])|@tailwindcss/|sass(?:/|['\"])|less(?:/|['\"]))",
+      "description": "This Astryx project must keep one application styling engine. Introducing another CSS-in-JS/preprocessor/utility engine creates a parallel styling system.",
+      "resolution": "Use the project's selected Astryx-compatible styling engine and semantic theme. Do not add another styling engine.",
+      "canary": "import styled from 'styled-components';",
+      "negativeCanary": [
+        "import * as stylex from '@stylexjs/stylex';",
+        "import { Button } from '@platform-modules/ui-primitives/astryx';"
+      ],
+      "includeGlobs": [
+        "**/*.js",
+        "**/*.jsx",
+        "**/*.mjs",
+        "**/*.cjs",
+        "**/*.ts",
+        "**/*.tsx",
+        "**/*.astro"
+      ]
+    }
   ]
 }
