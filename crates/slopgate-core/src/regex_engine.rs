@@ -8,6 +8,7 @@ use crate::rules::packs::Pattern;
 use fancy_regex::{Regex, RegexBuilder};
 use std::collections::HashMap;
 use std::path::Path;
+use std::time::Instant;
 
 struct CompiledPattern<'a> {
     pattern: &'a Pattern,
@@ -22,6 +23,25 @@ enum LineMatcher {
 struct LineHit {
     line: u32,
     text: String,
+}
+
+fn regex_rule_progress_line(
+    event: &str,
+    rule: &str,
+    file: &str,
+    elapsed_ms: Option<u128>,
+) -> String {
+    let mut line = format!("SLOPGATE_REGEX_PROGRESS event={event} rule={rule} file={file}");
+    if let Some(elapsed_ms) = elapsed_ms {
+        line.push_str(&format!(" elapsed_ms={elapsed_ms}"));
+    }
+    line
+}
+
+fn emit_regex_rule_progress(event: &str, rule: &str, file: &str, elapsed_ms: Option<u128>) {
+    if std::env::var_os("SLOPGATE_STAGE_DIAGNOSTICS").is_some() {
+        eprintln!("{}", regex_rule_progress_line(event, rule, file, elapsed_ms));
+    }
 }
 
 /// Replace JS non-`u` ASCII shorthands so `\d`/`\w`/`\s` match ASCII under fancy-regex.
@@ -262,6 +282,8 @@ pub fn scan_regex(config: &ResolvedConfig, files: &[String], file_mode: bool) ->
                 continue;
             }
 
+            let rule_started = Instant::now();
+            emit_regex_rule_progress("start", &p.id, file, None);
             let mut per_file: Vec<LineHit> = Vec::new();
             for (i, line) in lines.iter().enumerate() {
                 if matcher_matches(&cp.matcher, line) {
@@ -271,6 +293,7 @@ pub fn scan_regex(config: &ResolvedConfig, files: &[String], file_mode: bool) ->
                     });
                 }
             }
+            emit_regex_rule_progress("end", &p.id, file, Some(rule_started.elapsed().as_millis()));
             if !per_file.is_empty() {
                 hits.entry(&p.id)
                     .or_default()
@@ -437,6 +460,18 @@ mod tests {
                 "unexpected match for {line:?}"
             );
         }
+    }
+
+    #[test]
+    fn regex_rule_progress_line_includes_rule_and_file() {
+        assert_eq!(
+            regex_rule_progress_line("start", "no-raw-html", "src/page.tsx", None),
+            "SLOPGATE_REGEX_PROGRESS event=start rule=no-raw-html file=src/page.tsx"
+        );
+        assert_eq!(
+            regex_rule_progress_line("end", "no-raw-html", "src/page.tsx", Some(17)),
+            "SLOPGATE_REGEX_PROGRESS event=end rule=no-raw-html file=src/page.tsx elapsed_ms=17"
+        );
     }
 
     #[test]
