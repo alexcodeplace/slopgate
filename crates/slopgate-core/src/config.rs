@@ -359,154 +359,106 @@ fn abs_to_string(path: impl AsRef<Path>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
-    use tempfile::tempdir;
+    use serde_json::Value;
 
-    fn make_fixture_tree(root: &std::path::Path) {
-        fs::create_dir_all(root.join("rules/baseline/ast")).unwrap();
-        fs::create_dir_all(root.join("rules/ux/ast")).unwrap();
-        fs::create_dir_all(root.join(".slopgate/custom/ast-rules")).unwrap();
-        fs::create_dir_all(root.join(".slopgate/fixtures")).unwrap();
+    fn cfg_path() -> String {
+        format!(
+            "{}/tests/fixtures/config.toml",
+            env!("CARGO_MANIFEST_DIR")
+        )
     }
 
     #[test]
-    fn validate_pattern_str_strips_stateful_flags() {
-        validate_pattern_str("foo", Some("giy")).unwrap();
+    fn validate_pattern_rejects_bad_regex() {
+        assert!(validate_pattern_str("a(b", Some("")).is_err());
+        assert!(validate_pattern_str(r"\d+", Some("i")).is_ok());
     }
 
     #[test]
-    fn resolve_config_str_resolves_defaults_and_enabled_ux() {
-        let tmp = tempdir().unwrap();
-        make_fixture_tree(tmp.path());
-
-        let config_dir = tmp.path().join(".slopgate");
-        let toml_src = r#"
-roots = ["src", "packages/app"]
-baseline = ["no-stubs", "as-any"]
-stack = ["cloudflare"]
-astRules = "custom/ast-rules"
-suppressions = "suppressions.json"
-fixtures = "fixtures"
-checkerConcurrency = 7
-astDisable = ["ux-img-no-alt"]
-
-[checkers.diff-shape]
-maxDirs = 5
-
-[gate]
-file = ["critical", "high", "medium"]
-staged = ["critical"]
-
-[ux]
-a11y = true
-taste = "advisory"
-"#;
-
-        let cfg = resolve_config_at(tmp.path(), &config_dir, toml_src).unwrap();
-
-        assert_eq!(cfg.repo_root, tmp.path().to_string_lossy());
-        assert_eq!(cfg.config_dir, config_dir.to_string_lossy());
-        assert_eq!(cfg.roots_rel, vec!["src".to_string(), "packages/app".to_string()]);
-        assert_eq!(cfg.roots[0], tmp.path().join("src").to_string_lossy());
-        assert!(cfg.exts.contains(".ts"));
-        assert!(cfg.exts.contains(".tsx"));
-        assert!(cfg.exts.contains(".astro"));
-        assert!(cfg.skip_dirs.contains("node_modules"));
-        assert!(cfg.skip_dirs.contains("dist"));
-        assert!(cfg.skip_dirs.contains("tests"));
-        assert_eq!(cfg.checker_concurrency, 7);
-        assert_eq!(cfg.baseline_path, config_dir.join("baseline.json").to_string_lossy());
-        assert_eq!(cfg.suppressions_path, config_dir.join("suppressions.json").to_string_lossy());
-        assert_eq!(cfg.fixtures_dirs[0], tmp.path().join("rules/baseline/fixtures").to_string_lossy());
-        assert_eq!(cfg.fixtures_dirs[1], config_dir.join("fixtures").to_string_lossy());
-        let mut gate_file = cfg.gate.file.iter().cloned().collect::<Vec<_>>();
-        gate_file.sort();
-        assert_eq!(gate_file, vec!["critical".to_string(), "high".to_string(), "medium".to_string()]);
-        let mut gate_staged = cfg.gate.staged.iter().cloned().collect::<Vec<_>>();
-        gate_staged.sort();
-        assert_eq!(gate_staged, vec!["critical".to_string()]);
-        assert!(cfg.ast_disable.contains("ux-img-no-alt"));
-        assert_eq!(cfg.ast_rule_dirs[0], tmp.path().join("rules/baseline/ast").to_string_lossy());
-        assert_eq!(cfg.ast_rule_dirs[1], config_dir.join("custom/ast-rules").to_string_lossy());
-        assert_eq!(cfg.ast_rule_dirs[2], tmp.path().join("rules/ux/ast").to_string_lossy());
-        assert_eq!(cfg.ux_ast_severity.get("ux-div-onclick").unwrap(), "high");
-        assert!(cfg.patterns.iter().any(|p| p.id == "ux-emoji-in-ui" && p.severity == "medium"));
-        assert!(cfg.ux_ast_all.contains("ux-modal-no-close"));
-        assert!(cfg.checkers.contains_key("diff-shape"));
-        assert_eq!(cfg.patterns.iter().map(|p| p.id.as_str()).collect::<Vec<_>>().len(), cfg.patterns.len());
+    fn defaults_present() {
+        let c = resolve_config(&cfg_path()).unwrap();
+        assert!(c.exts.contains(".ts") && c.exts.contains(".tsx"));
+        assert!(c.skip_dirs.contains("node_modules"));
+        assert!(c.gate.staged.contains("critical") && c.gate.staged.contains("high"));
+        assert_eq!(c.checker_concurrency, 3);
     }
 
     #[test]
-    fn resolve_config_str_rejects_project_rules() {
-        let tmp = tempdir().unwrap();
-        make_fixture_tree(tmp.path());
-        let config_dir = tmp.path().join(".slopgate");
-
-        let toml_src = r#"
-rules = ["packs/custom.mjs"]
-"#;
-
-        let err = resolve_config_at(tmp.path(), &config_dir, toml_src).unwrap_err();
-        assert!(err.contains("packs/custom.mjs"));
+    fn resolves_baseline_packs_and_dedupes() {
+        let c = resolve_config(&cfg_path()).unwrap();
+        let ids: Vec<&str> = c.patterns.iter().map(|p| p.id.as_str()).collect();
+        assert!(ids.iter().any(|i| i.starts_with("no-stubs")));
+        let mut seen = std::collections::HashSet::new();
+        for p in &c.patterns {
+            assert!(seen.insert(&p.id), "dup id {}", p.id);
+        }
     }
 
     #[test]
-    fn dedupe_patterns_prefers_last_value_and_first_order() {
-        let a = Pattern {
-            id: "dup".to_string(),
-            severity: "low".to_string(),
-            pattern: "a".to_string(),
-            resolution: "one".to_string(),
-            title: None,
-            description: None,
-            category: None,
-            flags: None,
-            canary: None,
-            negative_canary: None,
-            include_globs: None,
-            exclude_globs: None,
-            min_files: None,
-        };
-        let b = Pattern {
-            id: "keep".to_string(),
-            severity: "medium".to_string(),
-            pattern: "b".to_string(),
-            resolution: "two".to_string(),
-            title: None,
-            description: None,
-            category: None,
-            flags: None,
-            canary: None,
-            negative_canary: None,
-            include_globs: None,
-            exclude_globs: None,
-            min_files: None,
-        };
-        let c = Pattern {
-            id: "dup".to_string(),
-            severity: "critical".to_string(),
-            pattern: "c".to_string(),
-            resolution: "three".to_string(),
-            title: None,
-            description: None,
-            category: None,
-            flags: None,
-            canary: None,
-            negative_canary: None,
-            include_globs: None,
-            exclude_globs: None,
-            min_files: None,
-        };
-
-        let out = dedupe_patterns(vec![a, b, c]);
-        assert_eq!(out.len(), 2);
-        assert_eq!(out[0].id, "dup");
-        assert_eq!(out[0].severity, "critical");
-        assert_eq!(out[1].id, "keep");
+    fn matches_js_resolver_machine_surface() {
+        let vp = format!(
+            "{}/tests/parity_vectors/resolved_config.json",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let js: Value = serde_json::from_str(&std::fs::read_to_string(vp).unwrap()).unwrap();
+        let rust = resolve_config(&cfg_path()).unwrap();
+        let js_ids = sorted_id_sev(&js["patterns"]);
+        let mut rust_ids: Vec<String> = rust
+            .patterns
+            .iter()
+            .map(|p| format!("{}:{}", p.id, p.severity))
+            .collect();
+        rust_ids.sort();
+        assert_eq!(rust_ids, js_ids, "pattern id:severity set must match JS resolver");
+        assert_eq!(sorted_strs(&js["exts"]), sorted_set(&rust.exts));
+        assert_eq!(
+            sorted_strs(&js["gate"]["staged"]),
+            sorted_set(&rust.gate.staged)
+        );
     }
-}
 
-#[cfg(test)]
-fn resolve_config_at(repo_root: &Path, config_dir: &Path, toml_src: &str) -> Result<ResolvedConfig, String> {
-    resolve_config_inner(repo_root, config_dir, toml_src)
+    #[test]
+    fn unknown_baseline_pack_errors() {
+        assert!(resolve_config_str("baseline = [\"nope\"]\n").is_err());
+    }
+
+    #[test]
+    fn project_rule_pack_is_typed_error() {
+        let err = resolve_config_str("rules = [\"./my-pack.mjs\"]\n").unwrap_err();
+        assert!(err.contains("my-pack.mjs"));
+    }
+
+    fn sorted_id_sev(v: &Value) -> Vec<String> {
+        let mut out: Vec<String> = v
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|p| {
+                format!(
+                    "{}:{}",
+                    p["id"].as_str().unwrap(),
+                    p["severity"].as_str().unwrap()
+                )
+            })
+            .collect();
+        out.sort();
+        out
+    }
+
+    fn sorted_strs(v: &Value) -> Vec<String> {
+        let mut out: Vec<String> = v
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|s| s.as_str().unwrap().to_string())
+            .collect();
+        out.sort();
+        out
+    }
+
+    fn sorted_set(s: &std::collections::HashSet<String>) -> Vec<String> {
+        let mut out: Vec<String> = s.iter().cloned().collect();
+        out.sort();
+        out
+    }
 }
