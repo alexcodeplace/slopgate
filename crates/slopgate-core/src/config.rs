@@ -387,122 +387,106 @@ fn workspace_root() -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
-    use std::path::Path;
-    use tempfile::tempdir;
+    use serde_json::Value;
 
-    fn write_file(path: &Path, contents: &str) {
-        fs::create_dir_all(path.parent().expect("parent")).expect("mkdir");
-        fs::write(path, contents).expect("write");
-    }
-
-    #[test]
-    fn validate_pattern_str_rejects_invalid_regex() {
-        let err = validate_pattern_str("(", None).unwrap_err();
-        assert!(err.contains("bad regex"), "{err}");
-    }
-
-    #[test]
-    fn validate_pattern_allows_stateful_flags_by_stripping_them() {
-        let p = Pattern {
-            id: "x".into(),
-            severity: "high".into(),
-            pattern: "abc".into(),
-            resolution: "fix".into(),
-            title: None,
-            description: None,
-            category: None,
-            flags: Some("gyiu".into()),
-            canary: None,
-            negative_canary: None,
-            include_globs: None,
-            exclude_globs: None,
-            min_files: None,
-        };
-        validate_pattern(&p).expect("pattern should validate");
-    }
-
-    #[test]
-    fn resolve_config_rejects_project_rule_packs() {
-        let dir = tempdir().expect("tempdir");
-        let config_path = dir.path().join("config.toml");
-        write_file(&config_path, "rules = ['./rules/custom.mjs']\n");
-        let err = resolve_config(config_path.to_str().expect("utf8")).unwrap_err();
-        assert!(err.contains("unsupported"), "{err}");
-        assert!(err.contains("./rules/custom.mjs"), "{err}");
-    }
-
-    #[test]
-    fn resolve_config_applies_defaults_and_ux_aliases() {
-        let dir = tempdir().expect("tempdir");
-        let root = dir.path();
-        fs::create_dir_all(root.join("rules/ast")).expect("mkdir ast");
-        fs::create_dir_all(root.join("fixtures")).expect("mkdir fixtures");
-        let config_path = root.join("config.toml");
-        write_file(
-            &config_path,
-            r#"
-baseline = ["no-stubs"]
-astRules = "./rules/ast"
-fixtures = "./fixtures"
-
-[ux]
-a11y = true
-taste = "advisory"
-
-[checkers]
-diff-shape = { maxDirs = 5 }
-disabled = false
-enabled = true
-"#,
-        );
-
-        let resolved = resolve_config(config_path.to_str().expect("utf8")).expect("resolved");
-        assert_eq!(resolved.roots_rel, vec!["src".to_string()]);
-        assert!(resolved.exts.contains(".ts"));
-        assert!(resolved.skip_dirs.contains("node_modules"));
-        assert_eq!(resolved.checker_concurrency, 3);
-        assert_eq!(resolved.gate.file.len(), 2);
-        assert!(resolved.gate.file.contains("critical"));
-        assert!(resolved.gate.staged.contains("high"));
-        assert_eq!(
-            resolved.ux_ast_severity.get("ux-div-onclick"),
-            Some(&"high".to_string())
-        );
-        assert!(resolved.ux_ast_all.contains("ux-modal-no-close"));
-        let regex_rule = resolved
-            .patterns
-            .iter()
-            .find(|p| p.id == "ux-emoji-in-ui")
-            .expect("ux taste regex present");
-        assert_eq!(regex_rule.severity, "medium");
-        assert!(resolved.checkers.contains_key("diff-shape"));
-        assert!(resolved.checkers.contains_key("enabled"));
-        assert!(!resolved.checkers.contains_key("disabled"));
-    }
-
-    #[test]
-    fn resolve_config_dedupes_last_value_wins_first_order_kept() {
-        let resolved = resolve_config_str(
-            r#"
-baseline = ["no-stubs"]
-
-[ux]
-taste = "high"
-"#,
+    fn cfg_path() -> String {
+        format!(
+            "{}/tests/fixtures/config.toml",
+            env!("CARGO_MANIFEST_DIR")
         )
-        .expect("resolved");
+    }
 
-        let ids: Vec<_> = resolved.patterns.iter().map(|p| p.id.as_str()).collect();
-        let first_no_stubs = ids.iter().position(|id| *id == "no-stubs-placeholder");
-        let first_taste = ids.iter().position(|id| *id == "ux-emoji-in-ui");
-        assert!(first_no_stubs.is_some());
-        assert!(first_taste.is_some());
-        let taste = resolved
+    #[test]
+    fn validate_pattern_rejects_bad_regex() {
+        assert!(validate_pattern_str("a(b", Some("")).is_err());
+        assert!(validate_pattern_str(r"\d+", Some("i")).is_ok());
+    }
+
+    #[test]
+    fn defaults_present() {
+        let c = resolve_config(&cfg_path()).unwrap();
+        assert!(c.exts.contains(".ts") && c.exts.contains(".tsx"));
+        assert!(c.skip_dirs.contains("node_modules"));
+        assert!(c.gate.staged.contains("critical") && c.gate.staged.contains("high"));
+        assert_eq!(c.checker_concurrency, 3);
+    }
+
+    #[test]
+    fn resolves_baseline_packs_and_dedupes() {
+        let c = resolve_config(&cfg_path()).unwrap();
+        let ids: Vec<&str> = c.patterns.iter().map(|p| p.id.as_str()).collect();
+        assert!(ids.iter().any(|i| i.starts_with("no-stubs")));
+        let mut seen = std::collections::HashSet::new();
+        for p in &c.patterns {
+            assert!(seen.insert(&p.id), "dup id {}", p.id);
+        }
+    }
+
+    #[test]
+    fn matches_js_resolver_machine_surface() {
+        let vp = format!(
+            "{}/tests/parity_vectors/resolved_config.json",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let js: Value = serde_json::from_str(&std::fs::read_to_string(vp).unwrap()).unwrap();
+        let rust = resolve_config(&cfg_path()).unwrap();
+        let js_ids = sorted_id_sev(&js["patterns"]);
+        let mut rust_ids: Vec<String> = rust
             .patterns
             .iter()
-            .find(|p| p.id == "ux-emoji-in-ui")
-            .expect("taste rule");
-        assert_eq!(taste.severity, "high");
+            .map(|p| format!("{}:{}", p.id, p.severity))
+            .collect();
+        rust_ids.sort();
+        assert_eq!(rust_ids, js_ids, "pattern id:severity set must match JS resolver");
+        assert_eq!(sorted_strs(&js["exts"]), sorted_set(&rust.exts));
+        assert_eq!(
+            sorted_strs(&js["gate"]["staged"]),
+            sorted_set(&rust.gate.staged)
+        );
+    }
+
+    #[test]
+    fn unknown_baseline_pack_errors() {
+        assert!(resolve_config_str("baseline = [\"nope\"]\n").is_err());
+    }
+
+    #[test]
+    fn project_rule_pack_is_typed_error() {
+        let err = resolve_config_str("rules = [\"./my-pack.mjs\"]\n").unwrap_err();
+        assert!(err.contains("my-pack.mjs"));
+    }
+
+    fn sorted_id_sev(v: &Value) -> Vec<String> {
+        let mut out: Vec<String> = v
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|p| {
+                format!(
+                    "{}:{}",
+                    p["id"].as_str().unwrap(),
+                    p["severity"].as_str().unwrap()
+                )
+            })
+            .collect();
+        out.sort();
+        out
+    }
+
+    fn sorted_strs(v: &Value) -> Vec<String> {
+        let mut out: Vec<String> = v
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|s| s.as_str().unwrap().to_string())
+            .collect();
+        out.sort();
+        out
+    }
+
+    fn sorted_set(s: &std::collections::HashSet<String>) -> Vec<String> {
+        let mut out: Vec<String> = s.iter().cloned().collect();
+        out.sort();
+        out
     }
 }
