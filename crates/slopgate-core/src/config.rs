@@ -416,7 +416,7 @@ mod tests {
 
     fn cfg_path() -> String {
         format!(
-            "{}/../../.slopgate/config.toml",
+            "{}/tests/fixtures/config.toml",
             env!("CARGO_MANIFEST_DIR")
         )
     }
