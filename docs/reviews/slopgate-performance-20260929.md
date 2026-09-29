@@ -1,100 +1,125 @@
-# Slopgate performance review: September 29, 2026
+# Slopgate performance: selected results, September 29, 2026
 
-## Trial C results, pending final qualification
+## Delivered result
 
-A later full-pack benchmark found a repeatable approximately 5% single-file startup slowdown. Trial D is testing lazy linear prefilters before final selection; the table below is retained as Trial C evidence, not final delivery approval.
+The selected optimization remains in Rust. PR #27 was reviewed and merged through the normal protected endpoint as `191a2283162bc390abbebd916cb748df1fd23893`, after all nine required checks passed. The reviewed and measured source is `fb15d2d72dbc18a972cf9b663f168debbbe87856`. This follow-up publishes selected Trial D evidence and closes the implementation ledger; it changes no executable code.
 
-The selected Rust optimization reduces redundant matching work without changing scan policy. In the final 31-pair run, the large synthetic repository took 31.8% less median time (1.467x throughput), and the actual Slopgate Rust-source corpus took 16.4% less time (1.197x throughput). The 1,001-file corpus improved by 17.0% in latency. This is not a universal speed guarantee; small and externally dominated workloads show little or no clear improvement.
+On the paired runs, the large synthetic repository improved from 58.742 to 36.987 ms median: **1.588x throughput and 37.0% less elapsed time**. The actual Rust-source corpus improved from 30.281 to 24.531 ms: **1.234x throughput and 19.0% less time**. All shipped rule packs on the larger corpus improved from 428.332 to 355.564 ms: **1.205x throughput and 17.0% less time**.
 
-Implementation and benchmark decision: `docs/adr/0007-measured-regex-performance.md`. Delivery: PR #27. This report is a substantive self-review, not independent human approval. Exact-head CI and ordinary protected merge remain required.
+Small-file startup, dense positives and external compiler work did not show clear consistent gains. The 101-pair startup follow-up and external checks have intervals that include no change. These are shared-host measurements, not universal speed claims. No functional regression was detected in the covered tests; finite testing does not prove that every possible input or workload is regression-free.
 
-## Revisions and environment
+## What changed
 
-- Base: `9e3210c0dbbd18464ad4d3e3aac6c88faaa8e2a0`. The baseline binary embeds the short form `9e3210c`.
-- Final measured candidate: `90e50453308a81529589f3004960b74849b28aa0`. Later evidence-only commits do not change the measured Rust implementation.
-- Debian3, Intel Core i7-9700, 8 logical CPUs, Linux 7.2.6+deb14-amd64, glibc 2.43, Python 3.14.7.
-- rustc 1.95.0 (59807616e 2026-04-14); locked dependencies; unchanged release LTO, one codegen unit and stripping. No target-cpu=native, architecture-specific instructions, new crates, unsafe code or result cache.
-- Real tools: ast-grep 0.45.3 and TypeScript 5.9.3, provisioned before scans.
-- Shared-host load was high: final one-minute averages were 12.28 before and 14.92 after, on eight cores. CPU frequency and physical disk caches were not controlled.
+1. Proven case-sensitive literal checks use exact substring searches instead of separate literal regexes. Unicode-folded literals retain the original regex engine.
+2. If a mandatory literal is absent from the entire validated file, the rule cannot match any line, so its per-line loop can be avoided. Positive candidates still use the original line-scoped matcher.
+3. Linear-engine auxiliary proofs are lazy and only constructed when estimated line visits justify setup. This removed the roughly 5% all-pack startup penalty found in the eager Trial C implementation. Test-file classification is computed once per file.
 
-Binary SHA256 before: `716eb4f6e003cfbe0df78bb05d8dba4bfb0215054fcc594a4025ee59a66ac982`.
+The file filter requires at least eight split lines. Linear rules additionally require current line count times selected file count to reach 4,096 estimated visits; compatibility rules reuse proofs they already had. This heuristic chooses whether to perform an optimization, never whether to perform the actual checks. OnceLock stores a compiled proof only within the per-scan matcher, not cached results across runs.
 
-Binary SHA256 after: `e80d4badf26aa0d3957d7661cb38572e00e447a7eefac92dbee43d688bd2c843`.
+No rule, public API, configuration, dependency, manifest, CI policy, scan limit or performance budget changed. No unsafe code, assembly, result cache or architecture-specific compiler flag was added. Decision record: `docs/adr/0007-measured-regex-performance.md`.
 
-Final source digest: `427f2fee35ef9caa670df82360e17a846745346488334970be0e9c17e46a995a`. Binary size changed from 4,255,152 to 4,254,640 bytes; this tiny difference is not presented as a memory optimization. Peak runtime memory was not measured.
+## Measurement method and scope
 
-## Final comparison
+- Baseline source: `9e3210c0dbbd18464ad4d3e3aac6c88faaa8e2a0`; embedded revision is its short form `9e3210c`.
+- Debian3: Intel Core i7-9700, eight logical CPUs, Linux 7.2.6+deb14-amd64, glibc 2.43; Python 3.14.7.
+- Identical rustc 1.95.0 (59807616e 2026-04-14), locked dependencies and existing release profile with LTO, one codegen unit and stripping. Real ast-grep 0.45.3 and TypeScript 5.9.3 were installed before measuring.
+- 31 alternating AB/BA pairs per timed workload, three warmups per variant; a separate 101-pair, five-warmup follow-up checks startup. Every launch is a fresh process with a warm filesystem. No physical cold-disk test is claimed.
+- Identical paths, policy, source and engine assets for both binaries. Stage traces are separate untimed invocations. TypeScript uses only its ordinary incremental state, warmed for both variants.
+- Shared load and CPU frequency were not controlled. One-minute load was 10.21 to 9.09 for the native run, 11.84 to 16.81 for startup, and 18.35 to 30.35 for the external run. Pairing reduces but cannot eliminate this uncertainty.
 
-Each cell is wall-clock CLI latency, including startup and JSON output. Native rows use `scan --scope repo --tier fast`; small-file is a one-file repository, not the legacy --file command. TypeScript uses tier commit. Source corpora, policies and paths are identical for each A/B pair. Native fixtures use the no-stubs, ts-suppress and as-any packs with AST disabled. The actual-source row uses real baseline Rust files under that same benchmark policy; it is not the complete project gate with all configured external checkers.
+Default native corpora use the no-stubs, ts-suppress and as-any packs with AST disabled. The actual-source row copies 73 real baseline Rust files under that benchmark policy; it is **not** the complete production gate with all external checkers. Rows prefixed all-packs enable every shipped baseline, stack and UX pack with AST disabled. Structural and semantic work are measured separately. Small-file rows are one-file repository scans, not the legacy --file command.
 
-| Workload | Before median ms | After median ms | Before p95 ms | After p95 ms | Median speedup | Paired 95% interval |
+Corpus sizes: repository-1001 has 1,001 files and 1,101,100 bytes; large-file has 30,000 source lines and 1,207,780 bytes; large-repository has 256 files, 131,072 source lines and 4,793,344 bytes; slopgate-source has 73 Rust files, 742,799 bytes and 15 unchanged findings. JSON splitLines includes trailing empty elements from splitting on newline.
+
+## Selected paired comparison
+
+All times are milliseconds, including process startup and report output. The native and external rows come from separate paired runs; compare before/after within a row, not absolute times across runs.
+
+| Workload | Before median | After median | Before p95 | After p95 | Speedup | Paired 95% interval |
 |---|---:|---:|---:|---:|---:|---:|
-| small-file | 9.463 | 9.450 | 11.295 | 11.579 | 1.001x | 0.971-1.016x |
-| repository-1001 | 31.852 | 26.447 | 38.266 | 32.075 | 1.204x | 1.178-1.261x |
-| large-file | 23.410 | 19.115 | 27.584 | 22.310 | 1.225x | 1.201-1.307x |
-| large-repository | 63.725 | 43.452 | 76.955 | 54.063 | 1.467x | 1.455-1.506x |
-| large-file-positive | 26.257 | 21.584 | 37.705 | 28.776 | 1.217x | 1.162-1.248x |
-| compatibility-unfilterable | 7.161 | 7.687 | 12.925 | 12.606 | 0.932x | 0.817-1.113x |
-| long-line-negative | 10.402 | 9.960 | 12.581 | 13.760 | 1.044x | 0.929-1.116x |
-| long-line-positive | 9.311 | 8.800 | 10.837 | 11.621 | 1.058x | 0.951-1.063x |
-| slopgate-source | 28.513 | 23.823 | 38.217 | 30.533 | 1.197x | 1.170-1.278x |
-| linear-dense-positive | 20.764 | 20.212 | 26.040 | 22.220 | 1.027x | 1.024-1.063x |
-| compatibility-dense-positive | 20.950 | 20.991 | 24.287 | 25.966 | 0.998x | 0.972-1.030x |
-| native-file-with-ast | 22.814 | 22.657 | 24.651 | 25.628 | 1.007x | 0.996-1.067x |
-| typescript-incremental | 669.614 | 685.394 | 887.262 | 911.669 | 0.977x | 0.975-1.040x |
+| small-file | 9.814 | 10.109 | 11.472 | 13.043 | 0.971x | 0.928-1.034x |
+| repository-1001 | 32.249 | 26.028 | 34.383 | 32.127 | 1.239x | 1.195-1.272x |
+| large-file | 23.925 | 18.316 | 28.033 | 23.570 | 1.306x | 1.290-1.348x |
+| large-repository | 58.742 | 36.987 | 64.480 | 42.642 | 1.588x | 1.539-1.624x |
+| all-packs-small-file | 37.395 | 37.501 | 40.300 | 43.826 | 0.997x | 0.975-1.035x |
+| all-packs-repository | 428.332 | 355.564 | 446.162 | 378.564 | 1.205x | 1.185-1.211x |
+| large-file-positive | 23.503 | 19.365 | 28.706 | 28.694 | 1.214x | 1.142-1.262x |
+| compatibility-unfilterable | 5.976 | 5.671 | 7.465 | 6.699 | 1.054x | 0.999-1.125x |
+| long-line-negative | 9.919 | 9.115 | 12.277 | 10.621 | 1.088x | 1.031-1.139x |
+| long-line-positive | 10.039 | 9.878 | 12.357 | 11.177 | 1.016x | 0.987-1.130x |
+| slopgate-source | 30.281 | 24.531 | 34.966 | 30.093 | 1.234x | 1.173-1.253x |
+| linear-dense-positive | 19.391 | 18.938 | 21.556 | 22.867 | 1.024x | 0.992-1.027x |
+| compatibility-dense-positive | 21.674 | 21.428 | 22.962 | 23.229 | 1.011x | 0.982-1.022x |
+| native-file-with-ast | 31.561 | 31.432 | 41.769 | 46.046 | 1.004x | 0.873-1.019x |
+| typescript-incremental | 671.721 | 678.515 | 839.157 | 787.977 | 0.990x | 0.945-1.068x |
 
-Speedup is before/after, not percent latency reduction. The point estimate is a ratio of medians; the interval bootstraps the median paired log ratio, so the two estimators need not coincide. Intervals describe these samples, not all machines or workloads. Small p95 changes and the apparent unfilterable-pattern/TypeScript slowdown are not clear repeatable regressions in this noisy run.
+Speedup is before/after; a 1.588x ratio is not a 58.8% latency reduction. The point estimate is a ratio of medians, while the seeded percentile bootstrap estimates the median paired log ratio. Those estimators need not coincide. Intervals describe these observations, not all machines. Small p95 increases and point estimates below 1.0 are retained in the table instead of omitted.
 
-Corpus sizes: 1,001 files / 1,101,100 bytes; large-file 30,000 source lines / 1,207,780 bytes; large-repository 256 files / 131,072 source lines / 4,793,344 bytes; actual source corpus 73 Rust files / 742,799 bytes with 15 unchanged findings. `splitLines` in JSON includes trailing empty elements from split("\n").
+## Startup follow-up
 
-## Focused noise check
+The earlier eager implementation showed a repeatable all-pack startup penalty. After making auxiliary proofs lazy, the selected startup follow-up produced these 101-pair results:
 
-After the full run, repeat the five noisy or low-benefit cases with 101 alternating pairs and five warmups per variant. Do not substitute this for the full table or omit the earlier observations.
-
-| Workload | Before median ms | After median ms | Speedup | Paired 95% interval |
+| Workload | Before median | After median | Speedup | Paired 95% interval |
 |---|---:|---:|---:|---:|
-| small-file | 7.289 | 7.259 | 1.004x | 0.997-1.010x |
-| compatibility-unfilterable | 4.063 | 3.867 | 1.051x | 1.021-1.049x |
-| long-line-negative | 7.543 | 7.511 | 1.004x | 1.003-1.011x |
-| long-line-positive | 8.102 | 8.063 | 1.005x | 1.001-1.007x |
-| compatibility-dense-positive | 19.188 | 18.870 | 1.017x | 1.014-1.037x |
+| small-file | 12.278 | 11.832 | 1.038x | 0.984-1.082x |
+| all-packs-small-file | 43.433 | 43.843 | 0.991x | 0.987-1.018x |
 
-The previously slower unfilterable case did not reproduce as a slowdown. The TypeScript interval in the full run includes 1.0; no semantic-checker acceleration is claimed.
+Both intervals include no change. The all-pack point estimate is about 1% slower, not a demonstrated speedup; the previous clear 5% penalty did not persist. No TypeScript or AST acceleration is claimed either.
 
-## Incremental experiments
+## Incremental experiments and rejected tradeoff
 
-- Trial A (`1109ce0`): exact case-sensitive substring checks instead of compiled literal regexes. 326 tests and 24 differential cases passed. Large-repository ratio 1.062x; source corpus 1.034x.
-- Trial B (`c55e340`): compatibility-rule file prefilter and once-per-file test classification. 329 tests and 26 cases passed. Against base, large repository 1.223x and source 1.110x; against A, 1.148x and 1.088x.
-- Trial C (`7d3a843`): same conservative proof for linear matchers. 330 tests and 29 cases passed. Initial 31-pair ratios 1.482x and 1.194x; against B, 1.207x and 1.073x. The final formatted implementation is the candidate in the main table.
+- Trial A (`1109ce0`): exact literal searches; modest larger-scan gains. 326 Rust tests and 24 differential cases passed.
+- Trial B (`c55e340`): compatibility file prefilters and once-per-file classification. Larger synthetic corpus 1.223x and source corpus 1.110x versus base in that run. 329 tests and 26 cases passed.
+- Trial C (`7d3a843`, formatted `90e5045`): eager linear prefilters. Initial larger-corpus/source ratios were 1.482x and 1.194x. A later all-pack startup test was 37.077 -> 38.864 ms, ratio 0.954x with interval 0.936-0.992x. **Not selected because of this startup regression.**
+- Trial D (`a72b463`, formatted `fb15d2d`): lazy, amortized linear proof construction. Selected after 331 tests, all 33 differential cases, startup follow-up, unchanged budgets and cross-platform CI passed.
 
-These are separate paired runs under changing load. Raw reports preserve all observations; comparing absolute milliseconds across separate trials would be misleading.
+All trials are separate paired experiments under changing host load; their absolute times must not be compared as though they were one controlled run. Prior reports are retained, including C files named final-paired.json and focused-paired.json. Those names reflect the earlier experiment and are not the selected deliverable. The selected-* files identify Trial D unambiguously.
 
-## Correctness review
+## Correctness and review
 
-The file prefilter can reject a candidate only when a required literal is absent from the entire file. Such a literal cannot occur on any line. Presence never proves a match: anchors, flags, captures, lookarounds and backreferences are still evaluated by the original line matcher. Unsupported proofs yield no filter. The threshold of eight split lines amortizes the extra search on multiline inputs.
+A mandatory literal absent from the whole file is absent from every line. Its presence is never treated as sufficient for a match. The original line matcher still owns anchors, flags, captures, lookarounds, backreferences and failures. Unsupported or failed proof extraction supplies no filter. Case-sensitive substring searches preserve escaped-literal semantics; Unicode folding remains unchanged, including Kelvin-sign equivalence.
 
-Case-sensitive substring matching has the same exact-literal semantics as an escaped regex. Case-insensitive literals retain the original Unicode-aware regex, including Kelvin-sign folding. Source read, UTF-8 validation, line/file bounds and rule scoping precede the file filter. Diagnostic limits, required failures, output construction and minFiles accounting are unchanged. No rule-ID shortcuts or policy changes were introduced.
+Source reads, UTF-8 validation, source/line bounds and include/exclude rules run before candidate rejection. Diagnostic/backtracking limits, excerpt construction, minFiles accounting, failure policy and deterministic output are unchanged. The regression cases include scoped/global flags, optional literals, alternatives, anchors, CRLF, trailing empty lines, UTF-16 excerpts, invalid UTF-8, line/file/diagnostic bounds, true backtracking failure and test-file scoping.
 
-The new tests exercise all shipped canaries, alternative/optional literals, scoped/global flags, Unicode, anchors, CRLF/trailing-empty lines, UTF-16 excerpts, invalid UTF-8, file/line/diagnostic limits, backtracking failure, include/exclude rules and test-file scoping. One initial property used fancy-regex as an oracle for a linear-engine rule; the unchanged baseline confirmed the engines differ on global plus scoped case folding. The property now uses the original linear matcher, and independent baseline/candidate CLI cases retain that edge case. Production behavior was not changed to satisfy the test.
+One initial test used fancy-regex as oracle for an expression actually handled by the linear engine. The original baseline confirmed those engines differ with global case folding and a scoped flag removal. The oracle now uses the original linear matcher, and independent baseline/candidate CLI fixtures retain that edge case. Production behavior was not changed to satisfy the test.
 
-## Verification evidence
+Comparison ignores only coverage elapsed times and the exact six-character AST scratch-directory nonce in its project-summary metadata. Findings, order, severity, locations, rule counts, coverage status, selected files, errors, arbitrary diagnostic text and exit codes remain compared. Seven harness tests protect that boundary and the statistics/corpus identity logic.
 
-- 330 workspace Rust tests: passed.
-- Formatting and strict Clippy across workspace/all targets: passed.
-- Architecture dependency/source/specification contract: passed.
-- Existing spec-drift and hosting-policy test suites: passed.
-- Seven benchmark-harness tests: passed.
-- 29 real CLI acceptance tests, with required compiler tools: passed.
-- Packaged npm tarball acceptance: launcher provenance, bundled self-test, non-TypeScript project rule, missing override and recursion fail-closed behavior passed.
-- All 31 full-comparison workloads preserved exits and semantic reports; native cases normalize coverage timing only, external AST comparison additionally normalizes its exact scratch-directory nonce. Findings, order, coverage status, counts, paths and errors are not broadly normalized.
-- Existing six release-performance budgets passed unchanged, including real AST and TypeScript; see baseline.json and budgets-trial-c.json. Those budget runs are not an interleaved A/B comparison.
-- PR checks on measured source revision 90e5045: Linux, macOS, Windows, quality, architecture, workflow lint, performance and both trusted-metadata statuses passed. Final evidence-only revision requires its own checks before merge.
+Self-review is recorded on PR #27 at exact head fb15d2d under ADR 0004. This is not an independent human endorsement. All nine required statuses passed before the ordinary protected merge; no check was bypassed.
 
-No finite test suite establishes the absence of every possible regression. These results establish no detected functional regression for the covered inputs, with preserved safety boundaries and passing cross-platform CI.
+## Verification
 
-## Reproduction
+- 331 workspace Rust tests: passed.
+- 31 native differential cases plus two real external cases: passed with preserved outputs and exits.
+- Seven comparison-harness tests: passed.
+- 29 real CLI acceptance tests with required compiler tools: passed.
+- Formatting, strict workspace/all-target Clippy, architecture/source/specification checks and existing governance tests: passed.
+- Linux, macOS and Windows CI: passed. These jobs include real native CLI and packaged-consumer acceptance.
+- Selected Linux package acceptance verifies source digest d5ddd50ef1932ef58d7fc52b110b09161874e2c38c339bcd112de674420225d3, bundled self-test, launcher selection, non-TypeScript project-rule blocking and invalid override failure.
+- All six existing release performance budgets: passed unchanged.
 
-Use separate base/candidate checkouts, the pinned toolchain, locked dependencies and identical release settings. Preserve each built binary before rebuilding. Supply the baseline source directory as common engine assets and source corpus. Build snapshots need their own .git boundary so project discovery does not select a parent repository. Standalone copied binaries need SLOPGATE_ENGINE_ROOT or the harness --engine-root option.
+| Existing budget workload | Selected median ms | Selected p95 ms |
+|---|---:|---:|
+| native-file | 9.352 | 13.148 |
+| native-file-with-ast | 25.567 | 33.535 |
+| long-line-negative | 8.467 | 12.176 |
+| long-line-positive | 10.973 | 14.169 |
+| native-repository | 25.214 | 29.852 |
+| typescript-incremental | 592.369 | 613.237 |
+
+These budget runs are not the paired comparison above. Absolute early and late timings reflect different shared-host load. Runtime peak memory, energy use and cold-disk behavior were not measured.
+
+## Provenance and reproduction
+
+Baseline binary SHA256: `716eb4f6e003cfbe0df78bb05d8dba4bfb0215054fcc594a4025ee59a66ac982`.
+
+Selected binary SHA256: `ffbdb991ad374de9c210bfcbeb095fc7744d81e8765b189994edf52e07f0a1db`.
+
+Selected source digest: `d5ddd50ef1932ef58d7fc52b110b09161874e2c38c339bcd112de674420225d3`.
+
+Binary size changed from 4255152 to 4255904 bytes. This tiny increase is disclosed; no binary-size or runtime-memory optimization is claimed.
+
+Build the base and candidate separately using the pinned toolchain, locked dependencies and identical existing release flags. Preserve both binaries. Source archives require a .git boundary to prevent repository discovery from selecting an unrelated parent. Standalone binaries require the supported engine-root override or harness option. Provision tools with the existing scripts/provision-test-tools.mjs before measuring. The harness itself downloads nothing.
 
 ```sh
 export SLOPGATE_TEST_TOOLS=/absolute/path/to/provisioned-tools
@@ -104,10 +129,15 @@ python3 scripts/compare_performance.py \
   --before /absolute/path/slopgate-before \
   --after /absolute/path/slopgate-after \
   --engine-root /absolute/path/base-checkout \
-  --structural --semantic --samples 31 --warmups 3 \
-  --output comparison.json
+  --samples 31 --warmups 3 --output native.json
+python3 scripts/compare_performance.py \
+  --before /absolute/path/slopgate-before \
+  --after /absolute/path/slopgate-after \
+  --engine-root /absolute/path/base-checkout \
+  --structural --semantic --only native-file-with-ast typescript-incremental \
+  --samples 31 --warmups 3 --output external.json
 ```
 
-The harness downloads nothing. Provision tools using the existing scripts/provision-test-tools.mjs before measuring. Each invocation is a fresh process on a warm filesystem; only TypeScript uses its normal tool-owned incremental state. There is no Slopgate result cache.
+Raw evidence: `docs/reviews/evidence/slopgate-performance-20260929/`. Selected measurements are selected-native.json, selected-startup.json, selected-external.json and selected-budgets.json. selected-summary.json is a derived compact summary. Logs are losslessly stored as .log.gz, with stored and uncompressed hashes in manifest.json. Selected exact-head CI and implementation merge/review records are included.
 
-Raw reports and logs: `docs/reviews/evidence/slopgate-performance-20260929/`. Raw logs are losslessly stored as .log.gz; `manifest.json` records stored hashes and uncompressed log hashes. Preserved worker binaries and comparison sources remain in `/home/user/benchmarks/slopgate-perf-20260929/` until disposable build artifacts are cleaned up. The original shared main checkout had unrelated edits and was not reset or stashed.
+The implementation worktree and its merged local/remote branch have been removed. The canonical checkout had unrelated edits before this task and was not reset, stashed or overwritten. Worker binaries and raw evidence remain under `/home/user/benchmarks/slopgate-perf-20260929/`; there is no continuing benchmark job. No npm release or version bump was made.

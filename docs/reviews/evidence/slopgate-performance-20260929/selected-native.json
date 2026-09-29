@@ -1,0 +1,1786 @@
+{
+  "schemaVersion": 1,
+  "machine": {
+    "platform": "Linux-7.2.6+deb14-amd64-x86_64-with-glibc2.43",
+    "cpu": "",
+    "logicalCpus": 8,
+    "affinity": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ],
+    "python": "3.14.7",
+    "loadBefore": [
+      10.20654296875,
+      10.62890625,
+      8.85400390625
+    ],
+    "loadAfter": [
+      9.09228515625,
+      10.265625,
+      8.82373046875
+    ]
+  },
+  "before": {
+    "binarySha256": "716eb4f6e003cfbe0df78bb05d8dba4bfb0215054fcc594a4025ee59a66ac982",
+    "binaryBytes": 4255152,
+    "engine": {
+      "executable": "/home/user/benchmarks/slopgate-perf-20260929/evidence/slopgate-before",
+      "revision": "9e3210c",
+      "sourceDigest": "eae575ca7f7951f56a52e656dbacb93379163f6c03498021b5abf6f7d905ddd1",
+      "specification": "universal-gate-v1",
+      "version": "0.4.0"
+    }
+  },
+  "after": {
+    "binarySha256": "ffbdb991ad374de9c210bfcbeb095fc7744d81e8765b189994edf52e07f0a1db",
+    "binaryBytes": 4255904,
+    "engine": {
+      "executable": "/home/user/benchmarks/slopgate-perf-20260929/evidence/slopgate-trial-d",
+      "revision": "fb15d2d72dbc18a972cf9b663f168debbbe87856",
+      "sourceDigest": "d5ddd50ef1932ef58d7fc52b110b09161874e2c38c339bcd112de674420225d3",
+      "specification": "universal-gate-v1",
+      "version": "0.4.0"
+    }
+  },
+  "method": {
+    "order": "alternating AB/BA pairs",
+    "warmupsPerVariant": 3,
+    "samplesPerVariant": 31,
+    "normalization": "coverage[].elapsedMs and the six-character scratch-directory nonce in the AST project summary only",
+    "notes": "Fresh process, warm filesystem; no Slopgate result cache. TypeScript uses shared tool-owned incremental state warmed for both variants. Shared host load and CPU frequency are not controlled. Stage traces are untimed additional runs. Bootstrap intervals describe these paired samples, not other machines."
+  },
+  "workloads": {
+    "small-file": {
+      "corpus": {
+        "sha256": "5ad77d05f403ef644ddf4537df3d7209e39d398983f946f79fd938b52acea32b",
+        "files": 1,
+        "sourceBytes": 1100,
+        "splitLines": 33
+      },
+      "behaviorIdentical": true,
+      "stageTraceBeforeMs": {
+        "discovery": 0,
+        "regex": 3
+      },
+      "stageTraceAfterMs": {
+        "discovery": 0,
+        "regex": 2
+      },
+      "exitCode": 0,
+      "findings": 0,
+      "semanticSha256": "8e885f2600234d276cb1ef85cfadfb6b9bc1a48dc3b2199f03377aaa74a2c2d4",
+      "before": {
+        "samples": 31,
+        "medianMs": 9.813546,
+        "p95Ms": 11.471668,
+        "minMs": 7.805453,
+        "maxMs": 11.581268,
+        "rawMs": [
+          11.581268,
+          9.615393,
+          9.95524,
+          7.805453,
+          8.160175,
+          10.003566,
+          8.276606,
+          10.078968,
+          9.845235,
+          8.769303,
+          9.845792,
+          8.81132,
+          9.315332,
+          9.113731,
+          9.135602,
+          8.939038,
+          11.255407,
+          11.116813,
+          10.277638,
+          9.813546,
+          11.233593,
+          9.393518,
+          9.471294,
+          11.471668,
+          8.393656,
+          9.578964,
+          11.153215,
+          9.781702,
+          10.153046,
+          10.17534,
+          10.098472
+        ]
+      },
+      "after": {
+        "samples": 31,
+        "medianMs": 10.108931,
+        "p95Ms": 13.042571,
+        "minMs": 7.817657,
+        "maxMs": 15.329845,
+        "rawMs": [
+          10.409198,
+          9.845683,
+          9.552399,
+          7.817657,
+          8.063623,
+          8.231073,
+          11.598746,
+          13.042571,
+          8.453546,
+          9.598561,
+          11.032322,
+          8.018686,
+          8.351048,
+          8.783409,
+          9.552217,
+          10.386972,
+          10.108931,
+          11.331403,
+          10.301992,
+          11.227919,
+          10.868776,
+          15.329845,
+          9.63051,
+          9.908714,
+          9.497676,
+          10.513636,
+          9.39486,
+          10.652055,
+          10.939936,
+          10.533599,
+          10.279614
+        ]
+      },
+      "medianSpeedup": 0.9707797985761304,
+      "pairedSpeedup95Pct": [
+        0.9280717912792178,
+        1.033565601131167
+      ]
+    },
+    "repository-1001": {
+      "corpus": {
+        "sha256": "cc16629a9a47015db250f310a243b40a93e58e5e909b690db1f3e7759f9dcad0",
+        "files": 1001,
+        "sourceBytes": 1101100,
+        "splitLines": 33033
+      },
+      "behaviorIdentical": true,
+      "stageTraceBeforeMs": {
+        "discovery": 5,
+        "regex": 23
+      },
+      "stageTraceAfterMs": {
+        "discovery": 4,
+        "regex": 14
+      },
+      "exitCode": 0,
+      "findings": 0,
+      "semanticSha256": "1b75be78bf4f47ac4818792d6fc403c15a9e3dc7d39efda8b5e2ea2801224ec0",
+      "before": {
+        "samples": 31,
+        "medianMs": 32.249397,
+        "p95Ms": 34.382983,
+        "minMs": 29.312048,
+        "maxMs": 36.14136,
+        "rawMs": [
+          33.336266,
+          34.382983,
+          32.055141,
+          33.029747,
+          32.792119,
+          31.79025,
+          32.291777,
+          32.567777,
+          36.14136,
+          33.617057,
+          30.403011,
+          30.327094,
+          33.574359,
+          33.173282,
+          32.249397,
+          32.074676,
+          31.36101,
+          32.939662,
+          33.04073,
+          32.448318,
+          32.44092,
+          31.353884,
+          30.095073,
+          31.592423,
+          29.312048,
+          31.197344,
+          34.23264,
+          31.42009,
+          31.632859,
+          31.849917,
+          31.200359
+        ]
+      },
+      "after": {
+        "samples": 31,
+        "medianMs": 26.027748,
+        "p95Ms": 32.127125,
+        "minMs": 23.35313,
+        "maxMs": 33.608849,
+        "rawMs": [
+          25.745815,
+          33.608849,
+          25.855956,
+          24.466404,
+          24.787515,
+          26.099511,
+          28.7174,
+          25.570745,
+          29.13591,
+          25.091993,
+          26.79633,
+          23.35313,
+          24.285438,
+          26.445814,
+          26.993971,
+          26.027748,
+          26.272122,
+          26.616339,
+          25.948728,
+          25.141287,
+          27.185487,
+          24.643534,
+          24.713615,
+          26.324914,
+          24.905249,
+          25.41669,
+          32.127125,
+          27.029972,
+          27.307393,
+          24.283785,
+          26.21378
+        ]
+      },
+      "medianSpeedup": 1.2390390824438597,
+      "pairedSpeedup95Pct": [
+        1.1946888807134008,
+        1.2722965788916476
+      ]
+    },
+    "large-file": {
+      "corpus": {
+        "sha256": "c15d8194fd896d1a3627d87646c17c84cf126b1b8388ac8fc23f4e0a9deaaab0",
+        "files": 1,
+        "sourceBytes": 1207780,
+        "splitLines": 30001
+      },
+      "behaviorIdentical": true,
+      "stageTraceBeforeMs": {
+        "discovery": 0,
+        "regex": 16
+      },
+      "stageTraceAfterMs": {
+        "discovery": 0,
+        "regex": 11
+      },
+      "exitCode": 0,
+      "findings": 0,
+      "semanticSha256": "8e885f2600234d276cb1ef85cfadfb6b9bc1a48dc3b2199f03377aaa74a2c2d4",
+      "before": {
+        "samples": 31,
+        "medianMs": 23.925423,
+        "p95Ms": 28.032654,
+        "minMs": 21.400795,
+        "maxMs": 28.685022,
+        "rawMs": [
+          22.948686,
+          21.400795,
+          24.48354,
+          23.664816,
+          21.979571,
+          23.459499,
+          28.032654,
+          23.796528,
+          26.012992,
+          24.247703,
+          23.016441,
+          25.347639,
+          26.182395,
+          24.688616,
+          24.679546,
+          23.925423,
+          25.573842,
+          22.56976,
+          25.989005,
+          23.853286,
+          23.110062,
+          28.685022,
+          25.16893,
+          23.082862,
+          23.03823,
+          23.523825,
+          25.444504,
+          24.420445,
+          23.144037,
+          22.612958,
+          27.998215
+        ]
+      },
+      "after": {
+        "samples": 31,
+        "medianMs": 18.315692,
+        "p95Ms": 23.570064,
+        "minMs": 16.358048,
+        "maxMs": 25.089294,
+        "rawMs": [
+          17.628625,
+          19.231107,
+          17.872342,
+          16.711818,
+          21.410774,
+          18.181351,
+          19.123004,
+          23.045365,
+          23.570064,
+          18.433763,
+          18.315692,
+          19.600313,
+          18.6388,
+          21.401304,
+          18.310526,
+          25.089294,
+          19.11007,
+          18.068312,
+          18.838474,
+          18.23943,
+          17.791021,
+          22.769336,
+          17.891431,
+          21.048523,
+          17.422452,
+          16.9525,
+          19.106871,
+          17.947276,
+          17.591619,
+          16.358048,
+          17.611661
+        ]
+      },
+      "medianSpeedup": 1.3062800466397884,
+      "pairedSpeedup95Pct": [
+        1.2903055994023767,
+        1.3478338088157598
+      ]
+    },
+    "large-repository": {
+      "corpus": {
+        "sha256": "16202f1c5c56357154d8aacf85930eb417d8e61c78a651bf9a1d531cc1c8294e",
+        "files": 256,
+        "sourceBytes": 4793344,
+        "splitLines": 131328
+      },
+      "behaviorIdentical": true,
+      "stageTraceBeforeMs": {
+        "discovery": 1,
+        "regex": 61
+      },
+      "stageTraceAfterMs": {
+        "discovery": 1,
+        "regex": 34
+      },
+      "exitCode": 0,
+      "findings": 0,
+      "semanticSha256": "f74bf1057a5fa5d054633eada443e3f9d9fbc5e454905036ad186abac9defdd9",
+      "before": {
+        "samples": 31,
+        "medianMs": 58.742396,
+        "p95Ms": 64.479795,
+        "minMs": 52.957159,
+        "maxMs": 66.332463,
+        "rawMs": [
+          60.715425,
+          58.54786,
+          61.039381,
+          62.876346,
+          66.332463,
+          59.722135,
+          60.874589,
+          60.524295,
+          59.80318,
+          63.025766,
+          58.408318,
+          55.784184,
+          55.683752,
+          52.957159,
+          56.174676,
+          54.497096,
+          55.533873,
+          54.164153,
+          57.406709,
+          57.221357,
+          60.102742,
+          64.479795,
+          54.299178,
+          55.432229,
+          58.455671,
+          58.742396,
+          60.617635,
+          57.723592,
+          62.290538,
+          60.038311,
+          59.591493
+        ]
+      },
+      "after": {
+        "samples": 31,
+        "medianMs": 36.987061,
+        "p95Ms": 42.642026,
+        "minMs": 32.883846,
+        "maxMs": 44.203693,
+        "rawMs": [
+          40.158571,
+          37.848266,
+          39.125142,
+          44.203693,
+          38.252138,
+          42.642026,
+          36.326213,
+          39.682649,
+          41.400649,
+          38.818046,
+          40.928049,
+          32.883846,
+          35.93484,
+          36.171759,
+          37.313168,
+          32.907276,
+          34.151583,
+          35.257974,
+          33.927956,
+          38.287721,
+          35.944563,
+          36.629943,
+          35.093826,
+          35.089716,
+          35.069786,
+          38.170331,
+          36.647873,
+          37.287477,
+          39.404548,
+          36.987061,
+          36.854865
+        ]
+      },
+      "medianSpeedup": 1.58818771786166,
+      "pairedSpeedup95Pct": [
+        1.5389543255467186,
+        1.6236202615659736
+      ]
+    },
+    "all-packs-small-file": {
+      "corpus": {
+        "sha256": "8869cf2ed3bf3dd5f761c22f8ff7990bb0ed30e0e36a8af060ee997c48d37877",
+        "files": 1,
+        "sourceBytes": 1100,
+        "splitLines": 33
+      },
+      "behaviorIdentical": true,
+      "stageTraceBeforeMs": {
+        "discovery": 0,
+        "regex": 19
+      },
+      "stageTraceAfterMs": {
+        "discovery": 0,
+        "regex": 18
+      },
+      "exitCode": 0,
+      "findings": 0,
+      "semanticSha256": "11ca0672e98f161698a3cc2743112a2fefc5d0c4dd6b6acbc82a1b4ec53d0fbd",
+      "before": {
+        "samples": 31,
+        "medianMs": 37.394923,
+        "p95Ms": 40.299674,
+        "minMs": 34.983582,
+        "maxMs": 41.059703,
+        "rawMs": [
+          38.598354,
+          34.983582,
+          37.672601,
+          39.387102,
+          38.941164,
+          35.729921,
+          35.673651,
+          36.161829,
+          37.394923,
+          35.505437,
+          40.239153,
+          39.735009,
+          39.099402,
+          41.059703,
+          39.32591,
+          38.313679,
+          38.995585,
+          40.064486,
+          36.27754,
+          35.56204,
+          35.534154,
+          36.425318,
+          35.824359,
+          35.891577,
+          36.953806,
+          37.706534,
+          40.299674,
+          37.34155,
+          37.229318,
+          36.840188,
+          38.975957
+        ]
+      },
+      "after": {
+        "samples": 31,
+        "medianMs": 37.50092,
+        "p95Ms": 43.826002,
+        "minMs": 34.424585,
+        "maxMs": 43.960221,
+        "rawMs": [
+          36.418277,
+          34.729917,
+          35.156672,
+          37.50092,
+          35.447582,
+          34.520576,
+          35.964822,
+          36.453157,
+          37.813773,
+          38.432528,
+          38.063635,
+          41.274346,
+          39.794812,
+          39.091536,
+          43.826002,
+          41.840647,
+          37.518587,
+          36.855272,
+          43.960221,
+          36.217328,
+          34.424585,
+          36.958091,
+          38.058606,
+          36.817543,
+          36.152417,
+          37.986156,
+          36.900968,
+          39.270829,
+          38.498455,
+          39.765428,
+          37.440523
+        ]
+      },
+      "medianSpeedup": 0.9971734826772249,
+      "pairedSpeedup95Pct": [
+        0.9748498698025557,
+        1.0350325846243122
+      ]
+    },
+    "all-packs-repository": {
+      "corpus": {
+        "sha256": "70eb88f7b8358034e450ebc03e42d3f33082cb8d1458ec82ebfac6921f4394ca",
+        "files": 256,
+        "sourceBytes": 4793344,
+        "splitLines": 131328
+      },
+      "behaviorIdentical": true,
+      "stageTraceBeforeMs": {
+        "discovery": 1,
+        "regex": 413
+      },
+      "stageTraceAfterMs": {
+        "discovery": 1,
+        "regex": 326
+      },
+      "exitCode": 0,
+      "findings": 0,
+      "semanticSha256": "8454085872419d0f6e69cb917d3909fed8fa75dd542c8102c31284d887f05d7c",
+      "before": {
+        "samples": 31,
+        "medianMs": 428.331588,
+        "p95Ms": 446.161629,
+        "minMs": 397.343962,
+        "maxMs": 449.482094,
+        "rawMs": [
+          439.594134,
+          424.605742,
+          436.86133,
+          439.733925,
+          429.903779,
+          430.347043,
+          428.704364,
+          418.526751,
+          418.649301,
+          421.320869,
+          417.078551,
+          424.897512,
+          444.723535,
+          431.32662,
+          434.704223,
+          425.243444,
+          406.295051,
+          416.556036,
+          418.309445,
+          436.733849,
+          435.604148,
+          449.482094,
+          397.343962,
+          413.115816,
+          425.385916,
+          421.980456,
+          428.331588,
+          426.071634,
+          433.860468,
+          446.161629,
+          440.671036
+        ]
+      },
+      "after": {
+        "samples": 31,
+        "medianMs": 355.564389,
+        "p95Ms": 378.563501,
+        "minMs": 326.200689,
+        "maxMs": 387.688862,
+        "rawMs": [
+          352.392444,
+          350.498037,
+          364.228919,
+          359.813001,
+          362.795681,
+          345.089015,
+          357.246368,
+          355.129262,
+          353.013348,
+          354.23641,
+          345.113032,
+          387.688862,
+          376.644254,
+          364.787911,
+          376.691954,
+          348.635424,
+          334.759614,
+          360.762454,
+          355.564389,
+          353.43122,
+          365.031226,
+          378.563501,
+          341.298877,
+          326.200689,
+          343.184835,
+          371.654928,
+          363.829718,
+          351.777928,
+          365.855897,
+          368.596937,
+          349.081681
+        ]
+      },
+      "medianSpeedup": 1.204652662783955,
+      "pairedSpeedup95Pct": [
+        1.1849749087834371,
+        1.211194904758209
+      ]
+    },
+    "large-file-positive": {
+      "corpus": {
+        "sha256": "b5c712f782055f0ded68c017739956461addaf6cc3cac0b5bb79a3d6231f0518",
+        "files": 1,
+        "sourceBytes": 1207819,
+        "splitLines": 30002
+      },
+      "behaviorIdentical": true,
+      "stageTraceBeforeMs": {
+        "discovery": 0,
+        "regex": 16
+      },
+      "stageTraceAfterMs": {
+        "discovery": 0,
+        "regex": 17
+      },
+      "exitCode": 1,
+      "findings": 1,
+      "semanticSha256": "682adc736f6fcdeff3865d28ec82b2e44d988262665fbdcb1b2020d9c5b40815",
+      "before": {
+        "samples": 31,
+        "medianMs": 23.503479,
+        "p95Ms": 28.706329,
+        "minMs": 20.078106,
+        "maxMs": 28.792066,
+        "rawMs": [
+          28.792066,
+          23.465636,
+          24.404333,
+          22.58708,
+          23.749234,
+          28.488244,
+          22.444087,
+          24.856458,
+          22.098338,
+          22.319506,
+          23.884964,
+          23.949817,
+          28.706329,
+          24.725247,
+          24.861136,
+          23.43123,
+          23.722397,
+          20.078106,
+          22.194047,
+          24.024109,
+          22.968636,
+          21.363698,
+          21.301276,
+          23.17316,
+          23.209446,
+          23.102529,
+          25.849788,
+          23.503479,
+          21.786376,
+          24.333352,
+          23.916901
+        ]
+      },
+      "after": {
+        "samples": 31,
+        "medianMs": 19.365228,
+        "p95Ms": 28.694428,
+        "minMs": 17.307356,
+        "maxMs": 28.88765,
+        "rawMs": [
+          19.975883,
+          22.028852,
+          19.268954,
+          20.322222,
+          18.82334,
+          21.237002,
+          18.63516,
+          18.228831,
+          19.345332,
+          18.259545,
+          18.382707,
+          18.633489,
+          19.267915,
+          28.694428,
+          22.688664,
+          20.913941,
+          20.21915,
+          19.082336,
+          20.2328,
+          17.307356,
+          17.419768,
+          17.62965,
+          17.831589,
+          19.365228,
+          19.63108,
+          18.968995,
+          19.374249,
+          20.730581,
+          21.61537,
+          21.292029,
+          28.88765
+        ]
+      },
+      "medianSpeedup": 1.2136949278366358,
+      "pairedSpeedup95Pct": [
+        1.1423085424432105,
+        1.2616907520131921
+      ]
+    },
+    "compatibility-unfilterable": {
+      "corpus": {
+        "sha256": "5d17de42bd71514d1ae1fec36a1e3a83c7ead86c179ee9ccddce2eba0e7cae2c",
+        "files": 1,
+        "sourceBytes": 630000,
+        "splitLines": 30001
+      },
+      "behaviorIdentical": true,
+      "stageTraceBeforeMs": {
+        "discovery": 0,
+        "regex": 2
+      },
+      "stageTraceAfterMs": {
+        "discovery": 0,
+        "regex": 3
+      },
+      "exitCode": 0,
+      "findings": 0,
+      "semanticSha256": "20b2ff358f761e1710d4091005f548ea55e0f3f2300a9bc277f4dee8e11b250a",
+      "before": {
+        "samples": 31,
+        "medianMs": 5.975739,
+        "p95Ms": 7.465175,
+        "minMs": 4.398122,
+        "maxMs": 7.514329,
+        "rawMs": [
+          6.133716,
+          6.191286,
+          4.519983,
+          5.620785,
+          6.293552,
+          6.620189,
+          6.716117,
+          6.282067,
+          5.982313,
+          4.890306,
+          4.982078,
+          5.472791,
+          5.810731,
+          5.011073,
+          5.975739,
+          6.320259,
+          6.058268,
+          7.390473,
+          4.810901,
+          4.945377,
+          4.809653,
+          5.523198,
+          4.95315,
+          7.465175,
+          5.54637,
+          6.967355,
+          6.218153,
+          6.096515,
+          7.514329,
+          4.398122,
+          5.61955
+        ]
+      },
+      "after": {
+        "samples": 31,
+        "medianMs": 5.67083,
+        "p95Ms": 6.698953,
+        "minMs": 4.068532,
+        "maxMs": 6.732226,
+        "rawMs": [
+          6.133043,
+          6.077614,
+          5.895198,
+          4.996713,
+          5.994577,
+          5.151195,
+          6.732226,
+          6.5575,
+          5.364079,
+          5.641841,
+          4.985845,
+          5.139974,
+          5.829488,
+          4.94863,
+          4.647777,
+          5.94345,
+          4.18317,
+          6.326966,
+          4.70197,
+          5.971425,
+          5.936849,
+          4.637249,
+          4.446509,
+          4.822724,
+          5.67083,
+          6.112372,
+          4.068532,
+          6.698953,
+          6.239351,
+          5.862622,
+          4.548761
+        ]
+      },
+      "medianSpeedup": 1.0537679669466375,
+      "pairedSpeedup95Pct": [
+        0.999244461069287,
+        1.1248965069636778
+      ]
+    },
+    "long-line-negative": {
+      "corpus": {
+        "sha256": "46f6338b40ffdf9cc5f114c80dd86a374ea37fca469a63389a643a4c6b90b392",
+        "files": 1,
+        "sourceBytes": 150020,
+        "splitLines": 2
+      },
+      "behaviorIdentical": true,
+      "stageTraceBeforeMs": {
+        "discovery": 0,
+        "regex": 2
+      },
+      "stageTraceAfterMs": {
+        "discovery": 0,
+        "regex": 2
+      },
+      "exitCode": 0,
+      "findings": 0,
+      "semanticSha256": "8e885f2600234d276cb1ef85cfadfb6b9bc1a48dc3b2199f03377aaa74a2c2d4",
+      "before": {
+        "samples": 31,
+        "medianMs": 9.918791,
+        "p95Ms": 12.277002,
+        "minMs": 8.225425,
+        "maxMs": 12.647738,
+        "rawMs": [
+          12.647738,
+          10.081642,
+          10.370106,
+          10.515181,
+          12.277002,
+          10.40896,
+          8.225425,
+          9.901333,
+          10.156507,
+          9.591936,
+          10.013571,
+          10.093828,
+          11.545627,
+          9.671856,
+          9.07938,
+          10.292081,
+          9.512066,
+          10.463778,
+          9.773759,
+          10.615071,
+          8.255178,
+          8.454862,
+          8.724602,
+          8.858341,
+          10.204036,
+          9.354595,
+          10.18512,
+          9.191967,
+          9.005614,
+          9.779621,
+          9.918791
+        ]
+      },
+      "after": {
+        "samples": 31,
+        "medianMs": 9.114839,
+        "p95Ms": 10.621344,
+        "minMs": 7.853769,
+        "maxMs": 12.704944,
+        "rawMs": [
+          9.728484,
+          7.923327,
+          10.248843,
+          8.769221,
+          9.22209,
+          8.250657,
+          9.809954,
+          9.48226,
+          10.100871,
+          9.015412,
+          9.534918,
+          12.704944,
+          10.621344,
+          8.903382,
+          9.397805,
+          8.10094,
+          8.42684,
+          9.18699,
+          9.891812,
+          8.501491,
+          10.460556,
+          8.004002,
+          8.473125,
+          9.114839,
+          9.482672,
+          9.180293,
+          8.800616,
+          8.799322,
+          8.734396,
+          7.853769,
+          7.860699
+        ]
+      },
+      "medianSpeedup": 1.0882025453219746,
+      "pairedSpeedup95Pct": [
+        1.0310517178291434,
+        1.1389778371370818
+      ]
+    },
+    "long-line-positive": {
+      "corpus": {
+        "sha256": "2a2fa7d33589f46d572b2679e8e377640d8704b0832cc7a771f1e3e3cb0db90f",
+        "files": 1,
+        "sourceBytes": 4155,
+        "splitLines": 2
+      },
+      "behaviorIdentical": true,
+      "stageTraceBeforeMs": {
+        "discovery": 0,
+        "regex": 3
+      },
+      "stageTraceAfterMs": {
+        "discovery": 0,
+        "regex": 3
+      },
+      "exitCode": 1,
+      "findings": 1,
+      "semanticSha256": "4830308bc331529114d641bada100c14bda522b77c6cb54e832529dd1c3c86e3",
+      "before": {
+        "samples": 31,
+        "medianMs": 10.038508,
+        "p95Ms": 12.356682,
+        "minMs": 8.252562,
+        "maxMs": 13.360389,
+        "rawMs": [
+          10.582262,
+          9.345866,
+          10.038508,
+          10.843053,
+          13.360389,
+          12.266485,
+          10.232042,
+          12.01885,
+          10.124029,
+          11.197396,
+          8.903414,
+          9.480956,
+          11.146638,
+          9.222396,
+          9.994701,
+          10.000611,
+          8.252562,
+          9.421366,
+          8.708592,
+          8.777824,
+          9.747336,
+          9.124019,
+          10.011063,
+          10.122132,
+          9.216492,
+          8.813921,
+          10.253825,
+          11.89938,
+          11.463837,
+          11.563348,
+          12.356682
+        ]
+      },
+      "after": {
+        "samples": 31,
+        "medianMs": 9.878095,
+        "p95Ms": 11.177374,
+        "minMs": 8.337068,
+        "maxMs": 12.782868,
+        "rawMs": [
+          10.504909,
+          9.706327,
+          11.177374,
+          8.744888,
+          12.782868,
+          10.359635,
+          8.654887,
+          10.295281,
+          10.380246,
+          8.810854,
+          9.935729,
+          10.959373,
+          8.849868,
+          10.723397,
+          11.149956,
+          9.745418,
+          8.726895,
+          8.337068,
+          8.455002,
+          9.500454,
+          9.878095,
+          9.04476,
+          8.577475,
+          9.947854,
+          8.648657,
+          10.329815,
+          8.80001,
+          10.28308,
+          10.380339,
+          9.808454,
+          11.115242
+        ]
+      },
+      "medianSpeedup": 1.0162392647570204,
+      "pairedSpeedup95Pct": [
+        0.9867627310731473,
+        1.130057473442702
+      ]
+    },
+    "slopgate-source": {
+      "corpus": {
+        "sha256": "882dc13a45b911a6658f0ffbbd312f5423764a5780b61aebd33048a8fe6b7461",
+        "files": 73,
+        "sourceBytes": 742799,
+        "splitLines": 21853
+      },
+      "behaviorIdentical": true,
+      "stageTraceBeforeMs": {
+        "discovery": 0,
+        "regex": 22
+      },
+      "stageTraceAfterMs": {
+        "discovery": 0,
+        "regex": 16
+      },
+      "exitCode": 1,
+      "findings": 15,
+      "semanticSha256": "1a95520dcf6bc64bfc9f5a1d75ad8f85117e95534aea7024a7f0467d4bbfe045",
+      "before": {
+        "samples": 31,
+        "medianMs": 30.281437,
+        "p95Ms": 34.966293,
+        "minMs": 26.456257,
+        "maxMs": 35.262018,
+        "rawMs": [
+          32.033191,
+          29.147168,
+          30.826425,
+          30.933785,
+          30.50065,
+          31.446998,
+          30.740851,
+          28.443497,
+          30.281437,
+          29.207511,
+          28.876923,
+          29.079007,
+          28.817606,
+          29.650768,
+          35.262018,
+          29.579845,
+          30.315378,
+          29.805653,
+          30.532474,
+          34.101699,
+          34.966293,
+          27.3294,
+          30.513875,
+          31.032914,
+          31.016128,
+          28.681851,
+          26.456257,
+          28.174065,
+          27.807811,
+          28.745867,
+          31.801476
+        ]
+      },
+      "after": {
+        "samples": 31,
+        "medianMs": 24.531211,
+        "p95Ms": 30.093192,
+        "minMs": 21.905542,
+        "maxMs": 32.718089,
+        "rawMs": [
+          23.507846,
+          23.420148,
+          24.004903,
+          32.718089,
+          26.010564,
+          29.296044,
+          24.531211,
+          27.039063,
+          26.579118,
+          25.168801,
+          22.679134,
+          22.33498,
+          23.904618,
+          29.121433,
+          26.38556,
+          24.085346,
+          23.161767,
+          23.24729,
+          30.093192,
+          28.76249,
+          24.53926,
+          25.073295,
+          27.630721,
+          24.324346,
+          24.869043,
+          23.122163,
+          21.905542,
+          27.668704,
+          23.00651,
+          23.01692,
+          23.340647
+        ]
+      },
+      "medianSpeedup": 1.2344044898558004,
+      "pairedSpeedup95Pct": [
+        1.172625476325696,
+        1.2531322240879181
+      ]
+    },
+    "linear-dense-positive": {
+      "corpus": {
+        "sha256": "063faf2ee96e3c08d3a0e1e442f6228c84c2f50fcf72ae422349b5113fc06b16",
+        "files": 1,
+        "sourceBytes": 40000,
+        "splitLines": 4001
+      },
+      "behaviorIdentical": true,
+      "stageTraceBeforeMs": {
+        "discovery": 0,
+        "regex": 2
+      },
+      "stageTraceAfterMs": {
+        "discovery": 0,
+        "regex": 2
+      },
+      "exitCode": 1,
+      "findings": 4000,
+      "semanticSha256": "2610230cdd48a3113144594c78760746fd5733cbd4bb878c648b56a24e653d70",
+      "before": {
+        "samples": 31,
+        "medianMs": 19.391404,
+        "p95Ms": 21.556307,
+        "minMs": 17.603433,
+        "maxMs": 25.051277,
+        "rawMs": [
+          19.899163,
+          20.176992,
+          25.051277,
+          21.556307,
+          18.987745,
+          21.357358,
+          20.933259,
+          21.41139,
+          19.10358,
+          20.040333,
+          18.940555,
+          20.04732,
+          19.400872,
+          20.135437,
+          19.021243,
+          18.762265,
+          18.789232,
+          19.175414,
+          19.530708,
+          19.112797,
+          19.639893,
+          19.719973,
+          18.949906,
+          17.709636,
+          18.589344,
+          18.64276,
+          17.603433,
+          18.650075,
+          19.391404,
+          19.292095,
+          19.60844
+        ]
+      },
+      "after": {
+        "samples": 31,
+        "medianMs": 18.938232,
+        "p95Ms": 22.867372,
+        "minMs": 17.242082,
+        "maxMs": 23.467874,
+        "rawMs": [
+          21.587514,
+          20.973774,
+          18.853678,
+          21.374064,
+          21.165824,
+          20.850635,
+          23.467874,
+          22.867372,
+          19.054433,
+          20.903067,
+          18.764238,
+          20.1113,
+          19.81656,
+          18.514925,
+          17.584555,
+          19.186467,
+          17.938363,
+          18.938232,
+          17.615981,
+          18.439431,
+          18.799456,
+          19.204231,
+          17.965107,
+          18.211925,
+          17.242082,
+          18.787328,
+          17.659394,
+          19.925458,
+          19.51577,
+          18.842043,
+          17.404144
+        ]
+      },
+      "medianSpeedup": 1.0239289496506327,
+      "pairedSpeedup95Pct": [
+        0.9923050260260533,
+        1.0268556444670969
+      ]
+    },
+    "compatibility-dense-positive": {
+      "corpus": {
+        "sha256": "a4402a3039ff760ead09ca51190f96943d4bcf886f5ed21a6eebe5b612341b42",
+        "files": 1,
+        "sourceBytes": 46000,
+        "splitLines": 2001
+      },
+      "behaviorIdentical": true,
+      "stageTraceBeforeMs": {
+        "discovery": 0,
+        "regex": 3
+      },
+      "stageTraceAfterMs": {
+        "discovery": 0,
+        "regex": 3
+      },
+      "exitCode": 1,
+      "findings": 4000,
+      "semanticSha256": "fce6b14b01de585f52b294b81a069d80f580e5fc17b4ed220271b8bb5dbec51d",
+      "before": {
+        "samples": 31,
+        "medianMs": 21.673631,
+        "p95Ms": 22.961537,
+        "minMs": 18.990406,
+        "maxMs": 23.342161,
+        "rawMs": [
+          20.335514,
+          20.196971,
+          22.463031,
+          22.794163,
+          21.778056,
+          21.721981,
+          20.729451,
+          22.518636,
+          21.441496,
+          21.209268,
+          21.872604,
+          21.834354,
+          20.613195,
+          20.866379,
+          21.802263,
+          21.514891,
+          20.592153,
+          20.593019,
+          21.859209,
+          22.064705,
+          23.342161,
+          21.581081,
+          22.066615,
+          21.185376,
+          19.692833,
+          18.990406,
+          19.200613,
+          21.733445,
+          22.961537,
+          22.80898,
+          21.673631
+        ]
+      },
+      "after": {
+        "samples": 31,
+        "medianMs": 21.427523,
+        "p95Ms": 23.229405,
+        "minMs": 18.734977,
+        "maxMs": 23.601217,
+        "rawMs": [
+          20.916309,
+          21.556773,
+          21.681936,
+          20.935948,
+          21.383068,
+          21.33628,
+          20.305521,
+          21.627898,
+          20.606991,
+          21.607936,
+          20.563827,
+          21.361152,
+          23.131811,
+          20.716687,
+          21.955149,
+          20.457879,
+          21.427523,
+          19.770304,
+          20.395526,
+          23.191908,
+          23.229405,
+          21.513526,
+          22.624622,
+          19.852063,
+          21.76637,
+          18.734977,
+          20.706107,
+          22.884988,
+          23.601217,
+          21.956586,
+          21.756187
+        ]
+      },
+      "medianSpeedup": 1.0114856019522183,
+      "pairedSpeedup95Pct": [
+        0.9815499268416938,
+        1.0221524569461422
+      ]
+    },
+    "casefold-unicode": {
+      "corpus": {
+        "sha256": "399df8d7d059ce161d3778d9cd32eed71039b5bdf3fd1541518130827ce64aae",
+        "files": 1,
+        "sourceBytes": 16,
+        "splitLines": 3
+      },
+      "behaviorIdentical": true,
+      "stageTraceBeforeMs": {
+        "discovery": 0,
+        "regex": 0
+      },
+      "stageTraceAfterMs": {
+        "discovery": 0,
+        "regex": 0
+      },
+      "exitCode": 1,
+      "findings": 2,
+      "semanticSha256": "f692a480bc6a3bd533ed5dbc2f3e26a9dced42e9d148311112db03aff84f9180"
+    },
+    "scoped-flags": {
+      "corpus": {
+        "sha256": "95e3e222709a03293ead76e5c64322fafe9a152ca182a0916ecb681a2099687c",
+        "files": 1,
+        "sourceBytes": 21,
+        "splitLines": 4
+      },
+      "behaviorIdentical": true,
+      "stageTraceBeforeMs": {
+        "discovery": 0,
+        "regex": 0
+      },
+      "stageTraceAfterMs": {
+        "discovery": 0,
+        "regex": 0
+      },
+      "exitCode": 1,
+      "findings": 2,
+      "semanticSha256": "8b105f7fa2405575f5af550d94bfe4ef971c2fba299e496a29ffbe75e7d7bfe7"
+    },
+    "global-scoped-flags-positive": {
+      "corpus": {
+        "sha256": "0f204b02cce711b8f3757ab63f0c954ecd27b502e846760142ad428ee5e3a079",
+        "files": 1,
+        "sourceBytes": 32782,
+        "splitLines": 4099
+      },
+      "behaviorIdentical": true,
+      "stageTraceBeforeMs": {
+        "discovery": 0,
+        "regex": 0
+      },
+      "stageTraceAfterMs": {
+        "discovery": 0,
+        "regex": 0
+      },
+      "exitCode": 1,
+      "findings": 1,
+      "semanticSha256": "69ac43f6e4d7da7a428b40025860489f305e5c7702497ecd0a1dd8bf50bbcb72"
+    },
+    "global-scoped-flags-negative": {
+      "corpus": {
+        "sha256": "80d138a6d81b04f2458ff8d3d8017dd1254fe642ee889c65b8a70acbe48e238f",
+        "files": 1,
+        "sourceBytes": 32775,
+        "splitLines": 4098
+      },
+      "behaviorIdentical": true,
+      "stageTraceBeforeMs": {
+        "discovery": 0,
+        "regex": 0
+      },
+      "stageTraceAfterMs": {
+        "discovery": 0,
+        "regex": 0
+      },
+      "exitCode": 0,
+      "findings": 0,
+      "semanticSha256": "20b2ff358f761e1710d4091005f548ea55e0f3f2300a9bc277f4dee8e11b250a"
+    },
+    "lookbehind": {
+      "corpus": {
+        "sha256": "7f53e043f6ce1beeba0f12c8665443737c6242a778a8434c6280cd2c37637750",
+        "files": 1,
+        "sourceBytes": 33,
+        "splitLines": 5
+      },
+      "behaviorIdentical": true,
+      "stageTraceBeforeMs": {
+        "discovery": 0,
+        "regex": 0
+      },
+      "stageTraceAfterMs": {
+        "discovery": 0,
+        "regex": 0
+      },
+      "exitCode": 1,
+      "findings": 1,
+      "semanticSha256": "a71e9ef8d63fdce3eb494171af502a92b4ce07e9e2b52b84896b42eaa6c1c34a"
+    },
+    "alternation": {
+      "corpus": {
+        "sha256": "f235a5863f0cef36ba362f6acbe2a630798feeea9e9c635990c064da3ef733cc",
+        "files": 1,
+        "sourceBytes": 10,
+        "splitLines": 3
+      },
+      "behaviorIdentical": true,
+      "stageTraceBeforeMs": {
+        "discovery": 0,
+        "regex": 0
+      },
+      "stageTraceAfterMs": {
+        "discovery": 0,
+        "regex": 0
+      },
+      "exitCode": 1,
+      "findings": 2,
+      "semanticSha256": "6afbb2604ad187a584052c4af18775449910d2b76dbe3192c9857da0945d29b9"
+    },
+    "optional-literal": {
+      "corpus": {
+        "sha256": "04b5ec0ac34dfaf34a59e9b8b4b0fd87df09a9409b846504d3e9160ee6338fe2",
+        "files": 1,
+        "sourceBytes": 22,
+        "splitLines": 3
+      },
+      "behaviorIdentical": true,
+      "stageTraceBeforeMs": {
+        "discovery": 0,
+        "regex": 0
+      },
+      "stageTraceAfterMs": {
+        "discovery": 0,
+        "regex": 0
+      },
+      "exitCode": 1,
+      "findings": 2,
+      "semanticSha256": "413e48566a6f2a7cd957d0e5e4d2cc25b14fd8b27f772c4034dfa01de1550e14"
+    },
+    "backreference": {
+      "corpus": {
+        "sha256": "57cffb3b0bc6e787e5ebc252a5855e9a205721badcd1d1d634d1471e9b85610b",
+        "files": 1,
+        "sourceBytes": 21,
+        "splitLines": 4
+      },
+      "behaviorIdentical": true,
+      "stageTraceBeforeMs": {
+        "discovery": 0,
+        "regex": 0
+      },
+      "stageTraceAfterMs": {
+        "discovery": 0,
+        "regex": 0
+      },
+      "exitCode": 1,
+      "findings": 2,
+      "semanticSha256": "37e35dffd45eda0503364452367ba27af941bbd3dff821e3f2f8db5b5c1d0894"
+    },
+    "line-boundaries": {
+      "corpus": {
+        "sha256": "2394588e2e928177b73971b4206b0540fbbb536c5138a96719d117d9b5c43d1b",
+        "files": 1,
+        "sourceBytes": 23,
+        "splitLines": 5
+      },
+      "behaviorIdentical": true,
+      "stageTraceBeforeMs": {
+        "discovery": 0,
+        "regex": 0
+      },
+      "stageTraceAfterMs": {
+        "discovery": 0,
+        "regex": 0
+      },
+      "exitCode": 1,
+      "findings": 1,
+      "semanticSha256": "d37a0181b14ceaa25c46341d4ed301cc5d5323af7c29d5c79d0ee19958d2c14b"
+    },
+    "empty-final-line": {
+      "corpus": {
+        "sha256": "8e2a085926054f7f2cfdc1df4f37fd25d9d61bfedc6bf1e582336360a946c4de",
+        "files": 1,
+        "sourceBytes": 2,
+        "splitLines": 2
+      },
+      "behaviorIdentical": true,
+      "stageTraceBeforeMs": {
+        "discovery": 0,
+        "regex": 0
+      },
+      "stageTraceAfterMs": {
+        "discovery": 0,
+        "regex": 0
+      },
+      "exitCode": 1,
+      "findings": 1,
+      "semanticSha256": "c577c555ce8f4693d74f676ce2e60b7eb12e346502a66d9045fe9463fb51bc15"
+    },
+    "no-cross-line-match": {
+      "corpus": {
+        "sha256": "d23e2be9d8a5feaf7e2c8cbf40c4c035432561d9a10df5c33c656ba2ec09bc2a",
+        "files": 1,
+        "sourceBytes": 8,
+        "splitLines": 3
+      },
+      "behaviorIdentical": true,
+      "stageTraceBeforeMs": {
+        "discovery": 0,
+        "regex": 0
+      },
+      "stageTraceAfterMs": {
+        "discovery": 0,
+        "regex": 0
+      },
+      "exitCode": 0,
+      "findings": 0,
+      "semanticSha256": "20b2ff358f761e1710d4091005f548ea55e0f3f2300a9bc277f4dee8e11b250a"
+    },
+    "work-limit": {
+      "corpus": {
+        "sha256": "f30ccb073230604b2756562d43ee21c290147483d3ef9a77569a6e54c1843312",
+        "files": 1,
+        "sourceBytes": 514,
+        "splitLines": 2
+      },
+      "behaviorIdentical": true,
+      "stageTraceBeforeMs": {
+        "discovery": 0,
+        "regex": 34
+      },
+      "stageTraceAfterMs": {
+        "discovery": 0,
+        "regex": 34
+      },
+      "exitCode": 2,
+      "findings": 0,
+      "semanticSha256": "fa424e60aca2e11dd59f4f29c608a5d8e6a00ece664ca19f844fa52ad1d88261"
+    },
+    "utf16-excerpt": {
+      "corpus": {
+        "sha256": "569945b0635113893d2dc052ee4ab37a28fdc9044507fd7b6892e6adc4d94733",
+        "files": 1,
+        "sourceBytes": 4277,
+        "splitLines": 2
+      },
+      "behaviorIdentical": true,
+      "stageTraceBeforeMs": {
+        "discovery": 0,
+        "regex": 0
+      },
+      "stageTraceAfterMs": {
+        "discovery": 0,
+        "regex": 0
+      },
+      "exitCode": 1,
+      "findings": 1,
+      "semanticSha256": "a393c37a7e108009bc05f81fff3f59b73662f3d0a5e05298c5979e64448c15f7"
+    },
+    "file-scoping": {
+      "corpus": {
+        "sha256": "da61f5d49b295915618f165ff48f8e6827a2d40829f1c930c5283245930c5829",
+        "files": 5,
+        "sourceBytes": 25,
+        "splitLines": 10
+      },
+      "behaviorIdentical": true,
+      "stageTraceBeforeMs": {
+        "discovery": 0,
+        "regex": 0
+      },
+      "stageTraceAfterMs": {
+        "discovery": 0,
+        "regex": 0
+      },
+      "exitCode": 1,
+      "findings": 3,
+      "semanticSha256": "a50ee8f712b44bb20a5f30a1d23da5555f799f026f3b3c735acd9f33fea3d46a"
+    },
+    "invalid-utf8": {
+      "corpus": {
+        "sha256": "550a957c962202bdef1d1b981cf5a87442aa43244921ec23b445af656d194873",
+        "files": 1,
+        "sourceBytes": 2,
+        "splitLines": 1
+      },
+      "behaviorIdentical": true,
+      "stageTraceBeforeMs": {
+        "discovery": 0,
+        "regex": 2
+      },
+      "stageTraceAfterMs": {
+        "discovery": 0,
+        "regex": 2
+      },
+      "exitCode": 2,
+      "findings": 0,
+      "semanticSha256": "c239d50cc77f0de6122ba57a1f3c91f23d23bad2cd8b39bf998657e0402b32db"
+    },
+    "line-size-limit": {
+      "corpus": {
+        "sha256": "6f7bdf46650230225c71ae420e246753af2f27406ca0e07f0020aea5880981ea",
+        "files": 1,
+        "sourceBytes": 1048577,
+        "splitLines": 1
+      },
+      "behaviorIdentical": true,
+      "stageTraceBeforeMs": {
+        "discovery": 0,
+        "regex": 3
+      },
+      "stageTraceAfterMs": {
+        "discovery": 0,
+        "regex": 3
+      },
+      "exitCode": 2,
+      "findings": 0,
+      "semanticSha256": "2422627867c02c0504337f172dc9f98f486d2060504cd1e3338db86cf7bc8691"
+    },
+    "source-size-limit": {
+      "corpus": {
+        "sha256": "010d1a4f8d3307e00544bda5d82e103d43a1f06a44b4f2ba8abdd6067d0088fa",
+        "files": 1,
+        "sourceBytes": 16777218,
+        "splitLines": 8388610
+      },
+      "behaviorIdentical": true,
+      "stageTraceBeforeMs": {
+        "discovery": 0,
+        "regex": 9
+      },
+      "stageTraceAfterMs": {
+        "discovery": 0,
+        "regex": 9
+      },
+      "exitCode": 2,
+      "findings": 0,
+      "semanticSha256": "bd8ce22bde48ebe63730849c1fe106326cc0747d9c14241ea3ba5d06c228174d"
+    },
+    "diagnostic-limit": {
+      "corpus": {
+        "sha256": "c0356cad5987c0c67a9078eaf793004234060cf8af54677fef6d43b927f466c7",
+        "files": 1,
+        "sourceBytes": 50005,
+        "splitLines": 10002
+      },
+      "behaviorIdentical": true,
+      "stageTraceBeforeMs": {
+        "discovery": 0,
+        "regex": 1
+      },
+      "stageTraceAfterMs": {
+        "discovery": 0,
+        "regex": 1
+      },
+      "exitCode": 2,
+      "findings": 0,
+      "semanticSha256": "39901751ab910f284c6a0e74c066df557ad129821508ff941f77933dcee8b51a"
+    }
+  },
+  "failures": []
+}
