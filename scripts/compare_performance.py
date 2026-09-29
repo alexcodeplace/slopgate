@@ -15,6 +15,7 @@ import os
 import platform
 import random
 import re
+import shutil
 import statistics
 import subprocess
 import tempfile
@@ -22,7 +23,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-SCAN = ["scan", "--scope", "repo", "--tier", "fast", "--format", "json"]
+SCAN = ["scan", "--scope", "repo", "--format", "json"]
 DEFAULT_POLICY = 'roots=["src"]\nastEnabled=false\nbaseline=["no-stubs","ts-suppress","as-any"]\n'
 
 
@@ -32,6 +33,7 @@ class Workload:
     root: Path
     expected: int | None = 0
     timing: bool = True
+    tier: str = "fast"
 
 
 def write(root: Path, relative: str, content: str | bytes) -> None:
@@ -140,6 +142,38 @@ def make_workloads(parent: Path, source: Path) -> list[Workload]:
     return workloads
 
 
+def external_workloads(parent: Path, structural: bool, semantic: bool) -> list[Workload]:
+    """Provision fixtures from explicitly installed tools; never download in scans."""
+    workloads = []
+    content = "export const value: number = 42;\n"
+    if structural:
+        workload = case(parent, "native-file-with-ast", policy=DEFAULT_POLICY.replace("astEnabled=false", "astEnabled=true"))
+        write(workload.root, "src/file.ts", content)
+        workloads.append(workload)
+    if semantic:
+        tools_value = os.environ.get("SLOPGATE_TEST_TOOLS")
+        node = shutil.which("node")
+        if not tools_value or not node:
+            raise RuntimeError("Explicit SLOPGATE_TEST_TOOLS and Node are required for semantic comparisons")
+        tools = Path(tools_value).resolve(strict=True)
+        workload = case(parent, "typescript-incremental", policy='roots=["src"]\nastEnabled=false\n[checkers.tsc]\nincremental=true\n')
+        workload.tier = "commit"
+        write(workload.root, "src/file.ts", content)
+        write(workload.root, "tsconfig.json", json.dumps({"compilerOptions": {"noEmit": True, "strict": True}, "include": ["src/**/*.ts"]}))
+        package = workload.root / "node_modules/typescript"
+        package.parent.mkdir()
+        shutil.copytree(tools / "node_modules/typescript", package)
+        # Adapter discovery resolves package entrypoint metadata. On Unix retain
+        # a usable shim too, with positional arguments rather than shell-quoted paths.
+        if os.name == "nt":
+            write(workload.root, "node_modules/.bin/tsc.cmd", "@rem package entrypoint metadata is used by the adapter\n")
+        else:
+            (workload.root / "node_modules/.bin").mkdir()
+            (workload.root / "node_modules/.bin/tsc").symlink_to("../typescript/bin/tsc")
+        workloads.append(workload)
+    return workloads
+
+
 def semantic_report(stdout: str) -> dict:
     """Ignore only documented nondeterministic coverage timings, not findings."""
     report = json.loads(stdout)
@@ -157,7 +191,7 @@ def invoke(binary: Path, workload: Workload, env: dict[str, str], trace: bool = 
     else:
         current_env.pop("SLOPGATE_STAGE_DIAGNOSTICS", None)
     started = time.perf_counter_ns()
-    result = subprocess.run([str(binary), *SCAN, "--config", str(workload.root / ".slopgate/config.toml")],
+    result = subprocess.run([str(binary), *SCAN, "--tier", workload.tier, "--config", str(workload.root / ".slopgate/config.toml")],
                             cwd=workload.root, env=current_env, capture_output=True, text=True,
                             encoding="utf-8", timeout=120, check=False)
     elapsed = (time.perf_counter_ns() - started) / 1_000_000
@@ -223,6 +257,8 @@ def main() -> None:
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--samples", type=int, default=21)
     parser.add_argument("--warmups", type=int, default=2)
+    parser.add_argument("--structural", action="store_true")
+    parser.add_argument("--semantic", action="store_true")
     parser.add_argument("--only", nargs="*", help="Select workload names for an exploratory run")
     args = parser.parse_args()
     if args.samples < 3 or args.warmups < 0:
@@ -237,12 +273,13 @@ def main() -> None:
               "before": provenance(before, env), "after": provenance(after, env),
               "method": {"order": "alternating AB/BA pairs", "warmupsPerVariant": args.warmups,
                          "samplesPerVariant": args.samples, "normalization": "coverage[].elapsedMs only",
-                         "notes": "Fresh process, warm filesystem; no Slopgate result cache. Shared host load and CPU frequency are not controlled. Stage traces are untimed additional runs. Bootstrap intervals describe these paired samples, not other machines."},
+                         "notes": "Fresh process, warm filesystem; no Slopgate result cache. TypeScript uses shared tool-owned incremental state warmed for both variants. Shared host load and CPU frequency are not controlled. Stage traces are untimed additional runs. Bootstrap intervals describe these paired samples, not other machines."},
               "workloads": {}, "failures": []}
     args.output.parent.mkdir(parents=True, exist_ok=True)
     try:
         with tempfile.TemporaryDirectory(prefix="slopgate-comparison-") as temporary:
             workloads = make_workloads(Path(temporary), source)
+            workloads.extend(external_workloads(Path(temporary), args.structural, args.semantic))
             if args.only:
                 known = {workload.name for workload in workloads}
                 unknown = set(args.only) - known
@@ -259,6 +296,11 @@ def main() -> None:
                 if checked != oracle:
                     entry["behaviorDifference"] = {"before": oracle, "after": checked}
                     raise RuntimeError(f"behavior changed in {workload.name}")
+                if workload.name in {"native-file-with-ast", "typescript-incremental"}:
+                    stage = "ast" if workload.name == "native-file-with-ast" else "tsc"
+                    coverage = next((item for item in oracle["stdout"]["coverage"] if item["id"] == stage), None)
+                    if not coverage or coverage["status"] != "complete":
+                        raise RuntimeError(f"{workload.name}: required external stage did not complete")
                 entry.update(behaviorIdentical=True, exitCode=oracle["exitCode"],
                              findings=len(oracle["stdout"]["violations"]),
                              semanticSha256=hashlib.sha256(json.dumps(oracle, sort_keys=True).encode()).hexdigest())

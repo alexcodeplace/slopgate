@@ -198,15 +198,34 @@ fn file_prefilter_preserves_line_scoping_and_error_propagation() {
 #[test]
 fn linear_file_prefilter_preserves_anchors_flags_and_optional_literals() {
     let expressions = [
-        r"^needle$", r"\Aneedle\z", r"(?i:needle)", r"(?:foo|needle)",
-        r"(?:needle)?", r"(?:needle){0,2}", r"(?:needle){1,2}", r"^$",
-        r"(?i:foo)(?-i:BAR)", r"(?x)needle # ignored comment", r"\bneedle\b",
-        r"n[eE]edle", r"\x6e\u{65}edle", r"\p{L}+", r"line\nbreak",
+        r"^needle$",
+        r"\Aneedle\z",
+        r"(?i:needle)",
+        r"(?:foo|needle)",
+        r"(?:needle)?",
+        r"(?:needle){0,2}",
+        r"(?:needle){1,2}",
+        r"^$",
+        r"(?i:foo)(?-i:BAR)",
+        r"(?x)needle # ignored comment",
+        r"\bneedle\b",
+        r"n[eE]edle",
+        r"\x6e\u{65}edle",
+        r"\p{L}+",
+        r"line\nbreak",
     ];
     let contents = [
-        "padding\nneedle\npadding\n", "padding\nnEEdLe\n", "padding\nFOOBAR\n",
-        "padding\nFoobar\n", "padding\nKELVIN\n", "padding\n中文\n", "padding\n",
-        "line\nbreak\n", "padding\nneedleneedle\n", "", "nothing",
+        "padding\nneedle\npadding\n",
+        "padding\nnEEdLe\n",
+        "padding\nFOOBAR\n",
+        "padding\nFoobar\n",
+        "padding\nKELVIN\n",
+        "padding\n中文\n",
+        "padding\n",
+        "line\nbreak\n",
+        "padding\nneedleneedle\n",
+        "",
+        "nothing",
     ];
     for expression in expressions {
         for flags in ["", "i", "m", "s", "u", "im"] {
@@ -214,13 +233,19 @@ fn linear_file_prefilter_preserves_anchors_flags_and_optional_literals() {
             // V1 uses the linear engine for these patterns. fancy-regex differs
             // for global case folding combined with scoped flag removal, so it
             // is not an oracle for the original scanner's linear branch.
-            let Matcher::Linear { regex: original, .. } = &matcher else {
+            let Matcher::Linear {
+                regex: original, ..
+            } = &matcher
+            else {
                 panic!("fixture must use the original linear engine: {expression}");
             };
             for text in contents {
                 let matched = text.split('\n').any(|line| original.is_match(line));
                 if matched {
-                    assert!(matcher.may_match_file(text), "expression={expression}, flags={flags}, text={text:?}");
+                    assert!(
+                        matcher.may_match_file(text),
+                        "expression={expression}, flags={flags}, text={text:?}"
+                    );
                 }
             }
         }
