@@ -89,6 +89,11 @@ def make_workloads(parent: Path, source: Path) -> list[Workload]:
             if "target" not in file.parts:
                 write(real.root, "src/" + file.relative_to(source).as_posix(), file.read_bytes())
     workloads.append(real)
+    linear_dense = custom_case(parent, "linear-dense-positive", [
+        {"pattern": r"marker_[0-9]+"},
+    ], 1, timing=True)
+    write(linear_dense.root, "src/file.ts", "marker_42\n" * 4000)
+    workloads.append(linear_dense)
     dense = custom_case(parent, "compatibility-dense-positive", [
         {"pattern": r"marker(?=_[0-9]+)"},
         {"pattern": r"(?<=prefix_)value"},

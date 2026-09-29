@@ -14,7 +14,10 @@ use std::path::Path;
 /// work limit and a proven necessary-literal prefilter, never a rule-ID shortcut.
 #[derive(Debug)]
 enum Matcher {
-    Linear(regex::Regex),
+    Linear {
+        regex: regex::Regex,
+        necessary: Vec<NecessaryLiteral>,
+    },
     Compatibility {
         regex: Regex,
         necessary: Vec<NecessaryLiteral>,
@@ -126,6 +129,26 @@ fn mandatory_literals(expr: &fancy_regex::Expr) -> Option<Vec<(String, bool)>> {
     }
 }
 
+fn compile_necessary_literals(body: &str, flags: &str) -> Vec<NecessaryLiteral> {
+    let parse_body = if flags.contains('i') {
+        format!("(?i:{body})")
+    } else {
+        body.to_owned()
+    };
+    let mut literals = fancy_regex::Expr::parse_tree(&parse_body)
+        .ok()
+        .and_then(|tree| mandatory_literals(&tree.expr))
+        .unwrap_or_default();
+    literals.retain(|(value, _)| value.len() >= 2);
+    literals.sort_by(|a, b| b.0.len().cmp(&a.0.len()).then_with(|| a.cmp(b)));
+    literals.dedup();
+    literals
+        .into_iter()
+        .take(8)
+        .filter_map(|(value, casei)| NecessaryLiteral::new(value, casei))
+        .collect()
+}
+
 fn compile_matcher(pattern: &str, flags: &str) -> Result<Matcher, String> {
     let body = normalized_pattern(pattern, flags)?;
     let mut linear = regex::RegexBuilder::new(&body);
@@ -135,26 +158,11 @@ fn compile_matcher(pattern: &str, flags: &str) -> Result<Matcher, String> {
         .multi_line(flags.contains('m'))
         .size_limit(8 * 1024 * 1024);
     if let Ok(regex) = linear.build() {
-        return Ok(Matcher::Linear(regex));
+        let necessary = compile_necessary_literals(&body, flags);
+        return Ok(Matcher::Linear { regex, necessary });
     }
     let regex = compile_line_regex(pattern, flags)?;
-    let parse_body = if flags.contains('i') {
-        format!("(?i:{body})")
-    } else {
-        body
-    };
-    let mut literals = fancy_regex::Expr::parse_tree(&parse_body)
-        .ok()
-        .and_then(|tree| mandatory_literals(&tree.expr))
-        .unwrap_or_default();
-    literals.retain(|(value, _)| value.len() >= 2);
-    literals.sort_by(|a, b| b.0.len().cmp(&a.0.len()).then_with(|| a.cmp(b)));
-    literals.dedup();
-    let necessary = literals
-        .into_iter()
-        .take(8)
-        .filter_map(|(value, casei)| NecessaryLiteral::new(value, casei))
-        .collect();
+    let necessary = compile_necessary_literals(&body, flags);
     Ok(Matcher::Compatibility { regex, necessary })
 }
 
@@ -164,8 +172,7 @@ impl Matcher {
     /// a positive result still requires the original line-scoped matcher.
     fn may_match_file(&self, contents: &str) -> bool {
         match self {
-            Self::Linear(_) => true,
-            Self::Compatibility { necessary, .. } => {
+            Self::Linear { necessary, .. } | Self::Compatibility { necessary, .. } => {
                 necessary.iter().all(|literal| literal.is_match(contents))
             }
         }
@@ -173,7 +180,7 @@ impl Matcher {
 
     fn is_match(&self, line: &str) -> Result<bool, String> {
         match self {
-            Self::Linear(regex) => Ok(regex.is_match(line)),
+            Self::Linear { regex, .. } => Ok(regex.is_match(line)),
             Self::Compatibility { regex, necessary } => {
                 if necessary.iter().any(|literal| !literal.is_match(line)) {
                     return Ok(false);
