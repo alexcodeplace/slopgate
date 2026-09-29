@@ -1,0 +1,1576 @@
+{
+  "schemaVersion": 1,
+  "machine": {
+    "platform": "Linux-7.2.6+deb14-amd64-x86_64-with-glibc2.43",
+    "cpu": "",
+    "logicalCpus": 8,
+    "affinity": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ],
+    "python": "3.14.7",
+    "loadBefore": [
+      11.97216796875,
+      8.8515625,
+      5.8505859375
+    ],
+    "loadAfter": [
+      12.03369140625,
+      9.02197265625,
+      5.955078125
+    ]
+  },
+  "before": {
+    "binarySha256": "716eb4f6e003cfbe0df78bb05d8dba4bfb0215054fcc594a4025ee59a66ac982",
+    "binaryBytes": 4255152,
+    "engine": {
+      "executable": "/home/user/benchmarks/slopgate-perf-20260929/evidence/slopgate-before",
+      "revision": "9e3210c",
+      "sourceDigest": "eae575ca7f7951f56a52e656dbacb93379163f6c03498021b5abf6f7d905ddd1",
+      "specification": "universal-gate-v1",
+      "version": "0.4.0"
+    }
+  },
+  "after": {
+    "binarySha256": "717d13e876c365591203132201bb5370de251ef358a4b30ef7fdec00064ddfe2",
+    "binaryBytes": 4254640,
+    "engine": {
+      "executable": "/home/user/benchmarks/slopgate-perf-20260929/evidence/slopgate-trial-c",
+      "revision": "7d3a843c372c49d9a4c51108d6430e842cdeafe8",
+      "sourceDigest": "66910925c31a6bab3929e34f85d78d7f556fe938575324edbc1866dfe04efe95",
+      "specification": "universal-gate-v1",
+      "version": "0.4.0"
+    }
+  },
+  "method": {
+    "order": "alternating AB/BA pairs",
+    "warmupsPerVariant": 3,
+    "samplesPerVariant": 31,
+    "normalization": "coverage[].elapsedMs only",
+    "notes": "Fresh process, warm filesystem; no Slopgate result cache. Shared host load and CPU frequency are not controlled. Stage traces are untimed additional runs. Bootstrap intervals describe these paired samples, not other machines."
+  },
+  "workloads": {
+    "small-file": {
+      "corpus": {
+        "sha256": "5ad77d05f403ef644ddf4537df3d7209e39d398983f946f79fd938b52acea32b",
+        "files": 1,
+        "sourceBytes": 1100,
+        "splitLines": 33
+      },
+      "behaviorIdentical": true,
+      "stageTraceBeforeMs": {
+        "discovery": 0,
+        "regex": 2
+      },
+      "stageTraceAfterMs": {
+        "discovery": 0,
+        "regex": 2
+      },
+      "exitCode": 0,
+      "findings": 0,
+      "semanticSha256": "8e885f2600234d276cb1ef85cfadfb6b9bc1a48dc3b2199f03377aaa74a2c2d4",
+      "before": {
+        "samples": 31,
+        "medianMs": 8.541992,
+        "p95Ms": 9.99509,
+        "minMs": 6.969587,
+        "maxMs": 12.558996,
+        "rawMs": [
+          8.522522,
+          8.895412,
+          8.300788,
+          8.116911,
+          8.081153,
+          8.52566,
+          9.079342,
+          9.089985,
+          6.969587,
+          8.012526,
+          7.858781,
+          8.099317,
+          8.835671,
+          9.717589,
+          8.541992,
+          9.301043,
+          8.809738,
+          7.590253,
+          7.325378,
+          7.320551,
+          9.35583,
+          9.99509,
+          7.915178,
+          8.995495,
+          8.308617,
+          8.698584,
+          9.231515,
+          8.326918,
+          9.126204,
+          9.58132,
+          12.558996
+        ]
+      },
+      "after": {
+        "samples": 31,
+        "medianMs": 8.083265,
+        "p95Ms": 11.263652,
+        "minMs": 7.201376,
+        "maxMs": 11.750844,
+        "rawMs": [
+          9.465826,
+          8.290813,
+          7.698112,
+          8.544514,
+          7.342586,
+          7.769519,
+          8.974806,
+          7.959453,
+          7.385371,
+          7.983116,
+          8.597559,
+          10.246804,
+          7.531623,
+          7.916351,
+          8.493466,
+          9.515798,
+          10.010478,
+          7.307627,
+          7.219306,
+          7.736934,
+          8.778697,
+          7.709682,
+          9.317599,
+          7.201376,
+          8.083265,
+          7.837624,
+          8.34893,
+          8.859352,
+          7.570443,
+          11.750844,
+          11.263652
+        ]
+      },
+      "medianSpeedup": 1.0567502117028205,
+      "pairedSpeedup95Pct": [
+        0.9774317403543035,
+        1.0973214686777908
+      ]
+    },
+    "repository-1001": {
+      "corpus": {
+        "sha256": "cc16629a9a47015db250f310a243b40a93e58e5e909b690db1f3e7759f9dcad0",
+        "files": 1001,
+        "sourceBytes": 1101100,
+        "splitLines": 33033
+      },
+      "behaviorIdentical": true,
+      "stageTraceBeforeMs": {
+        "discovery": 4,
+        "regex": 19
+      },
+      "stageTraceAfterMs": {
+        "discovery": 3,
+        "regex": 13
+      },
+      "exitCode": 0,
+      "findings": 0,
+      "semanticSha256": "1b75be78bf4f47ac4818792d6fc403c15a9e3dc7d39efda8b5e2ea2801224ec0",
+      "before": {
+        "samples": 31,
+        "medianMs": 31.571138,
+        "p95Ms": 41.168698,
+        "minMs": 25.353931,
+        "maxMs": 42.208913,
+        "rawMs": [
+          29.629509,
+          31.571138,
+          28.917402,
+          31.569913,
+          28.003331,
+          31.581142,
+          30.705124,
+          28.751276,
+          29.258452,
+          29.429871,
+          30.968213,
+          29.974346,
+          25.648026,
+          25.353931,
+          26.661542,
+          35.091745,
+          36.32265,
+          42.208913,
+          36.651483,
+          34.5224,
+          31.92475,
+          39.352298,
+          29.721611,
+          32.94107,
+          32.352261,
+          33.219698,
+          35.338704,
+          31.435888,
+          34.382219,
+          41.168698,
+          33.647606
+        ]
+      },
+      "after": {
+        "samples": 31,
+        "medianMs": 26.081179,
+        "p95Ms": 32.226971,
+        "minMs": 21.177969,
+        "maxMs": 40.821969,
+        "rawMs": [
+          26.081179,
+          23.307676,
+          24.939341,
+          23.278592,
+          23.090037,
+          23.558174,
+          23.181992,
+          22.97941,
+          25.059986,
+          26.75424,
+          24.985339,
+          21.40009,
+          21.177969,
+          21.466181,
+          22.204448,
+          29.633023,
+          32.226971,
+          29.57456,
+          25.1194,
+          26.407245,
+          31.668081,
+          26.796157,
+          27.516645,
+          25.615274,
+          27.422729,
+          27.99017,
+          27.901801,
+          40.821969,
+          26.888178,
+          27.755811,
+          26.490393
+        ]
+      },
+      "medianSpeedup": 1.2104950470222224,
+      "pairedSpeedup95Pct": [
+        1.1842107705312415,
+        1.2859932710460176
+      ]
+    },
+    "large-file": {
+      "corpus": {
+        "sha256": "c15d8194fd896d1a3627d87646c17c84cf126b1b8388ac8fc23f4e0a9deaaab0",
+        "files": 1,
+        "sourceBytes": 1207780,
+        "splitLines": 30001
+      },
+      "behaviorIdentical": true,
+      "stageTraceBeforeMs": {
+        "discovery": 0,
+        "regex": 16
+      },
+      "stageTraceAfterMs": {
+        "discovery": 0,
+        "regex": 13
+      },
+      "exitCode": 0,
+      "findings": 0,
+      "semanticSha256": "8e885f2600234d276cb1ef85cfadfb6b9bc1a48dc3b2199f03377aaa74a2c2d4",
+      "before": {
+        "samples": 31,
+        "medianMs": 22.222246,
+        "p95Ms": 27.021328,
+        "minMs": 17.312175,
+        "maxMs": 29.757705,
+        "rawMs": [
+          24.398502,
+          21.894853,
+          27.021328,
+          24.851332,
+          23.19336,
+          24.696083,
+          24.5424,
+          24.245509,
+          26.173211,
+          23.136513,
+          22.412004,
+          22.857606,
+          22.222246,
+          23.251689,
+          22.411782,
+          20.441043,
+          23.263817,
+          21.031525,
+          29.757705,
+          22.198636,
+          18.791218,
+          17.96823,
+          19.650617,
+          19.520512,
+          19.531039,
+          17.908302,
+          18.852062,
+          19.686776,
+          18.873297,
+          17.312175,
+          20.455965
+        ]
+      },
+      "after": {
+        "samples": 31,
+        "medianMs": 17.739733,
+        "p95Ms": 21.790541,
+        "minMs": 13.360605,
+        "maxMs": 42.159145,
+        "rawMs": [
+          18.63129,
+          17.739733,
+          17.92167,
+          18.15642,
+          18.878899,
+          42.159145,
+          21.610243,
+          18.652663,
+          17.012421,
+          20.250844,
+          18.641373,
+          19.089094,
+          20.015359,
+          17.757712,
+          17.678945,
+          19.620141,
+          17.6262,
+          18.633832,
+          21.790541,
+          16.321342,
+          16.256361,
+          13.360605,
+          14.890593,
+          15.292684,
+          15.143582,
+          14.099543,
+          14.304353,
+          15.2161,
+          15.348813,
+          16.210792,
+          16.474785
+        ]
+      },
+      "medianSpeedup": 1.2526821006832514,
+      "pairedSpeedup95Pct": [
+        1.2285335071711543,
+        1.3093854095617723
+      ]
+    },
+    "large-repository": {
+      "corpus": {
+        "sha256": "16202f1c5c56357154d8aacf85930eb417d8e61c78a651bf9a1d531cc1c8294e",
+        "files": 256,
+        "sourceBytes": 4793344,
+        "splitLines": 131328
+      },
+      "behaviorIdentical": true,
+      "stageTraceBeforeMs": {
+        "discovery": 1,
+        "regex": 43
+      },
+      "stageTraceAfterMs": {
+        "discovery": 0,
+        "regex": 27
+      },
+      "exitCode": 0,
+      "findings": 0,
+      "semanticSha256": "f74bf1057a5fa5d054633eada443e3f9d9fbc5e454905036ad186abac9defdd9",
+      "before": {
+        "samples": 31,
+        "medianMs": 49.465762,
+        "p95Ms": 57.840785,
+        "minMs": 43.771793,
+        "maxMs": 61.23552,
+        "rawMs": [
+          57.188397,
+          56.680595,
+          61.23552,
+          53.938697,
+          51.997733,
+          57.840785,
+          55.949926,
+          49.350687,
+          55.90974,
+          52.237848,
+          56.661559,
+          52.974514,
+          44.373563,
+          48.245327,
+          52.405244,
+          55.140523,
+          47.207079,
+          46.694335,
+          47.262986,
+          45.218558,
+          46.750027,
+          51.538667,
+          46.540732,
+          47.06419,
+          46.495772,
+          49.465762,
+          43.771793,
+          44.806642,
+          52.196411,
+          45.780667,
+          47.685899
+        ]
+      },
+      "after": {
+        "samples": 31,
+        "medianMs": 33.382299,
+        "p95Ms": 38.95947,
+        "minMs": 28.926853,
+        "maxMs": 44.444128,
+        "rawMs": [
+          36.183318,
+          38.052465,
+          44.444128,
+          37.827329,
+          37.157506,
+          36.242449,
+          35.902822,
+          34.408042,
+          33.578477,
+          31.984008,
+          38.95947,
+          36.323648,
+          28.926853,
+          30.404398,
+          33.382299,
+          34.388879,
+          31.699012,
+          37.200592,
+          35.572947,
+          32.23386,
+          29.018216,
+          32.646169,
+          31.69104,
+          31.909,
+          32.291331,
+          30.428068,
+          29.287695,
+          35.271644,
+          33.027341,
+          30.499711,
+          31.641258
+        ]
+      },
+      "medianSpeedup": 1.4817961459155342,
+      "pairedSpeedup95Pct": [
+        1.4584029115137334,
+        1.5698512556010598
+      ]
+    },
+    "large-file-positive": {
+      "corpus": {
+        "sha256": "b5c712f782055f0ded68c017739956461addaf6cc3cac0b5bb79a3d6231f0518",
+        "files": 1,
+        "sourceBytes": 1207819,
+        "splitLines": 30002
+      },
+      "behaviorIdentical": true,
+      "stageTraceBeforeMs": {
+        "discovery": 0,
+        "regex": 14
+      },
+      "stageTraceAfterMs": {
+        "discovery": 0,
+        "regex": 10
+      },
+      "exitCode": 1,
+      "findings": 1,
+      "semanticSha256": "682adc736f6fcdeff3865d28ec82b2e44d988262665fbdcb1b2020d9c5b40815",
+      "before": {
+        "samples": 31,
+        "medianMs": 19.6766,
+        "p95Ms": 22.4462,
+        "minMs": 17.087339,
+        "maxMs": 23.750344,
+        "rawMs": [
+          17.087339,
+          18.602296,
+          20.468055,
+          20.297353,
+          20.237421,
+          20.312191,
+          21.51358,
+          20.180554,
+          17.864466,
+          18.421592,
+          20.286777,
+          19.153778,
+          19.321039,
+          20.241569,
+          17.773106,
+          17.267163,
+          19.033891,
+          19.66588,
+          20.010528,
+          19.6766,
+          19.388614,
+          22.4462,
+          19.925862,
+          22.112658,
+          18.569246,
+          20.157492,
+          17.523063,
+          17.991482,
+          23.750344,
+          18.911958,
+          20.064838
+        ]
+      },
+      "after": {
+        "samples": 31,
+        "medianMs": 16.164575,
+        "p95Ms": 17.795721,
+        "minMs": 13.981025,
+        "maxMs": 18.56432,
+        "rawMs": [
+          15.025963,
+          16.750308,
+          16.738463,
+          16.771283,
+          16.841631,
+          16.782044,
+          17.795721,
+          15.267505,
+          14.891972,
+          15.399179,
+          16.164575,
+          16.730236,
+          17.252066,
+          16.253287,
+          15.856274,
+          15.084668,
+          15.321699,
+          16.8718,
+          16.807869,
+          15.222287,
+          16.260807,
+          18.56432,
+          16.696546,
+          15.89556,
+          15.111743,
+          14.46423,
+          15.963805,
+          14.46512,
+          13.981025,
+          16.419093,
+          15.746421
+        ]
+      },
+      "medianSpeedup": 1.2172667700821087,
+      "pairedSpeedup95Pct": [
+        1.1923525074739525,
+        1.2287957782235972
+      ]
+    },
+    "compatibility-unfilterable": {
+      "corpus": {
+        "sha256": "5d17de42bd71514d1ae1fec36a1e3a83c7ead86c179ee9ccddce2eba0e7cae2c",
+        "files": 1,
+        "sourceBytes": 630000,
+        "splitLines": 30001
+      },
+      "behaviorIdentical": true,
+      "stageTraceBeforeMs": {
+        "discovery": 0,
+        "regex": 2
+      },
+      "stageTraceAfterMs": {
+        "discovery": 0,
+        "regex": 2
+      },
+      "exitCode": 0,
+      "findings": 0,
+      "semanticSha256": "20b2ff358f761e1710d4091005f548ea55e0f3f2300a9bc277f4dee8e11b250a",
+      "before": {
+        "samples": 31,
+        "medianMs": 3.904551,
+        "p95Ms": 6.834207,
+        "minMs": 3.219934,
+        "maxMs": 6.887847,
+        "rawMs": [
+          3.934838,
+          3.842488,
+          3.834825,
+          3.819837,
+          3.886601,
+          3.837665,
+          3.904551,
+          3.879706,
+          3.865932,
+          3.804458,
+          3.962288,
+          3.942157,
+          3.887215,
+          4.172476,
+          5.019172,
+          5.725634,
+          6.887847,
+          6.834207,
+          4.629941,
+          4.13573,
+          3.783505,
+          3.426486,
+          3.328904,
+          3.219934,
+          4.317692,
+          3.477987,
+          3.54024,
+          4.458109,
+          5.033277,
+          5.191873,
+          5.187157
+        ]
+      },
+      "after": {
+        "samples": 31,
+        "medianMs": 3.794047,
+        "p95Ms": 6.529434,
+        "minMs": 3.134089,
+        "maxMs": 6.730552,
+        "rawMs": [
+          3.794047,
+          3.819538,
+          3.7337,
+          3.722134,
+          3.768038,
+          3.765524,
+          3.788644,
+          3.814837,
+          3.760537,
+          3.802663,
+          3.743489,
+          3.894419,
+          3.779528,
+          4.580759,
+          4.557163,
+          6.529434,
+          6.730552,
+          6.283246,
+          5.080224,
+          3.822952,
+          3.651407,
+          3.241483,
+          3.134089,
+          3.382599,
+          3.248038,
+          3.585594,
+          3.685648,
+          4.186422,
+          4.387697,
+          5.21039,
+          5.126513
+        ]
+      },
+      "medianSpeedup": 1.0291256275950194,
+      "pairedSpeedup95Pct": [
+        1.0122580544106836,
+        1.0361772872758364
+      ]
+    },
+    "long-line-negative": {
+      "corpus": {
+        "sha256": "46f6338b40ffdf9cc5f114c80dd86a374ea37fca469a63389a643a4c6b90b392",
+        "files": 1,
+        "sourceBytes": 150020,
+        "splitLines": 2
+      },
+      "behaviorIdentical": true,
+      "stageTraceBeforeMs": {
+        "discovery": 0,
+        "regex": 3
+      },
+      "stageTraceAfterMs": {
+        "discovery": 0,
+        "regex": 3
+      },
+      "exitCode": 0,
+      "findings": 0,
+      "semanticSha256": "8e885f2600234d276cb1ef85cfadfb6b9bc1a48dc3b2199f03377aaa74a2c2d4",
+      "before": {
+        "samples": 31,
+        "medianMs": 8.464296,
+        "p95Ms": 10.296802,
+        "minMs": 6.722891,
+        "maxMs": 10.368536,
+        "rawMs": [
+          10.245464,
+          10.143694,
+          10.368536,
+          10.296802,
+          10.226797,
+          10.131935,
+          8.789539,
+          8.87151,
+          8.972604,
+          8.856167,
+          8.963876,
+          8.901169,
+          8.936092,
+          8.922866,
+          8.863597,
+          7.526903,
+          7.21635,
+          7.523581,
+          7.603677,
+          8.464296,
+          8.380954,
+          7.890117,
+          7.244875,
+          6.729491,
+          6.842633,
+          6.84761,
+          6.953414,
+          6.722891,
+          6.769541,
+          6.77901,
+          7.162125
+        ]
+      },
+      "after": {
+        "samples": 31,
+        "medianMs": 8.249924,
+        "p95Ms": 10.346302,
+        "minMs": 6.741472,
+        "maxMs": 10.357674,
+        "rawMs": [
+          10.0339,
+          10.22493,
+          10.179332,
+          10.357674,
+          10.229442,
+          10.346302,
+          8.862873,
+          8.75178,
+          9.049494,
+          8.811675,
+          8.844848,
+          8.926377,
+          8.785991,
+          8.815483,
+          8.964371,
+          7.090886,
+          7.477638,
+          7.719211,
+          7.384027,
+          8.249924,
+          7.647626,
+          7.01392,
+          7.432194,
+          6.831572,
+          6.901205,
+          6.916743,
+          6.837425,
+          6.872367,
+          6.741472,
+          6.922467,
+          6.909904
+        ]
+      },
+      "medianSpeedup": 1.0259847242229139,
+      "pairedSpeedup95Pct": [
+        0.9915127865351051,
+        1.0136806455372507
+      ]
+    },
+    "long-line-positive": {
+      "corpus": {
+        "sha256": "2a2fa7d33589f46d572b2679e8e377640d8704b0832cc7a771f1e3e3cb0db90f",
+        "files": 1,
+        "sourceBytes": 4155,
+        "splitLines": 2
+      },
+      "behaviorIdentical": true,
+      "stageTraceBeforeMs": {
+        "discovery": 0,
+        "regex": 2
+      },
+      "stageTraceAfterMs": {
+        "discovery": 0,
+        "regex": 2
+      },
+      "exitCode": 1,
+      "findings": 1,
+      "semanticSha256": "4830308bc331529114d641bada100c14bda522b77c6cb54e832529dd1c3c86e3",
+      "before": {
+        "samples": 31,
+        "medianMs": 7.87056,
+        "p95Ms": 8.122656,
+        "minMs": 7.464052,
+        "maxMs": 8.415102,
+        "rawMs": [
+          7.464052,
+          8.415102,
+          7.962317,
+          7.914855,
+          7.938099,
+          7.824961,
+          7.774421,
+          7.902867,
+          7.820562,
+          7.884336,
+          7.913654,
+          8.000254,
+          7.87056,
+          7.850861,
+          7.792055,
+          7.770972,
+          7.908608,
+          7.924946,
+          7.863332,
+          7.888484,
+          7.895785,
+          7.759696,
+          8.059393,
+          7.893836,
+          7.835972,
+          7.760394,
+          7.818128,
+          7.845095,
+          7.847259,
+          7.807665,
+          8.122656
+        ]
+      },
+      "after": {
+        "samples": 31,
+        "medianMs": 7.832397,
+        "p95Ms": 7.975603,
+        "minMs": 7.460376,
+        "maxMs": 8.206945,
+        "rawMs": [
+          7.460376,
+          7.975603,
+          7.83211,
+          7.948643,
+          7.936187,
+          7.832397,
+          7.774921,
+          7.861846,
+          7.779406,
+          7.810329,
+          7.7701,
+          7.927576,
+          7.804843,
+          7.801646,
+          7.810721,
+          7.911664,
+          7.871329,
+          7.878125,
+          7.898419,
+          7.905622,
+          7.820393,
+          7.820256,
+          7.808658,
+          7.889086,
+          7.844679,
+          7.793182,
+          7.791757,
+          7.867048,
+          7.747861,
+          7.864924,
+          8.206945
+        ]
+      },
+      "medianSpeedup": 1.0048724547542724,
+      "pairedSpeedup95Pct": [
+        0.9988900756805983,
+        1.0063082841749036
+      ]
+    },
+    "slopgate-source": {
+      "corpus": {
+        "sha256": "882dc13a45b911a6658f0ffbbd312f5423764a5780b61aebd33048a8fe6b7461",
+        "files": 73,
+        "sourceBytes": 742799,
+        "splitLines": 21853
+      },
+      "behaviorIdentical": true,
+      "stageTraceBeforeMs": {
+        "discovery": 0,
+        "regex": 22
+      },
+      "stageTraceAfterMs": {
+        "discovery": 0,
+        "regex": 17
+      },
+      "exitCode": 1,
+      "findings": 15,
+      "semanticSha256": "1a95520dcf6bc64bfc9f5a1d75ad8f85117e95534aea7024a7f0467d4bbfe045",
+      "before": {
+        "samples": 31,
+        "medianMs": 23.966486,
+        "p95Ms": 26.46437,
+        "minMs": 20.326424,
+        "maxMs": 27.305805,
+        "rawMs": [
+          24.520345,
+          24.327999,
+          23.370872,
+          23.473698,
+          22.317416,
+          21.829251,
+          22.778043,
+          22.154826,
+          24.731859,
+          23.046548,
+          23.001054,
+          26.147498,
+          25.945231,
+          24.302179,
+          23.966486,
+          23.99537,
+          24.189719,
+          25.638654,
+          21.797776,
+          21.550691,
+          27.305805,
+          22.211461,
+          24.401465,
+          24.779826,
+          24.445853,
+          24.88592,
+          26.46437,
+          23.667372,
+          20.326424,
+          20.648742,
+          21.016981
+        ]
+      },
+      "after": {
+        "samples": 31,
+        "medianMs": 20.069389,
+        "p95Ms": 21.798813,
+        "minMs": 16.871445,
+        "maxMs": 22.055506,
+        "rawMs": [
+          21.319968,
+          20.275375,
+          20.206753,
+          20.069389,
+          18.46652,
+          18.330989,
+          21.798813,
+          18.938214,
+          22.055506,
+          21.295434,
+          19.172103,
+          21.154939,
+          20.737857,
+          19.736367,
+          20.799066,
+          19.573512,
+          20.428687,
+          20.888438,
+          18.894618,
+          19.869847,
+          18.382831,
+          17.111027,
+          17.01241,
+          20.06284,
+          20.466581,
+          17.227143,
+          20.135855,
+          19.464803,
+          16.871445,
+          20.719991,
+          20.494121
+        ]
+      },
+      "medianSpeedup": 1.1941811482153242,
+      "pairedSpeedup95Pct": [
+        1.1565872062671325,
+        1.2259103016362112
+      ]
+    },
+    "linear-dense-positive": {
+      "corpus": {
+        "sha256": "063faf2ee96e3c08d3a0e1e442f6228c84c2f50fcf72ae422349b5113fc06b16",
+        "files": 1,
+        "sourceBytes": 40000,
+        "splitLines": 4001
+      },
+      "behaviorIdentical": true,
+      "stageTraceBeforeMs": {
+        "discovery": 0,
+        "regex": 1
+      },
+      "stageTraceAfterMs": {
+        "discovery": 0,
+        "regex": 1
+      },
+      "exitCode": 1,
+      "findings": 4000,
+      "semanticSha256": "2610230cdd48a3113144594c78760746fd5733cbd4bb878c648b56a24e653d70",
+      "before": {
+        "samples": 31,
+        "medianMs": 16.506988,
+        "p95Ms": 18.381716,
+        "minMs": 14.118304,
+        "maxMs": 18.629183,
+        "rawMs": [
+          15.2845,
+          14.118304,
+          15.498102,
+          17.717755,
+          17.116624,
+          15.73702,
+          15.973582,
+          16.44238,
+          17.086843,
+          18.381716,
+          15.737809,
+          14.761681,
+          16.076005,
+          16.506988,
+          15.704586,
+          15.517269,
+          15.595902,
+          16.688535,
+          16.579958,
+          16.589784,
+          15.330945,
+          15.29883,
+          17.139695,
+          17.150064,
+          18.629183,
+          15.817977,
+          16.613609,
+          18.218291,
+          16.773151,
+          16.674089,
+          17.197414
+        ]
+      },
+      "after": {
+        "samples": 31,
+        "medianMs": 16.366919,
+        "p95Ms": 18.210312,
+        "minMs": 14.956428,
+        "maxMs": 18.245858,
+        "rawMs": [
+          15.666793,
+          16.998922,
+          14.956428,
+          18.210312,
+          16.614574,
+          15.777252,
+          15.203387,
+          16.050559,
+          16.400862,
+          17.901494,
+          17.386916,
+          15.524137,
+          15.325429,
+          15.413066,
+          15.569895,
+          18.245858,
+          16.146463,
+          15.656293,
+          16.340023,
+          16.366919,
+          15.426819,
+          15.10196,
+          15.465343,
+          16.520605,
+          17.023656,
+          17.051587,
+          16.750462,
+          16.582143,
+          16.649697,
+          16.712504,
+          17.233337
+        ]
+      },
+      "medianSpeedup": 1.0085580554287585,
+      "pairedSpeedup95Pct": [
+        0.9974499995309702,
+        1.030217446441901
+      ]
+    },
+    "compatibility-dense-positive": {
+      "corpus": {
+        "sha256": "a4402a3039ff760ead09ca51190f96943d4bcf886f5ed21a6eebe5b612341b42",
+        "files": 1,
+        "sourceBytes": 46000,
+        "splitLines": 2001
+      },
+      "behaviorIdentical": true,
+      "stageTraceBeforeMs": {
+        "discovery": 0,
+        "regex": 3
+      },
+      "stageTraceAfterMs": {
+        "discovery": 0,
+        "regex": 3
+      },
+      "exitCode": 1,
+      "findings": 4000,
+      "semanticSha256": "fce6b14b01de585f52b294b81a069d80f580e5fc17b4ed220271b8bb5dbec51d",
+      "before": {
+        "samples": 31,
+        "medianMs": 20.062433,
+        "p95Ms": 22.357076,
+        "minMs": 17.180104,
+        "maxMs": 23.077596,
+        "rawMs": [
+          18.712699,
+          20.062433,
+          22.357076,
+          20.946418,
+          18.41471,
+          17.891785,
+          20.06431,
+          19.139979,
+          19.901483,
+          18.256265,
+          20.100502,
+          20.499302,
+          23.077596,
+          20.089947,
+          18.851303,
+          21.06197,
+          20.710679,
+          19.381303,
+          20.514677,
+          18.173726,
+          17.494889,
+          17.180104,
+          20.15219,
+          18.959032,
+          18.990861,
+          21.588024,
+          20.048844,
+          22.111652,
+          19.879621,
+          20.128081,
+          21.667401
+        ]
+      },
+      "after": {
+        "samples": 31,
+        "medianMs": 19.511112,
+        "p95Ms": 21.72817,
+        "minMs": 17.11305,
+        "maxMs": 21.766961,
+        "rawMs": [
+          18.494308,
+          19.254207,
+          19.821834,
+          17.435509,
+          19.42474,
+          19.393858,
+          21.307513,
+          20.531037,
+          21.766961,
+          19.387981,
+          18.865709,
+          21.627283,
+          21.007443,
+          19.240594,
+          18.433356,
+          19.950596,
+          18.918371,
+          21.135502,
+          19.177292,
+          17.421704,
+          17.224487,
+          19.824699,
+          19.799048,
+          21.72817,
+          19.549672,
+          17.11305,
+          21.441296,
+          19.511112,
+          20.705674,
+          20.134443,
+          18.164858
+        ]
+      },
+      "medianSpeedup": 1.0282567697832905,
+      "pairedSpeedup95Pct": [
+        0.9480029076322257,
+        1.0441438034605375
+      ]
+    },
+    "casefold-unicode": {
+      "corpus": {
+        "sha256": "399df8d7d059ce161d3778d9cd32eed71039b5bdf3fd1541518130827ce64aae",
+        "files": 1,
+        "sourceBytes": 16,
+        "splitLines": 3
+      },
+      "behaviorIdentical": true,
+      "stageTraceBeforeMs": {
+        "discovery": 0,
+        "regex": 0
+      },
+      "stageTraceAfterMs": {
+        "discovery": 0,
+        "regex": 0
+      },
+      "exitCode": 1,
+      "findings": 2,
+      "semanticSha256": "f692a480bc6a3bd533ed5dbc2f3e26a9dced42e9d148311112db03aff84f9180"
+    },
+    "scoped-flags": {
+      "corpus": {
+        "sha256": "95e3e222709a03293ead76e5c64322fafe9a152ca182a0916ecb681a2099687c",
+        "files": 1,
+        "sourceBytes": 21,
+        "splitLines": 4
+      },
+      "behaviorIdentical": true,
+      "stageTraceBeforeMs": {
+        "discovery": 0,
+        "regex": 0
+      },
+      "stageTraceAfterMs": {
+        "discovery": 0,
+        "regex": 0
+      },
+      "exitCode": 1,
+      "findings": 2,
+      "semanticSha256": "8b105f7fa2405575f5af550d94bfe4ef971c2fba299e496a29ffbe75e7d7bfe7"
+    },
+    "global-scoped-flags-positive": {
+      "corpus": {
+        "sha256": "ee265f5fc7db04e99c1d86f38b90d20e926db44096b2b80c1a54b3f09d9b4080",
+        "files": 1,
+        "sourceBytes": 110,
+        "splitLines": 15
+      },
+      "behaviorIdentical": true,
+      "stageTraceBeforeMs": {
+        "discovery": 0,
+        "regex": 0
+      },
+      "stageTraceAfterMs": {
+        "discovery": 0,
+        "regex": 0
+      },
+      "exitCode": 1,
+      "findings": 1,
+      "semanticSha256": "a617d3eacc13e1283225a90c561da5f473df567b31069cf7db7da1325a9c24a4"
+    },
+    "global-scoped-flags-negative": {
+      "corpus": {
+        "sha256": "aa44911bf3486fd6a3a80149369ce2068e2f676ae27f407529952abb6df051f9",
+        "files": 1,
+        "sourceBytes": 103,
+        "splitLines": 14
+      },
+      "behaviorIdentical": true,
+      "stageTraceBeforeMs": {
+        "discovery": 0,
+        "regex": 0
+      },
+      "stageTraceAfterMs": {
+        "discovery": 0,
+        "regex": 0
+      },
+      "exitCode": 0,
+      "findings": 0,
+      "semanticSha256": "20b2ff358f761e1710d4091005f548ea55e0f3f2300a9bc277f4dee8e11b250a"
+    },
+    "lookbehind": {
+      "corpus": {
+        "sha256": "7f53e043f6ce1beeba0f12c8665443737c6242a778a8434c6280cd2c37637750",
+        "files": 1,
+        "sourceBytes": 33,
+        "splitLines": 5
+      },
+      "behaviorIdentical": true,
+      "stageTraceBeforeMs": {
+        "discovery": 0,
+        "regex": 0
+      },
+      "stageTraceAfterMs": {
+        "discovery": 0,
+        "regex": 0
+      },
+      "exitCode": 1,
+      "findings": 1,
+      "semanticSha256": "a71e9ef8d63fdce3eb494171af502a92b4ce07e9e2b52b84896b42eaa6c1c34a"
+    },
+    "alternation": {
+      "corpus": {
+        "sha256": "f235a5863f0cef36ba362f6acbe2a630798feeea9e9c635990c064da3ef733cc",
+        "files": 1,
+        "sourceBytes": 10,
+        "splitLines": 3
+      },
+      "behaviorIdentical": true,
+      "stageTraceBeforeMs": {
+        "discovery": 0,
+        "regex": 0
+      },
+      "stageTraceAfterMs": {
+        "discovery": 0,
+        "regex": 0
+      },
+      "exitCode": 1,
+      "findings": 2,
+      "semanticSha256": "6afbb2604ad187a584052c4af18775449910d2b76dbe3192c9857da0945d29b9"
+    },
+    "optional-literal": {
+      "corpus": {
+        "sha256": "04b5ec0ac34dfaf34a59e9b8b4b0fd87df09a9409b846504d3e9160ee6338fe2",
+        "files": 1,
+        "sourceBytes": 22,
+        "splitLines": 3
+      },
+      "behaviorIdentical": true,
+      "stageTraceBeforeMs": {
+        "discovery": 0,
+        "regex": 0
+      },
+      "stageTraceAfterMs": {
+        "discovery": 0,
+        "regex": 0
+      },
+      "exitCode": 1,
+      "findings": 2,
+      "semanticSha256": "413e48566a6f2a7cd957d0e5e4d2cc25b14fd8b27f772c4034dfa01de1550e14"
+    },
+    "backreference": {
+      "corpus": {
+        "sha256": "57cffb3b0bc6e787e5ebc252a5855e9a205721badcd1d1d634d1471e9b85610b",
+        "files": 1,
+        "sourceBytes": 21,
+        "splitLines": 4
+      },
+      "behaviorIdentical": true,
+      "stageTraceBeforeMs": {
+        "discovery": 0,
+        "regex": 0
+      },
+      "stageTraceAfterMs": {
+        "discovery": 0,
+        "regex": 0
+      },
+      "exitCode": 1,
+      "findings": 2,
+      "semanticSha256": "37e35dffd45eda0503364452367ba27af941bbd3dff821e3f2f8db5b5c1d0894"
+    },
+    "line-boundaries": {
+      "corpus": {
+        "sha256": "2394588e2e928177b73971b4206b0540fbbb536c5138a96719d117d9b5c43d1b",
+        "files": 1,
+        "sourceBytes": 23,
+        "splitLines": 5
+      },
+      "behaviorIdentical": true,
+      "stageTraceBeforeMs": {
+        "discovery": 0,
+        "regex": 0
+      },
+      "stageTraceAfterMs": {
+        "discovery": 0,
+        "regex": 0
+      },
+      "exitCode": 1,
+      "findings": 1,
+      "semanticSha256": "d37a0181b14ceaa25c46341d4ed301cc5d5323af7c29d5c79d0ee19958d2c14b"
+    },
+    "empty-final-line": {
+      "corpus": {
+        "sha256": "8e2a085926054f7f2cfdc1df4f37fd25d9d61bfedc6bf1e582336360a946c4de",
+        "files": 1,
+        "sourceBytes": 2,
+        "splitLines": 2
+      },
+      "behaviorIdentical": true,
+      "stageTraceBeforeMs": {
+        "discovery": 0,
+        "regex": 0
+      },
+      "stageTraceAfterMs": {
+        "discovery": 0,
+        "regex": 0
+      },
+      "exitCode": 1,
+      "findings": 1,
+      "semanticSha256": "c577c555ce8f4693d74f676ce2e60b7eb12e346502a66d9045fe9463fb51bc15"
+    },
+    "no-cross-line-match": {
+      "corpus": {
+        "sha256": "d23e2be9d8a5feaf7e2c8cbf40c4c035432561d9a10df5c33c656ba2ec09bc2a",
+        "files": 1,
+        "sourceBytes": 8,
+        "splitLines": 3
+      },
+      "behaviorIdentical": true,
+      "stageTraceBeforeMs": {
+        "discovery": 0,
+        "regex": 0
+      },
+      "stageTraceAfterMs": {
+        "discovery": 0,
+        "regex": 0
+      },
+      "exitCode": 0,
+      "findings": 0,
+      "semanticSha256": "20b2ff358f761e1710d4091005f548ea55e0f3f2300a9bc277f4dee8e11b250a"
+    },
+    "work-limit": {
+      "corpus": {
+        "sha256": "f30ccb073230604b2756562d43ee21c290147483d3ef9a77569a6e54c1843312",
+        "files": 1,
+        "sourceBytes": 514,
+        "splitLines": 2
+      },
+      "behaviorIdentical": true,
+      "stageTraceBeforeMs": {
+        "discovery": 0,
+        "regex": 35
+      },
+      "stageTraceAfterMs": {
+        "discovery": 0,
+        "regex": 36
+      },
+      "exitCode": 2,
+      "findings": 0,
+      "semanticSha256": "fa424e60aca2e11dd59f4f29c608a5d8e6a00ece664ca19f844fa52ad1d88261"
+    },
+    "utf16-excerpt": {
+      "corpus": {
+        "sha256": "569945b0635113893d2dc052ee4ab37a28fdc9044507fd7b6892e6adc4d94733",
+        "files": 1,
+        "sourceBytes": 4277,
+        "splitLines": 2
+      },
+      "behaviorIdentical": true,
+      "stageTraceBeforeMs": {
+        "discovery": 0,
+        "regex": 0
+      },
+      "stageTraceAfterMs": {
+        "discovery": 0,
+        "regex": 0
+      },
+      "exitCode": 1,
+      "findings": 1,
+      "semanticSha256": "a393c37a7e108009bc05f81fff3f59b73662f3d0a5e05298c5979e64448c15f7"
+    },
+    "file-scoping": {
+      "corpus": {
+        "sha256": "da61f5d49b295915618f165ff48f8e6827a2d40829f1c930c5283245930c5829",
+        "files": 5,
+        "sourceBytes": 25,
+        "splitLines": 10
+      },
+      "behaviorIdentical": true,
+      "stageTraceBeforeMs": {
+        "discovery": 0,
+        "regex": 0
+      },
+      "stageTraceAfterMs": {
+        "discovery": 0,
+        "regex": 0
+      },
+      "exitCode": 1,
+      "findings": 3,
+      "semanticSha256": "a50ee8f712b44bb20a5f30a1d23da5555f799f026f3b3c735acd9f33fea3d46a"
+    },
+    "invalid-utf8": {
+      "corpus": {
+        "sha256": "550a957c962202bdef1d1b981cf5a87442aa43244921ec23b445af656d194873",
+        "files": 1,
+        "sourceBytes": 2,
+        "splitLines": 1
+      },
+      "behaviorIdentical": true,
+      "stageTraceBeforeMs": {
+        "discovery": 0,
+        "regex": 2
+      },
+      "stageTraceAfterMs": {
+        "discovery": 0,
+        "regex": 2
+      },
+      "exitCode": 2,
+      "findings": 0,
+      "semanticSha256": "c239d50cc77f0de6122ba57a1f3c91f23d23bad2cd8b39bf998657e0402b32db"
+    },
+    "line-size-limit": {
+      "corpus": {
+        "sha256": "6f7bdf46650230225c71ae420e246753af2f27406ca0e07f0020aea5880981ea",
+        "files": 1,
+        "sourceBytes": 1048577,
+        "splitLines": 1
+      },
+      "behaviorIdentical": true,
+      "stageTraceBeforeMs": {
+        "discovery": 0,
+        "regex": 2
+      },
+      "stageTraceAfterMs": {
+        "discovery": 0,
+        "regex": 2
+      },
+      "exitCode": 2,
+      "findings": 0,
+      "semanticSha256": "2422627867c02c0504337f172dc9f98f486d2060504cd1e3338db86cf7bc8691"
+    },
+    "source-size-limit": {
+      "corpus": {
+        "sha256": "010d1a4f8d3307e00544bda5d82e103d43a1f06a44b4f2ba8abdd6067d0088fa",
+        "files": 1,
+        "sourceBytes": 16777218,
+        "splitLines": 8388610
+      },
+      "behaviorIdentical": true,
+      "stageTraceBeforeMs": {
+        "discovery": 0,
+        "regex": 6
+      },
+      "stageTraceAfterMs": {
+        "discovery": 0,
+        "regex": 6
+      },
+      "exitCode": 2,
+      "findings": 0,
+      "semanticSha256": "bd8ce22bde48ebe63730849c1fe106326cc0747d9c14241ea3ba5d06c228174d"
+    },
+    "diagnostic-limit": {
+      "corpus": {
+        "sha256": "c0356cad5987c0c67a9078eaf793004234060cf8af54677fef6d43b927f466c7",
+        "files": 1,
+        "sourceBytes": 50005,
+        "splitLines": 10002
+      },
+      "behaviorIdentical": true,
+      "stageTraceBeforeMs": {
+        "discovery": 0,
+        "regex": 1
+      },
+      "stageTraceAfterMs": {
+        "discovery": 0,
+        "regex": 1
+      },
+      "exitCode": 2,
+      "findings": 0,
+      "semanticSha256": "39901751ab910f284c6a0e74c066df557ad129821508ff941f77933dcee8b51a"
+    }
+  },
+  "failures": []
+}

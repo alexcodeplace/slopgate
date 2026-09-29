@@ -9,16 +9,51 @@ use fancy_regex::{Regex, RegexBuilder};
 use std::collections::HashMap;
 use std::io::Read;
 use std::path::Path;
+use std::sync::OnceLock;
 
 /// Linear-time matching is preferred. Compatibility features retain an explicit
 /// work limit and a proven necessary-literal prefilter, never a rule-ID shortcut.
 #[derive(Debug)]
 enum Matcher {
-    Linear(regex::Regex),
+    Linear {
+        regex: regex::Regex,
+        body: String,
+        casei: bool,
+        necessary: OnceLock<Vec<NecessaryLiteral>>,
+    },
     Compatibility {
         regex: Regex,
-        necessary: Vec<regex::Regex>,
+        necessary: Vec<NecessaryLiteral>,
     },
+}
+
+/// Literal proofs need no regex engine unless Unicode case folding is required.
+/// Keep the folding engine identical to the original prefilter; ASCII-only
+/// comparisons would miss, for example, Kelvin sign / K equivalence.
+#[derive(Debug)]
+enum NecessaryLiteral {
+    Exact(String),
+    Folded(regex::Regex),
+}
+
+impl NecessaryLiteral {
+    fn new(value: String, casei: bool) -> Option<Self> {
+        if !casei {
+            return Some(Self::Exact(value));
+        }
+        regex::RegexBuilder::new(&regex::escape(&value))
+            .case_insensitive(true)
+            .build()
+            .ok()
+            .map(Self::Folded)
+    }
+
+    fn is_match(&self, text: &str) -> bool {
+        match self {
+            Self::Exact(value) => text.contains(value),
+            Self::Folded(regex) => regex.is_match(text),
+        }
+    }
 }
 
 fn normalized_pattern(pattern: &str, flags: &str) -> Result<String, String> {
@@ -97,6 +132,26 @@ fn mandatory_literals(expr: &fancy_regex::Expr) -> Option<Vec<(String, bool)>> {
     }
 }
 
+fn compile_necessary_literals(body: &str, casei: bool) -> Vec<NecessaryLiteral> {
+    let parse_body = if casei {
+        format!("(?i:{body})")
+    } else {
+        body.to_owned()
+    };
+    let mut literals = fancy_regex::Expr::parse_tree(&parse_body)
+        .ok()
+        .and_then(|tree| mandatory_literals(&tree.expr))
+        .unwrap_or_default();
+    literals.retain(|(value, _)| value.len() >= 2);
+    literals.sort_by(|a, b| b.0.len().cmp(&a.0.len()).then_with(|| a.cmp(b)));
+    literals.dedup();
+    literals
+        .into_iter()
+        .take(8)
+        .filter_map(|(value, casei)| NecessaryLiteral::new(value, casei))
+        .collect()
+}
+
 fn compile_matcher(pattern: &str, flags: &str) -> Result<Matcher, String> {
     let body = normalized_pattern(pattern, flags)?;
     let mut linear = regex::RegexBuilder::new(&body);
@@ -106,38 +161,49 @@ fn compile_matcher(pattern: &str, flags: &str) -> Result<Matcher, String> {
         .multi_line(flags.contains('m'))
         .size_limit(8 * 1024 * 1024);
     if let Ok(regex) = linear.build() {
-        return Ok(Matcher::Linear(regex));
+        return Ok(Matcher::Linear {
+            regex,
+            body,
+            casei: flags.contains('i'),
+            necessary: OnceLock::new(),
+        });
     }
     let regex = compile_line_regex(pattern, flags)?;
-    let parse_body = if flags.contains('i') {
-        format!("(?i:{body})")
-    } else {
-        body
-    };
-    let mut literals = fancy_regex::Expr::parse_tree(&parse_body)
-        .ok()
-        .and_then(|tree| mandatory_literals(&tree.expr))
-        .unwrap_or_default();
-    literals.retain(|(value, _)| value.len() >= 2);
-    literals.sort_by(|a, b| b.0.len().cmp(&a.0.len()).then_with(|| a.cmp(b)));
-    literals.dedup();
-    let necessary = literals
-        .into_iter()
-        .take(8)
-        .filter_map(|(value, casei)| {
-            regex::RegexBuilder::new(&regex::escape(&value))
-                .case_insensitive(casei)
-                .build()
-                .ok()
-        })
-        .collect();
+    let necessary = compile_necessary_literals(&body, flags.contains('i'));
     Ok(Matcher::Compatibility { regex, necessary })
 }
 
 impl Matcher {
+    /// A literal absent from the complete file is absent from every line. This
+    /// is only a necessary condition: a positive result still requires the
+    /// original line-scoped matcher, including its anchors and error handling.
+    fn may_match_file(&self, contents: &str) -> bool {
+        let necessary = match self {
+            Self::Linear {
+                body,
+                casei,
+                necessary,
+                ..
+            } => necessary.get_or_init(|| compile_necessary_literals(body, *casei)),
+            Self::Compatibility { necessary, .. } => necessary,
+        };
+        necessary.iter().all(|literal| literal.is_match(contents))
+    }
+
+    fn should_prefilter_file(&self, line_count: usize, file_count: usize) -> bool {
+        // Linear matching already has cheap literal searches. Amortize the
+        // auxiliary proof/Unicode regex construction over estimated line visits
+        // instead of making a single small-file scan pay duplicate setup costs.
+        line_count >= 8
+            && match self {
+                Self::Linear { .. } => line_count.saturating_mul(file_count) >= 4096,
+                Self::Compatibility { .. } => true,
+            }
+    }
+
     fn is_match(&self, line: &str) -> Result<bool, String> {
         match self {
-            Self::Linear(regex) => Ok(regex.is_match(line)),
+            Self::Linear { regex, .. } => Ok(regex.is_match(line)),
             Self::Compatibility { regex, necessary } => {
                 if necessary.iter().any(|literal| !literal.is_match(line)) {
                     return Ok(false);
@@ -364,7 +430,6 @@ pub fn scan_regex_checked(
     if compiled.is_empty() {
         return Ok(vec![]);
     }
-    {}
 
     // pass 1: one read per file; hits per pattern id → file → line hits
     let mut hits: HashMap<&str, HashMap<&str, Vec<LineHit>>> = HashMap::new();
@@ -397,16 +462,24 @@ pub fn scan_regex_checked(
             continue;
         }
         let lines: Vec<&str> = contents.split('\n').collect();
+        let is_test_file = crate::enumerate::is_test_file(file);
 
         for cp in &compiled {
             let p = cp.pattern;
-            if crate::enumerate::is_test_file(file) && !p.scan_test_files.unwrap_or(false) {
+            if is_test_file && !p.scan_test_files.unwrap_or(false) {
                 continue;
             }
             if !cp.include.is_empty() && !cp.include.is_match(file) {
                 continue;
             }
             if cp.exclude.is_match(file) {
+                continue;
+            }
+            // Amortize the extra whole-file search over multiline inputs. Read
+            // and size-limit checks above still run even if no rule can match.
+            if cp.re.should_prefilter_file(lines.len(), files.len())
+                && !cp.re.may_match_file(&contents)
+            {
                 continue;
             }
 
@@ -709,3 +782,6 @@ staged = ["high"]
         config
     }
 }
+
+#[cfg(test)]
+mod performance_tests;
