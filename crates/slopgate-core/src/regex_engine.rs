@@ -168,8 +168,8 @@ fn compile_matcher(pattern: &str, flags: &str) -> Result<Matcher, String> {
 
 impl Matcher {
     /// A literal absent from the complete file is absent from every line. This
-    /// only lifts the existing necessary condition out of the per-line loop;
-    /// a positive result still requires the original line-scoped matcher.
+    /// is only a necessary condition: a positive result still requires the
+    /// original line-scoped matcher, including its anchors and error handling.
     fn may_match_file(&self, contents: &str) -> bool {
         match self {
             Self::Linear { necessary, .. } | Self::Compatibility { necessary, .. } => {

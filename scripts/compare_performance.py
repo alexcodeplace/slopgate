@@ -105,6 +105,8 @@ def make_workloads(parent: Path, source: Path) -> list[Workload]:
     fixtures = [
         ("casefold-unicode", [{"pattern": r"k(?=elvin)", "flags": "i"}], "\u212aELVIN\nkelvin\n", 1),
         ("scoped-flags", [{"pattern": r"(?i:foo)(?=BAR)"}], "FoOBAR\nfooBAR\nfoObar\n", 1),
+        ("global-scoped-flags-positive", [{"pattern": r"(?i:foo)(?-i:BAR)", "flags": "i"}], "padding\n" * 12 + "Foobar\nFOOBAR\n", 1),
+        ("global-scoped-flags-negative", [{"pattern": r"(?i:foo)(?-i:BAR)", "flags": "i"}], "padding\n" * 12 + "Foobar\n", 0),
         ("lookbehind", [{"pattern": r"(?<=prefix_)value"}], "prefix_value\nvalue\nprefix_\nvalue\n", 1),
         ("alternation", [{"pattern": r"(?:foo|bar)(?=!)"}], "bar!\nfoo!\n", 1),
         ("optional-literal", [{"pattern": r"(?:optional)?value(?=!)"}], "value!\noptionalvalue!\n", 1),

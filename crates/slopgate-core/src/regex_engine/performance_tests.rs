@@ -211,9 +211,14 @@ fn linear_file_prefilter_preserves_anchors_flags_and_optional_literals() {
     for expression in expressions {
         for flags in ["", "i", "m", "s", "u", "im"] {
             let matcher = compile_matcher(expression, flags).unwrap();
-            let original = compile_line_regex(expression, flags).unwrap();
+            // V1 uses the linear engine for these patterns. fancy-regex differs
+            // for global case folding combined with scoped flag removal, so it
+            // is not an oracle for the original scanner's linear branch.
+            let Matcher::Linear { regex: original, .. } = &matcher else {
+                panic!("fixture must use the original linear engine: {expression}");
+            };
             for text in contents {
-                let matched = text.split('\n').any(|line| original.is_match(line).unwrap());
+                let matched = text.split('\n').any(|line| original.is_match(line));
                 if matched {
                     assert!(matcher.may_match_file(text), "expression={expression}, flags={flags}, text={text:?}");
                 }
