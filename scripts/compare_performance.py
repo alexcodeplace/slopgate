@@ -69,6 +69,19 @@ def make_workloads(parent: Path, source: Path) -> list[Workload]:
         for index in range(files):
             write(workload.root, f"src/file-{index:04}.ts", content)
         workloads.append(workload)
+    packs = source / "crates/slopgate-core/src/rules"
+    baseline = sorted(json.loads((packs / "baseline.json").read_text(encoding="utf-8")))
+    stack = sorted(json.loads((packs / "stack.json").read_text(encoding="utf-8")))
+    ux = sorted(json.loads((packs / "ux.json").read_text(encoding="utf-8")))
+    full_policy = ('roots=["src"]\nastEnabled=false\nbaseline=' + json.dumps(baseline)
+                   + '\nstack=' + json.dumps(stack) + '\n[ux]\n'
+                   + ''.join(json.dumps(name) + '=true\n' for name in ux))
+    for name, files, lines in [("all-packs-small-file", 1, 32), ("all-packs-repository", 256, 512)]:
+        workload = case(parent, name, policy=full_policy)
+        content = ''.join(f"export const value{i}: number = {i};\n" for i in range(lines))
+        for index in range(files):
+            write(workload.root, f"src/file-{index:04}.ts", content)
+        workloads.append(workload)
     positive = case(parent, "large-file-positive", 1)
     write(positive.root, "src/file.ts", ''.join(f"export const value{i}: number = {i};\n" for i in range(30_000))
           + "const value: Record<string, any> = {};\n")
@@ -107,8 +120,8 @@ def make_workloads(parent: Path, source: Path) -> list[Workload]:
     fixtures = [
         ("casefold-unicode", [{"pattern": r"k(?=elvin)", "flags": "i"}], "\u212aELVIN\nkelvin\n", 1),
         ("scoped-flags", [{"pattern": r"(?i:foo)(?=BAR)"}], "FoOBAR\nfooBAR\nfoObar\n", 1),
-        ("global-scoped-flags-positive", [{"pattern": r"(?i:foo)(?-i:BAR)", "flags": "i"}], "padding\n" * 12 + "Foobar\nFOOBAR\n", 1),
-        ("global-scoped-flags-negative", [{"pattern": r"(?i:foo)(?-i:BAR)", "flags": "i"}], "padding\n" * 12 + "Foobar\n", 0),
+        ("global-scoped-flags-positive", [{"pattern": r"(?i:foo)(?-i:BAR)", "flags": "i"}], "padding\n" * 4096 + "Foobar\nFOOBAR\n", 1),
+        ("global-scoped-flags-negative", [{"pattern": r"(?i:foo)(?-i:BAR)", "flags": "i"}], "padding\n" * 4096 + "Foobar\n", 0),
         ("lookbehind", [{"pattern": r"(?<=prefix_)value"}], "prefix_value\nvalue\nprefix_\nvalue\n", 1),
         ("alternation", [{"pattern": r"(?:foo|bar)(?=!)"}], "bar!\nfoo!\n", 1),
         ("optional-literal", [{"pattern": r"(?:optional)?value(?=!)"}], "value!\noptionalvalue!\n", 1),

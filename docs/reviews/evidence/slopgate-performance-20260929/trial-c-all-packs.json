@@ -1,0 +1,271 @@
+{
+  "schemaVersion": 1,
+  "machine": {
+    "platform": "Linux-7.2.6+deb14-amd64-x86_64-with-glibc2.43",
+    "cpu": "",
+    "logicalCpus": 8,
+    "affinity": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ],
+    "python": "3.14.7",
+    "loadBefore": [
+      5.25048828125,
+      6.59765625,
+      6.88623046875
+    ],
+    "loadAfter": [
+      6.34326171875,
+      6.7568359375,
+      6.931640625
+    ]
+  },
+  "before": {
+    "binarySha256": "716eb4f6e003cfbe0df78bb05d8dba4bfb0215054fcc594a4025ee59a66ac982",
+    "binaryBytes": 4255152,
+    "engine": {
+      "executable": "/home/user/benchmarks/slopgate-perf-20260929/evidence/slopgate-before",
+      "revision": "9e3210c",
+      "sourceDigest": "eae575ca7f7951f56a52e656dbacb93379163f6c03498021b5abf6f7d905ddd1",
+      "specification": "universal-gate-v1",
+      "version": "0.4.0"
+    }
+  },
+  "after": {
+    "binarySha256": "e80d4badf26aa0d3957d7661cb38572e00e447a7eefac92dbee43d688bd2c843",
+    "binaryBytes": 4254640,
+    "engine": {
+      "executable": "/home/user/benchmarks/slopgate-perf-20260929/evidence/slopgate-final",
+      "revision": "90e50453308a81529589f3004960b74849b28aa0",
+      "sourceDigest": "427f2fee35ef9caa670df82360e17a846745346488334970be0e9c17e46a995a",
+      "specification": "universal-gate-v1",
+      "version": "0.4.0"
+    }
+  },
+  "method": {
+    "order": "alternating AB/BA pairs",
+    "warmupsPerVariant": 3,
+    "samplesPerVariant": 31,
+    "normalization": "coverage[].elapsedMs and the six-character scratch-directory nonce in the AST project summary only",
+    "notes": "Fresh process, warm filesystem; no Slopgate result cache. TypeScript uses shared tool-owned incremental state warmed for both variants. Shared host load and CPU frequency are not controlled. Stage traces are untimed additional runs. Bootstrap intervals describe these paired samples, not other machines."
+  },
+  "workloads": {
+    "all-packs-small-file": {
+      "corpus": {
+        "sha256": "8869cf2ed3bf3dd5f761c22f8ff7990bb0ed30e0e36a8af060ee997c48d37877",
+        "files": 1,
+        "sourceBytes": 1100,
+        "splitLines": 33
+      },
+      "behaviorIdentical": true,
+      "stageTraceBeforeMs": {
+        "discovery": 0,
+        "regex": 18
+      },
+      "stageTraceAfterMs": {
+        "discovery": 0,
+        "regex": 19
+      },
+      "exitCode": 0,
+      "findings": 0,
+      "semanticSha256": "11ca0672e98f161698a3cc2743112a2fefc5d0c4dd6b6acbc82a1b4ec53d0fbd",
+      "before": {
+        "samples": 31,
+        "medianMs": 37.076692,
+        "p95Ms": 44.253967,
+        "minMs": 33.358872,
+        "maxMs": 48.133143,
+        "rawMs": [
+          35.777281,
+          34.965804,
+          33.358872,
+          35.819983,
+          33.787219,
+          48.133143,
+          36.69624,
+          36.481546,
+          36.728293,
+          39.810803,
+          37.84471,
+          38.564765,
+          38.731387,
+          38.861667,
+          35.138486,
+          35.589959,
+          37.076692,
+          34.373189,
+          39.645515,
+          37.44275,
+          38.530143,
+          37.348334,
+          40.35338,
+          40.180599,
+          36.581217,
+          39.621449,
+          35.079392,
+          44.253967,
+          34.918443,
+          38.415791,
+          34.677238
+        ]
+      },
+      "after": {
+        "samples": 31,
+        "medianMs": 38.863647,
+        "p95Ms": 46.068089,
+        "minMs": 35.019064,
+        "maxMs": 54.79224,
+        "rawMs": [
+          41.014762,
+          35.670444,
+          35.779132,
+          35.796829,
+          35.365299,
+          35.019064,
+          36.654548,
+          39.018794,
+          42.009781,
+          39.955299,
+          39.096997,
+          42.123229,
+          35.118801,
+          37.608606,
+          37.546518,
+          38.863647,
+          38.887992,
+          37.081765,
+          40.43051,
+          39.751955,
+          40.493196,
+          35.048964,
+          38.692212,
+          40.494171,
+          38.560613,
+          35.126269,
+          54.79224,
+          42.579176,
+          46.068089,
+          39.719992,
+          38.653919
+        ]
+      },
+      "medianSpeedup": 0.954019883929061,
+      "pairedSpeedup95Pct": [
+        0.9358653710578435,
+        0.9922563669719279
+      ]
+    },
+    "all-packs-repository": {
+      "corpus": {
+        "sha256": "70eb88f7b8358034e450ebc03e42d3f33082cb8d1458ec82ebfac6921f4394ca",
+        "files": 256,
+        "sourceBytes": 4793344,
+        "splitLines": 131328
+      },
+      "behaviorIdentical": true,
+      "stageTraceBeforeMs": {
+        "discovery": 1,
+        "regex": 438
+      },
+      "stageTraceAfterMs": {
+        "discovery": 1,
+        "regex": 346
+      },
+      "exitCode": 0,
+      "findings": 0,
+      "semanticSha256": "8454085872419d0f6e69cb917d3909fed8fa75dd542c8102c31284d887f05d7c",
+      "before": {
+        "samples": 31,
+        "medianMs": 431.609826,
+        "p95Ms": 449.815486,
+        "minMs": 376.141868,
+        "maxMs": 454.836236,
+        "rawMs": [
+          443.345686,
+          427.54425,
+          439.442399,
+          384.246996,
+          376.497757,
+          414.307302,
+          454.836236,
+          427.888174,
+          416.548739,
+          428.722356,
+          441.314759,
+          428.986941,
+          449.815486,
+          446.05431,
+          437.250347,
+          431.609826,
+          413.376902,
+          429.362578,
+          434.496411,
+          418.99174,
+          437.26716,
+          449.706687,
+          445.897785,
+          423.788221,
+          415.550359,
+          446.44144,
+          376.141868,
+          417.938542,
+          446.30053,
+          441.315311,
+          433.491915
+        ]
+      },
+      "after": {
+        "samples": 31,
+        "medianMs": 365.222973,
+        "p95Ms": 382.01228,
+        "minMs": 324.404274,
+        "maxMs": 392.99716,
+        "rawMs": [
+          368.353923,
+          360.788034,
+          365.262706,
+          340.124456,
+          354.124636,
+          382.01228,
+          362.38674,
+          374.44,
+          344.248886,
+          373.29273,
+          379.917206,
+          364.516755,
+          368.449794,
+          377.123458,
+          365.222973,
+          334.782651,
+          324.404274,
+          392.99716,
+          364.934401,
+          368.277243,
+          362.838629,
+          366.127117,
+          365.014964,
+          368.679217,
+          358.132089,
+          369.423176,
+          341.829181,
+          361.199675,
+          368.716754,
+          368.426457,
+          364.054088
+        ]
+      },
+      "medianSpeedup": 1.1817707480301354,
+      "pairedSpeedup95Pct": [
+        1.160327074181839,
+        1.2035861662317628
+      ]
+    }
+  },
+  "failures": []
+}

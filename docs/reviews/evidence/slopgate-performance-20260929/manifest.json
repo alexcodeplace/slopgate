@@ -1,0 +1,109 @@
+{
+  "acceptance.log.gz": {
+    "sha256": "06e9af6feb8fe9b5c631c2395b3a417c0a84e31c6cb26795aa4ac452a922f7fd",
+    "bytes": 1060,
+    "uncompressedSha256": "4f06067416030a6ecf9575df9fc8fdb4b1d33326bdf169ba8cf6bb65fec0afe7"
+  },
+  "architecture.log.gz": {
+    "sha256": "5187aadfcb017b9bedeee481be8591842af9ded206de3ae1297ef75365a05c61",
+    "bytes": 328,
+    "uncompressedSha256": "f6234b3a2a6be3665daa4baa1f9df0f48f8e80d4b9291aa15cfbceb1e5710db7"
+  },
+  "baseline.json": {
+    "sha256": "1616766324d5fc5d3abd90fdd69b688e0e9dd8aa35ba33961628aaaed391350c",
+    "bytes": 2907
+  },
+  "benchmark-tests.log.gz": {
+    "sha256": "234dc46b6ec9d6f50919ed231c0a2e1af102d183d2ac04cf93f4c9ebdf3023a4",
+    "bytes": 54,
+    "uncompressedSha256": "21c7e48d0b1ec908feef784bbce1fa55f2c9a7acf76382fa7578754a78bd1ed8"
+  },
+  "budgets-trial-c.json": {
+    "sha256": "53953ce2278a93ef2552474f65bee22e4d3af4abc05e31c032989f0603406a21",
+    "bytes": 3809
+  },
+  "build-final.log.gz": {
+    "sha256": "be0fd11e9abb0875fec8660bf8a61a621c95c38e025fcea750e899477797a89c",
+    "bytes": 82,
+    "uncompressedSha256": "09f2b93c4bce5bfb43dca18ca8d9c1dca2831c7d2ffb73b00b96f8f73a607f86"
+  },
+  "build-package.log.gz": {
+    "sha256": "13c4ae94bdb1fddc5db57c596b44ae8978d590304ea7b655f5cb16be5d093f10",
+    "bytes": 651,
+    "uncompressedSha256": "d50b2b211d240ee5bab61d6dc82febaf34734c7d7a360db970f78d4cbfef8263"
+  },
+  "ci-measured-source-checks.json": {
+    "sha256": "4d5e8ccf06d1e9b2f3918545fee05eaf62f74e59e80f14fe5418e3741856672f",
+    "bytes": 1862
+  },
+  "ci-measured-source-statuses.json": {
+    "sha256": "645a85f1af5c3e3aa3ea6a67207fd4c3b52d24f8748de8fea0b1b9f07bf6ebb5",
+    "bytes": 224
+  },
+  "clippy.log.gz": {
+    "sha256": "c2b48c96c4361ac9c69d01b24e376e4e435d31e0df91e439fd6d0540e777754d",
+    "bytes": 1192,
+    "uncompressedSha256": "fbdf795543edcdef155fc0fcddd35dc8bc743d90030cb9d0bdfde09d269f1079"
+  },
+  "final-paired.json": {
+    "sha256": "ebeea0e13efb2e29079a5d4e8257761dbb5af2a04fdd616023b803e85aa94fd3",
+    "bytes": 42650
+  },
+  "fmt.log.gz": {
+    "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+    "bytes": 20,
+    "uncompressedSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "focused-paired.json": {
+    "sha256": "98edf7c1130c2790095ef5ef535aae9cc703e0771120ade4c5804b8b0ffae414",
+    "bytes": 27573
+  },
+  "hosting-tests.log.gz": {
+    "sha256": "4e06056d174c2358a86f74f7be50dfe13f8809355b62412dc67f40d353858b0b",
+    "bytes": 540,
+    "uncompressedSha256": "b655ac4f09daf9c828921b99cceba3ba9491e70a590469b12aa8523362401e74"
+  },
+  "package-acceptance.json": {
+    "sha256": "5df394450e2679546cac43f10d9b6cb5480ba4faf66d0d82813c9c0090f5fa27",
+    "bytes": 260
+  },
+  "package-stage.log.gz": {
+    "sha256": "aea957abd595b70b28b30a57d2aa8e86cd8c0ae93e2067af2a6c9f56d45c6caf",
+    "bytes": 150,
+    "uncompressedSha256": "263b08489c89d1b3b6ef4a7b57d50d0c1ce4fea3e6e9468a2a96db415d44f355"
+  },
+  "spec-tests.log.gz": {
+    "sha256": "844e3b1e36dbf5edcadf503e8a24a710e628be334601868f334db5ddd8e069e5",
+    "bytes": 316,
+    "uncompressedSha256": "5ff959f9deba1c960a406f0aa0d80ca04fb644ef73e5880a58e9082a95a40b2e"
+  },
+  "tests-final.log.gz": {
+    "sha256": "a5ca353b249792a73096c3ddde06b9e36a0eac23b99a7f1cf2acd2228027f106",
+    "bytes": 8426,
+    "uncompressedSha256": "07622299403359513e284e25bbb795d38883739cd58e4d2e5ef0c3f95304713b"
+  },
+  "trial-a.json": {
+    "sha256": "a12f80829b876c7a9f66cbda7df1f9f5c59fab77bff9b2b1c620e5bbb9af6a46",
+    "bytes": 22709
+  },
+  "trial-b-vs-a.json": {
+    "sha256": "4eb9362e21a02acbd137407b2350b0d2019d113b8f58c493949ebafdf9281425",
+    "bytes": 25801
+  },
+  "trial-b.json": {
+    "sha256": "2bc41a2b7ffe01dd832602f9d6285b748765dc3b89a322f8667b88dfa629daad",
+    "bytes": 25802
+  },
+  "trial-c-all-packs.json": {
+    "sha256": "9d34fbeeab94f0aab9f1087ef8d9756ffbbf8a3ad6d8a31595a05ff214cc5609",
+    "bytes": 6755
+  },
+  "trial-c-vs-b.json": {
+    "sha256": "18957f4a33922b8ed06e0dc095363a5e3bde91ddf8f7e595cccc03a258811257",
+    "bytes": 32980
+  },
+  "trial-c.json": {
+    "sha256": "89a31d3fc55f5e7fe0c7b61aedba455191dcbf32ce063d2aa78d6e725c3962bb",
+    "bytes": 37475
+  }
+}

@@ -9,6 +9,7 @@ use fancy_regex::{Regex, RegexBuilder};
 use std::collections::HashMap;
 use std::io::Read;
 use std::path::Path;
+use std::sync::OnceLock;
 
 /// Linear-time matching is preferred. Compatibility features retain an explicit
 /// work limit and a proven necessary-literal prefilter, never a rule-ID shortcut.
@@ -16,7 +17,9 @@ use std::path::Path;
 enum Matcher {
     Linear {
         regex: regex::Regex,
-        necessary: Vec<NecessaryLiteral>,
+        body: String,
+        casei: bool,
+        necessary: OnceLock<Vec<NecessaryLiteral>>,
     },
     Compatibility {
         regex: Regex,
@@ -129,8 +132,8 @@ fn mandatory_literals(expr: &fancy_regex::Expr) -> Option<Vec<(String, bool)>> {
     }
 }
 
-fn compile_necessary_literals(body: &str, flags: &str) -> Vec<NecessaryLiteral> {
-    let parse_body = if flags.contains('i') {
+fn compile_necessary_literals(body: &str, casei: bool) -> Vec<NecessaryLiteral> {
+    let parse_body = if casei {
         format!("(?i:{body})")
     } else {
         body.to_owned()
@@ -158,11 +161,15 @@ fn compile_matcher(pattern: &str, flags: &str) -> Result<Matcher, String> {
         .multi_line(flags.contains('m'))
         .size_limit(8 * 1024 * 1024);
     if let Ok(regex) = linear.build() {
-        let necessary = compile_necessary_literals(&body, flags);
-        return Ok(Matcher::Linear { regex, necessary });
+        return Ok(Matcher::Linear {
+            regex,
+            body,
+            casei: flags.contains('i'),
+            necessary: OnceLock::new(),
+        });
     }
     let regex = compile_line_regex(pattern, flags)?;
-    let necessary = compile_necessary_literals(&body, flags);
+    let necessary = compile_necessary_literals(&body, flags.contains('i'));
     Ok(Matcher::Compatibility { regex, necessary })
 }
 
@@ -171,11 +178,24 @@ impl Matcher {
     /// is only a necessary condition: a positive result still requires the
     /// original line-scoped matcher, including its anchors and error handling.
     fn may_match_file(&self, contents: &str) -> bool {
-        match self {
-            Self::Linear { necessary, .. } | Self::Compatibility { necessary, .. } => {
-                necessary.iter().all(|literal| literal.is_match(contents))
+        let necessary = match self {
+            Self::Linear { body, casei, necessary, .. } => {
+                necessary.get_or_init(|| compile_necessary_literals(body, *casei))
             }
-        }
+            Self::Compatibility { necessary, .. } => necessary,
+        };
+        necessary.iter().all(|literal| literal.is_match(contents))
+    }
+
+    fn should_prefilter_file(&self, line_count: usize, file_count: usize) -> bool {
+        // Linear matching already has cheap literal searches. Amortize the
+        // auxiliary proof/Unicode regex construction over estimated line visits
+        // instead of making a single small-file scan pay duplicate setup costs.
+        line_count >= 8
+            && match self {
+                Self::Linear { .. } => line_count.saturating_mul(file_count) >= 4096,
+                Self::Compatibility { .. } => true,
+            }
     }
 
     fn is_match(&self, line: &str) -> Result<bool, String> {
@@ -454,7 +474,9 @@ pub fn scan_regex_checked(
             }
             // Amortize the extra whole-file search over multiline inputs. Read
             // and size-limit checks above still run even if no rule can match.
-            if lines.len() >= 8 && !cp.re.may_match_file(&contents) {
+            if cp.re.should_prefilter_file(lines.len(), files.len())
+                && !cp.re.may_match_file(&contents)
+            {
                 continue;
             }
 

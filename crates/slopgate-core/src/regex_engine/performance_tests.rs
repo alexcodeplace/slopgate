@@ -250,10 +250,32 @@ fn linear_file_prefilter_preserves_anchors_flags_and_optional_literals() {
             }
         }
     }
-    let text = format!("{}needle\n", "padding\n".repeat(12));
+    let text = format!("{}needle\n", "padding\n".repeat(4096));
     for expression in [r"^needle$", r"\Aneedle\z"] {
         let findings = scan_bytes(expression, text.as_bytes()).unwrap();
         assert_eq!(findings.len(), 1, "{expression}");
-        assert_eq!(findings[0].line, 13);
+        assert_eq!(findings[0].line, 4097);
     }
+}
+
+#[test]
+fn linear_prefilters_are_lazy_and_amortized() {
+    let matcher = compile_matcher("needle", "i").unwrap();
+    let Matcher::Linear { necessary, .. } = &matcher else {
+        panic!("fixture must use the linear engine");
+    };
+    assert!(necessary.get().is_none());
+    assert!(!matcher.should_prefilter_file(32, 1));
+    assert!(!matcher.should_prefilter_file(32, 2));
+    assert!(!matcher.should_prefilter_file(7, 1000));
+    assert!(matcher.should_prefilter_file(32, 128));
+    assert!(matcher.should_prefilter_file(4096, 1));
+    assert!(matcher.is_match("NEEDLE").unwrap());
+    assert!(necessary.get().is_none(), "ordinary line matches need no auxiliary proof");
+    assert!(!matcher.may_match_file("ordinary text"));
+    assert!(necessary.get().is_some());
+    assert!(matcher.may_match_file("NEEDLE"));
+    let compatibility = compile_matcher(r"needle(?=!)", "i").unwrap();
+    assert!(compatibility.should_prefilter_file(8, 1));
+    assert!(!compatibility.should_prefilter_file(7, 1000));
 }
