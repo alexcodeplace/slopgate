@@ -271,7 +271,10 @@ fn linear_prefilters_are_lazy_and_amortized() {
     assert!(matcher.should_prefilter_file(32, 128));
     assert!(matcher.should_prefilter_file(4096, 1));
     assert!(matcher.is_match("NEEDLE").unwrap());
-    assert!(necessary.get().is_none(), "ordinary line matches need no auxiliary proof");
+    assert!(
+        necessary.get().is_none(),
+        "ordinary line matches need no auxiliary proof"
+    );
     assert!(!matcher.may_match_file("ordinary text"));
     assert!(necessary.get().is_some());
     assert!(matcher.may_match_file("NEEDLE"));

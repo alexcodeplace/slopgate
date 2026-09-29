@@ -179,9 +179,12 @@ impl Matcher {
     /// original line-scoped matcher, including its anchors and error handling.
     fn may_match_file(&self, contents: &str) -> bool {
         let necessary = match self {
-            Self::Linear { body, casei, necessary, .. } => {
-                necessary.get_or_init(|| compile_necessary_literals(body, *casei))
-            }
+            Self::Linear {
+                body,
+                casei,
+                necessary,
+                ..
+            } => necessary.get_or_init(|| compile_necessary_literals(body, *casei)),
             Self::Compatibility { necessary, .. } => necessary,
         };
         necessary.iter().all(|literal| literal.is_match(contents))

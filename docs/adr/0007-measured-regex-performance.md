@@ -4,7 +4,7 @@ Status: implementation decision for the owner's September 29, 2026 request to op
 
 ## Decision
 
-Keep Rust and the existing release profile. Use the existing conservative necessary-literal proof to avoid repeated impossible regex matches. Case-sensitive literal checks use exact substring searches; Unicode-folded checks retain the original regex engine. For files with at least eight split lines, a missing mandatory literal can reject that rule's file candidate. All accepted candidates still use the original line-scoped matcher. Classify test-file names once per file rather than once per rule.
+Keep Rust and the existing release profile. Use the existing conservative necessary-literal proof to avoid repeated impossible regex matches. Case-sensitive literal checks use exact substring searches; Unicode-folded checks retain the original regex engine. For files with at least eight split lines, a missing mandatory literal can reject that rule's file candidate. Linear-engine auxiliary proofs are initialized lazily, and only when current line count times selected file count reaches 4,096 estimated line visits; this avoids duplicate proof/Unicode-regex setup on small scans. This heuristic affects optimization effort, not what is checked. All accepted candidates still use the original line-scoped matcher. Classify test-file names once per file rather than once per rule.
 
 Add `scripts/compare_performance.py` and `scripts/test_compare_performance.py` as developer-only measurement tools. They are not scan-time dependencies, do not download tools, and do not replace the existing benchmark.py, budgets, acceptance or CI requirements. The harness runs preserved release binaries in alternating A/B order against identical inputs, recording raw samples, hashes and behavioral comparisons.
 
@@ -18,7 +18,7 @@ Benchmark comparisons ignore only coverage elapsed times and the random six-char
 
 Compare independently built release binaries with the same toolchain and release settings on one assigned worker. Report medians, p95, raw samples and paired bootstrap intervals. Include small inputs, dense matches, unfilterable patterns, native source corpora and external checks. Shared worker load and CPU frequency are not controlled; these are not physical cold-cache tests or universal speed guarantees.
 
-Three incremental trials isolate exact-literal checks, compatibility file prefilters and linear-engine file prefilters. On the initial 31-pair combined trial, the large synthetic repository improved from 49.466 to 33.382 ms and the Slopgate source corpus from 23.966 to 20.069 ms. Small and dense-positive cases changed little. Final evidence and limitations belong in the review report. Existing absolute performance budgets remain unchanged and required.
+Three incremental trials isolate exact-literal checks, compatibility file prefilters and linear-engine file prefilters. On the initial 31-pair combined trial, the large synthetic repository improved from 49.466 to 33.382 ms and the Slopgate source corpus from 23.966 to 20.069 ms. Small and dense-positive cases changed little. A full-pack follow-up exposed about 5% extra single-file startup cost from eager linear proofs; the final selection therefore requires the lazy-proof trial to remove that penalty while retaining larger-scan gains. Final evidence and limitations belong in the review report. Existing absolute performance budgets remain unchanged and required.
 
 ## Verification
 
