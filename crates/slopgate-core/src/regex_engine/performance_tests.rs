@@ -60,3 +60,56 @@ fn literal_proofs_preserve_scoped_flags_and_optional_branches() {
         assert!(!matcher.is_match(negative).unwrap(), "{pattern}");
     }
 }
+
+#[test]
+fn file_prefilter_has_no_false_negatives_for_shipped_canaries() {
+    let mut patterns: Vec<Pattern> = crate::rules::packs::baseline_packs()
+        .into_values().flatten().collect();
+    patterns.extend(crate::rules::packs::stack_packs().into_values().flatten());
+    patterns.extend(crate::rules::packs::ux_packs().into_values().flat_map(|pack| pack.regex));
+    for pattern in patterns {
+        let matcher = compile_matcher(&pattern.pattern, pattern.flags.as_deref().unwrap_or("")).unwrap();
+        for text in pattern.canary.iter().chain(pattern.negative_canary.iter().flatten()) {
+            let contents = format!("{}\n{text}\n{}", "padding\n".repeat(12), "padding\n".repeat(12));
+            if contents.split('\n').any(|line| matcher.is_match(line).unwrap()) {
+                assert!(matcher.may_match_file(&contents), "rule={}, text={text:?}", pattern.id);
+            }
+        }
+    }
+}
+
+fn scan_bytes(pattern: &str, contents: &[u8]) -> Result<Vec<Violation>, Vec<String>> {
+    let dir = tempfile::TempDir::new().unwrap();
+    std::fs::write(dir.path().join("input.ts"), contents).unwrap();
+    let mut config = crate::config::resolve_config_str("astEnabled=false").unwrap();
+    config.repo_root = dir.path().to_string_lossy().into_owned();
+    config.patterns.push(serde_json::from_value(serde_json::json!({
+        "id": "probe", "severity": "high", "resolution": "fixture", "pattern": pattern
+    })).unwrap());
+    scan_regex_checked(&config, &["input.ts".into()], false)
+}
+
+#[test]
+fn file_prefilter_cannot_skip_input_validation() {
+    let pattern = r"needle(?=!)";
+    assert!(scan_bytes(pattern, &[0xff]).unwrap_err().iter().any(|error| error.contains("utf-8")));
+    let long_line = "x".repeat(MAX_LINE_BYTES + 1);
+    assert!(scan_bytes(pattern, long_line.as_bytes()).unwrap_err().iter().any(|error| error.contains("line exceeds")));
+    let long_file = "x\n".repeat(MAX_SOURCE_BYTES as usize / 2 + 1);
+    assert!(scan_bytes(pattern, long_file.as_bytes()).unwrap_err().iter().any(|error| error.contains("source exceeds")));
+}
+
+#[test]
+fn file_prefilter_preserves_line_scoping_and_error_propagation() {
+    let padding = "padding\n".repeat(12);
+    let split = format!("{padding}needle\n!\n");
+    assert!(scan_bytes(r"needle(?=!)", split.as_bytes()).unwrap().is_empty());
+    let joined = format!("{padding}needle!\n");
+    let findings = scan_bytes(r"needle(?=!)", joined.as_bytes()).unwrap();
+    assert_eq!(findings.len(), 1);
+    assert_eq!(findings[0].line, 13);
+    assert_eq!(findings[0].full_line, "needle!");
+    let failing = format!("{padding}BEGIN{}!\n", "a".repeat(512));
+    assert!(scan_bytes(r"BEGIN(a+)+(?<=a)b", failing.as_bytes()).unwrap_err()
+        .iter().any(|error| error.contains("work limit")));
+}

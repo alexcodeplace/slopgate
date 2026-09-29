@@ -159,6 +159,18 @@ fn compile_matcher(pattern: &str, flags: &str) -> Result<Matcher, String> {
 }
 
 impl Matcher {
+    /// A literal absent from the complete file is absent from every line. This
+    /// only lifts the existing necessary condition out of the per-line loop;
+    /// a positive result still requires the original line-scoped matcher.
+    fn may_match_file(&self, contents: &str) -> bool {
+        match self {
+            Self::Linear(_) => true,
+            Self::Compatibility { necessary, .. } => {
+                necessary.iter().all(|literal| literal.is_match(contents))
+            }
+        }
+    }
+
     fn is_match(&self, line: &str) -> Result<bool, String> {
         match self {
             Self::Linear(regex) => Ok(regex.is_match(line)),
@@ -388,7 +400,6 @@ pub fn scan_regex_checked(
     if compiled.is_empty() {
         return Ok(vec![]);
     }
-    {}
 
     // pass 1: one read per file; hits per pattern id → file → line hits
     let mut hits: HashMap<&str, HashMap<&str, Vec<LineHit>>> = HashMap::new();
@@ -421,16 +432,22 @@ pub fn scan_regex_checked(
             continue;
         }
         let lines: Vec<&str> = contents.split('\n').collect();
+        let is_test_file = crate::enumerate::is_test_file(file);
 
         for cp in &compiled {
             let p = cp.pattern;
-            if crate::enumerate::is_test_file(file) && !p.scan_test_files.unwrap_or(false) {
+            if is_test_file && !p.scan_test_files.unwrap_or(false) {
                 continue;
             }
             if !cp.include.is_empty() && !cp.include.is_match(file) {
                 continue;
             }
             if cp.exclude.is_match(file) {
+                continue;
+            }
+            // Amortize the extra whole-file search over multiline inputs. Read
+            // and size-limit checks above still run even if no rule can match.
+            if lines.len() >= 8 && !cp.re.may_match_file(&contents) {
                 continue;
             }
 

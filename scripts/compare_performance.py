@@ -67,6 +67,15 @@ def make_workloads(parent: Path, source: Path) -> list[Workload]:
         for index in range(files):
             write(workload.root, f"src/file-{index:04}.ts", content)
         workloads.append(workload)
+    positive = case(parent, "large-file-positive", 1)
+    write(positive.root, "src/file.ts", ''.join(f"export const value{i}: number = {i};\n" for i in range(30_000))
+          + "const value: Record<string, any> = {};\n")
+    workloads.append(positive)
+    unfilterable = custom_case(parent, "compatibility-unfilterable", [
+        {"pattern": r"(?:foo|bar)(?=!)"},
+    ], 0, timing=True)
+    write(unfilterable.root, "src/file.ts", "ordinary source line\n" * 30_000)
+    workloads.append(unfilterable)
     for name, content, expected in [
         ("long-line-negative", "const padding = '" + "x" * 150_000 + "';\n", 0),
         ("long-line-positive", "const padding = '" + "x" * 4096 + "'; const value: Record<string, any> = {};\n", 1),
