@@ -31,6 +31,17 @@ class ComparisonTests(unittest.TestCase):
             after = dict(before, **changed)
             self.assertNotEqual(bench.semantic_report(json.dumps(before)), bench.semantic_report(json.dumps(after)))
 
+    def test_only_ast_scratch_nonce_is_normalized(self):
+        prefix = "sg: summary|project: isProject=true,projectDir="
+        first = prefix + str(Path(tempfile.gettempdir()) / "slopgate-sg-abc123")
+        second = prefix + str(Path(tempfile.gettempdir()) / "slopgate-sg-def456")
+        def report(detail, stage="ast"):
+            return json.dumps({"coverage": [{"id": stage, "details": [detail]}], "violations": []})
+        self.assertEqual(bench.semantic_report(report(first)), bench.semantic_report(report(second)))
+        self.assertNotEqual(bench.semantic_report(report(first, "regex")), bench.semantic_report(report(second, "regex")))
+        self.assertNotEqual(bench.semantic_report(report(first)), bench.semantic_report(report(second.replace("isProject=true", "isProject=false"))))
+        self.assertNotEqual(bench.semantic_report(report(first)), bench.semantic_report(report(second + ",extra=changed")))
+
     def test_malformed_or_unstructured_output_is_rejected(self):
         for text in ["", "null", "[]", "{}", '{"coverage":null}']:
             with self.assertRaises((ValueError, RuntimeError)):

@@ -175,12 +175,21 @@ def external_workloads(parent: Path, structural: bool, semantic: bool) -> list[W
 
 
 def semantic_report(stdout: str) -> dict:
-    """Ignore only documented nondeterministic coverage timings, not findings."""
+    """Ignore coverage timings and the AST scratch nonce, never findings."""
     report = json.loads(stdout)
     if not isinstance(report, dict) or not isinstance(report.get("coverage"), list):
         raise RuntimeError("scan did not return a structured coverage report")
     for coverage in report["coverage"]:
         coverage.pop("elapsedMs", None)
+        if coverage.get("id") == "ast":
+            details = coverage.get("details", [])
+            prefix = "sg: summary|project: isProject=true,projectDir="
+            for index, detail in enumerate(details):
+                if not detail.startswith(prefix):
+                    continue
+                path = Path(detail[len(prefix):])
+                if path.parent == Path(tempfile.gettempdir()) and re.fullmatch(r"slopgate-sg-[A-Za-z0-9]{6}", path.name):
+                    details[index] = prefix + str(path.parent / "slopgate-sg-<run>")
     return report
 
 
@@ -272,7 +281,7 @@ def main() -> None:
               "python": platform.python_version(), "loadBefore": os.getloadavg() if hasattr(os, "getloadavg") else None},
               "before": provenance(before, env), "after": provenance(after, env),
               "method": {"order": "alternating AB/BA pairs", "warmupsPerVariant": args.warmups,
-                         "samplesPerVariant": args.samples, "normalization": "coverage[].elapsedMs only",
+                         "samplesPerVariant": args.samples, "normalization": "coverage[].elapsedMs and the six-character scratch-directory nonce in the AST project summary only",
                          "notes": "Fresh process, warm filesystem; no Slopgate result cache. TypeScript uses shared tool-owned incremental state warmed for both variants. Shared host load and CPU frequency are not controlled. Stage traces are untimed additional runs. Bootstrap intervals describe these paired samples, not other machines."},
               "workloads": {}, "failures": []}
     args.output.parent.mkdir(parents=True, exist_ok=True)
