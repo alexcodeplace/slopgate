@@ -17,8 +17,37 @@ enum Matcher {
     Linear(regex::Regex),
     Compatibility {
         regex: Regex,
-        necessary: Vec<regex::Regex>,
+        necessary: Vec<NecessaryLiteral>,
     },
+}
+
+/// Literal proofs need no regex engine unless Unicode case folding is required.
+/// Keep the folding engine identical to the original prefilter; ASCII-only
+/// comparisons would miss, for example, Kelvin sign / K equivalence.
+#[derive(Debug)]
+enum NecessaryLiteral {
+    Exact(String),
+    Folded(regex::Regex),
+}
+
+impl NecessaryLiteral {
+    fn new(value: String, casei: bool) -> Option<Self> {
+        if !casei {
+            return Some(Self::Exact(value));
+        }
+        regex::RegexBuilder::new(&regex::escape(&value))
+            .case_insensitive(true)
+            .build()
+            .ok()
+            .map(Self::Folded)
+    }
+
+    fn is_match(&self, text: &str) -> bool {
+        match self {
+            Self::Exact(value) => text.contains(value),
+            Self::Folded(regex) => regex.is_match(text),
+        }
+    }
 }
 
 fn normalized_pattern(pattern: &str, flags: &str) -> Result<String, String> {
@@ -124,12 +153,7 @@ fn compile_matcher(pattern: &str, flags: &str) -> Result<Matcher, String> {
     let necessary = literals
         .into_iter()
         .take(8)
-        .filter_map(|(value, casei)| {
-            regex::RegexBuilder::new(&regex::escape(&value))
-                .case_insensitive(casei)
-                .build()
-                .ok()
-        })
+        .filter_map(|(value, casei)| NecessaryLiteral::new(value, casei))
         .collect();
     Ok(Matcher::Compatibility { regex, necessary })
 }
@@ -709,3 +733,6 @@ staged = ["high"]
         config
     }
 }
+
+#[cfg(test)]
+mod performance_tests;
