@@ -1,0 +1,8 @@
+{
+  "package": "alexcodeplace-slopgate-0.4.0.tgz",
+  "sourceDigest": "d5ddd50ef1932ef58d7fc52b110b09161874e2c38c339bcd112de674420225d3",
+  "launcher": "verified",
+  "bundledSelfTest": "passed",
+  "nonTypeScriptProjectRule": "blocked",
+  "invalidOverride": "failed-closed"
+}
